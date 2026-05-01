@@ -1,0 +1,89 @@
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { FiMap, FiGrid, FiLayers, FiNavigation, FiPlus } from 'react-icons/fi';
+import { getCampuses } from '../api';
+
+export default function Dashboard() {
+  const [campuses, setCampuses] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    getCampuses().then(r => { setCampuses(r.data); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
+
+  const stats = [
+    { label: 'Total Campuses', value: campuses.length, icon: <FiGrid />, color: '#6366f1' },
+    { label: 'Active Maps', value: campuses.filter(c => c.isActive).length, icon: <FiMap />, color: '#22c55e' },
+    { label: 'Navigation Ready', value: '—', icon: <FiNavigation />, color: '#f59e0b' },
+    { label: 'Total Floors', value: '—', icon: <FiLayers />, color: '#3b82f6' },
+  ];
+
+  return (
+    <div className="page-content">
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">Dashboard</h1>
+          <p className="page-subtitle">Welcome to NavX Indoor Navigation Admin</p>
+        </div>
+        <button className="btn btn-primary" onClick={() => navigate('/campus')}>
+          <FiPlus /> New Campus
+        </button>
+      </div>
+
+      <div className="card-grid" style={{ marginBottom: 24 }}>
+        {stats.map((s, i) => (
+          <div className="stat-card" key={i}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div className="stat-value">{s.value}</div>
+                <div className="stat-label">{s.label}</div>
+              </div>
+              <div style={{ fontSize: 28, color: s.color, opacity: 0.6 }}>{s.icon}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 16 }}>Your Campuses</h2>
+      {loading ? (
+        <div className="empty-state"><p>Loading...</p></div>
+      ) : campuses.length === 0 ? (
+        <div className="empty-state">
+          <FiMap style={{ fontSize: 48, opacity: 0.3 }} />
+          <h3>No campuses yet</h3>
+          <p>Create your first campus to start building indoor maps</p>
+          <button className="btn btn-primary" style={{ marginTop: 16 }} onClick={() => navigate('/campus')}>
+            <FiPlus /> Create Campus
+          </button>
+        </div>
+      ) : (
+        <div className="card-grid">
+          {campuses.map(c => (
+            <div className="card" key={c._id} style={{ cursor: 'pointer' }} onClick={() => navigate(`/editor/${c._id}`)}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
+                <div>
+                  <h3 style={{ fontSize: 16, fontWeight: 600 }}>{c.name}</h3>
+                  <p style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>{c.description || 'No description'}</p>
+                </div>
+                <span className="badge badge-success">Active</span>
+              </div>
+              <div style={{ marginTop: 16, display: 'flex', gap: 16, fontSize: 12, color: 'var(--text-muted)' }}>
+                <span>📍 {c.address || 'No address'}</span>
+              </div>
+              <div style={{ marginTop: 12, display: 'flex', gap: 8 }}>
+                <button className="btn btn-secondary btn-sm" onClick={e => { e.stopPropagation(); navigate(`/editor/${c._id}`); }}>
+                  <FiMap /> Edit Map
+                </button>
+                <button className="btn btn-secondary btn-sm" onClick={e => { e.stopPropagation(); navigate(`/positioning/${c._id}`); }}>
+                  <FiNavigation /> Positioning
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

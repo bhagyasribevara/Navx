@@ -1,0 +1,59 @@
+const router = require('express').Router();
+const Block = require('../models/Block');
+
+// GET all blocks (optionally filter by campusId)
+router.get('/', async (req, res) => {
+  try {
+    const filter = { isActive: true };
+    if (req.query.campusId) filter.campusId = req.query.campusId;
+    const blocks = await Block.find(filter).sort({ order: 1 });
+    res.json(blocks);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET single block
+router.get('/:id', async (req, res) => {
+  try {
+    const block = await Block.findById(req.params.id);
+    if (!block) return res.status(404).json({ error: 'Block not found' });
+    res.json(block);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST create block
+router.post('/', async (req, res) => {
+  try {
+    const block = new Block(req.body);
+    await block.save();
+    res.status(201).json(block);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// PUT update block
+router.put('/:id', async (req, res) => {
+  try {
+    const block = await Block.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    if (!block) return res.status(404).json({ error: 'Block not found' });
+    res.json(block);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// DELETE block
+router.delete('/:id', async (req, res) => {
+  try {
+    await Block.findByIdAndUpdate(req.params.id, { isActive: false });
+    res.json({ message: 'Block deleted' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+module.exports = router;
