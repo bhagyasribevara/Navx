@@ -1,0 +1,19 @@
+{
+  "name": "navx-root",
+  "version": "1.0.0",
+  "description": "Root package for NavX Indoor Navigation System",
+  "scripts": {
+    "start:backend": "cd backend && npm run dev",
+    "start:admin": "cd admin && npm run dev",
+    "start:mobile": "cd user && npm start",
+    "seed": "cd backend && npm run seed",
+    "install:all": "cd backend && npm install && cd ../admin && npm install && cd ../user && npm install",
+    "start": "npx concurrently \"npm run start:backend\" \"npm run start:admin\" \"npm run start:mobile\""
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "dependencies": {
+    "expo": "^55.0.19"
+  }
+}
