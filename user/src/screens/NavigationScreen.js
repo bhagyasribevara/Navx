@@ -81,6 +81,7 @@ export default function NavigationScreen({ navigation, route }) {
   const [arrived, setArrived] = useState(false);
   const [error, setError] = useState(null);
   const [liveDistance, setLiveDistance] = useState(0);
+  const [routeInfo, setRouteInfo] = useState(null);
 
   const [locationPerm, setLocationPerm] = useState(null);
   const [gpsLoading, setGpsLoading] = useState(false);
@@ -115,15 +116,25 @@ export default function NavigationScreen({ navigation, route }) {
     return unsub;
   }, []);
 
+  const currentStepRef = useRef(currentStep);
+  const routeDataRef = useRef(routeData);
+  const arrivedRef = useRef(arrived);
+
+  useEffect(() => { currentStepRef.current = currentStep; }, [currentStep]);
+  useEffect(() => { routeDataRef.current = routeData; }, [routeData]);
+  useEffect(() => { arrivedRef.current = arrived; }, [arrived]);
+
   useEffect(() => {
     let locationWatcher;
+    let accel;
+    let mag;
     if (isNavigating) {
       // Step detector for dead reckoning bridging
       stepDetector.current = new StepDetector(() => posEngine.processStep(heading));
-      const accel = Accelerometer.addListener(d => stepDetector.current?.processAccelerometer(d.x, d.y, d.z));
+      accel = Accelerometer.addListener(d => stepDetector.current?.processAccelerometer(d.x, d.y, d.z));
       Accelerometer.setUpdateInterval(100);
       
-      const mag = Magnetometer.addListener(d => {
+      mag = Magnetometer.addListener(d => {
         const h = Math.atan2(d.y, d.x) * (180 / Math.PI);
         posEngine.updateHeading((h + 360) % 360);
       });
@@ -138,12 +149,18 @@ export default function NavigationScreen({ navigation, route }) {
             const lng = loc.coords.longitude;
             setUserPos({ x: lat, y: lng, floor: room?.floorId });
             
-            if (routeData && routeData.path && !arrived) {
-              const target = routeData.path[currentStep];
+            const rData = routeDataRef.current;
+            const cStep = currentStepRef.current;
+            const isArrived = arrivedRef.current;
+
+            if (rData && rData.path && !isArrived) {
+              const target = rData.path[cStep];
               if (target) {
                 // Approximate distance to next node + remaining path
-                const distToNextNodeMeters = Math.hypot(lat - target.x, lng - target.y) * 111320;
-                const remainingPathMeters = routeData.directions?.slice(currentStep).reduce((s,d)=>s+(d.distance||0), 0) || 0;
+                const dx = (lat - target.x) * 111320;
+                const dy = (lng - target.y) * 111320 * Math.cos(lat * Math.PI / 180);
+                const distToNextNodeMeters = Math.sqrt(dx*dx + dy*dy);
+                const remainingPathMeters = rData.directions?.slice(cStep).reduce((s,d)=>s+(d.distance||0), 0) || 0;
                 setLiveDistance(Math.round(distToNextNodeMeters + remainingPathMeters));
               }
             }
@@ -159,12 +176,12 @@ export default function NavigationScreen({ navigation, route }) {
       ).start();
 
       return () => { 
-        accel.remove(); 
-        mag.remove(); 
+        if (accel) accel.remove(); 
+        if (mag) mag.remove(); 
         if (locationWatcher) locationWatcher.remove();
       };
     }
-  }, [isNavigating, heading, currentStep, routeData, arrived]);
+  }, [isNavigating, locationPerm, room]);
 
   useEffect(() => {
     if (routeData) {
@@ -174,11 +191,13 @@ export default function NavigationScreen({ navigation, route }) {
   }, [currentStep, routeData]);
 
   useEffect(() => {
-    if (routeData && userPos && isNavigating) {
+    if (routeData && userPos && isNavigating && !arrived) {
       const target = routeData.path[currentStep];
       if (target) {
-        const dist = Math.hypot(userPos.x - target.x, userPos.y - target.y);
-        if (dist < 20) {
+        const dx = (userPos.x - target.x) * 111320;
+        const dy = (userPos.y - target.y) * 111320 * Math.cos(userPos.x * Math.PI / 180);
+        const distInMeters = Math.sqrt(dx*dx + dy*dy);
+        if (distInMeters < 15) {
           if (currentStep < routeData.path.length - 1) {
             setCurrentStep(s => s + 1);
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -195,13 +214,15 @@ export default function NavigationScreen({ navigation, route }) {
         }
       }
     }
-  }, [userPos, currentStep]);
+  }, [userPos, currentStep, isNavigating, arrived]);
 
   const startNavigation = async () => {
     if (!mapData || !room) return;
     try {
       setError(null);
+      setRouteInfo(null);
       setGpsLoading(true);
+      setArrived(false); // Reset arrived state
       let startNode = mapData.nodes?.[0];
 
       if (locationPerm) {
@@ -215,7 +236,10 @@ export default function NavigationScreen({ navigation, route }) {
             let nearest = null;
             let minDist = Infinity;
             for (let n of mapData.nodes) {
-              const d = Math.hypot(n.x - userLat, n.y - userLng);
+              // Convert to meters using approximate haversine
+              const dx = (n.x - userLat) * 111320;
+              const dy = (n.y - userLng) * 111320 * Math.cos(userLat * Math.PI / 180);
+              const d = Math.sqrt(dx*dx + dy*dy);
               if (d < minDist) { minDist = d; nearest = n; }
             }
             // Use nearest node as start to prevent snapping to isolated DB records
@@ -233,13 +257,23 @@ export default function NavigationScreen({ navigation, route }) {
       setLiveDistance(Math.round(result.distance));
       setCurrentStep(0);
       setIsNavigating(true);
+
+      // Show info banner if route is approximate (nearest reachable)
+      if (result.routeType === 'nearest_reachable' && result.message) {
+        setRouteInfo(result.message);
+      }
+
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       if (voiceEnabled) {
-        Speech.speak(`Starting navigation to ${room.name}. ${result.directions?.[0]?.instruction || "Follow the route."}`);
+        const prefix = result.routeType === 'nearest_reachable'
+          ? `No direct path found. Navigating to the nearest accessible point near ${room.name}. `
+          : `Starting navigation to ${room.name}. `;
+        Speech.speak(prefix + (result.directions?.[0]?.instruction || "Follow the route."));
       }
       Animated.spring(dirCardAnim, { toValue: 1, tension: 80, friction: 10, useNativeDriver: true }).start();
     } catch (err) {
-      const msg = err.response?.data?.error || "Could not find a route. Please ensure you are near a mapped path.";
+      setGpsLoading(false);
+      const msg = err.response?.data?.error || "Could not find a route. Please ensure paths are drawn in the admin panel.";
       setError(msg);
     }
   };
@@ -363,6 +397,13 @@ export default function NavigationScreen({ navigation, route }) {
         <View style={s.errorBox}>
           <Ionicons name="alert-circle" size={18} color={colors.danger} />
           <Text style={{ color: colors.danger, fontSize: 13, fontWeight: "600", marginLeft: 8, flex: 1 }}>{error}</Text>
+        </View>
+      )}
+
+      {routeInfo && (
+        <View style={[s.errorBox, { backgroundColor: colors.accent + '18', borderColor: colors.accent + '30' }]}>
+          <Ionicons name="information-circle" size={18} color={colors.accent} />
+          <Text style={{ color: colors.accent, fontSize: 12, fontWeight: "600", marginLeft: 8, flex: 1 }}>{routeInfo}</Text>
         </View>
       )}
 

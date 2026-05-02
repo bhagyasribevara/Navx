@@ -25,11 +25,11 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'Invalid node IDs' });
     }
     
-    // Auto-calculate distance if not provided
+    // Auto-calculate distance in meters if not provided
     if (!req.body.distance) {
-      const dx = nodeA.x - nodeB.x;
-      const dy = nodeA.y - nodeB.y;
-      req.body.distance = Math.sqrt(dx * dx + dy * dy);
+      const dx = (nodeA.x - nodeB.x) * 111320;
+      const dy = (nodeA.y - nodeB.y) * 111320 * Math.cos(nodeA.x * Math.PI / 180);
+      req.body.distance = Math.round(Math.sqrt(dx * dx + dy * dy));
     }
     
     const path = new NavPath(req.body);

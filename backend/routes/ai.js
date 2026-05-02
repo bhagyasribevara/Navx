@@ -28,13 +28,14 @@ router.post('/chat', async (req, res) => {
       return res.status(400).json({ error: 'Message is required' });
     }
 
-    if (!process.env.GEMINI_API_KEY) {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey || apiKey === 'your_gemini_api_key_here') {
       // Fallback mock response for testing without API key
       const lower = message.toLowerCase();
       let response = { text: "I'm here to help you navigate! Ask me to find any room or facility.", action: null, destination: null };
       
       if (lower.includes('navigate') || lower.includes('take me') || lower.includes('find') || lower.includes('where is') || lower.includes('go to')) {
-        const places = ['library', 'cafeteria', 'lab', 'office', 'computer lab', 'seminar hall'];
+        const places = ['library', 'cafeteria', 'lab', 'office', 'computer lab', 'seminar hall', 'ibm', 'ibm lab', 'ibm centre', 'principal', 'restroom'];
         const found = places.find(p => lower.includes(p));
         if (found) {
           response = { text: `Sure! Let me take you to the ${found}.`, action: 'navigate', destination: found };
@@ -45,6 +46,10 @@ router.post('/chat', async (req, res) => {
         response = { text: "Hello! I'm NavX assistant. Ask me to find any room or building on campus!", action: null, destination: null };
       } else if (lower.includes('help')) {
         response = { text: "I can help you find rooms, labs, offices, and navigate around campus. Just say 'Take me to Library' or 'Where is Lab 3?'", action: null, destination: null };
+      } else if (lower.includes('who') || lower.includes('what') || lower.includes('how')) {
+        response = { text: "That's a great question! I'm currently running in 'Offline/Demo' mode. Please add your Gemini API Key to my backend environment to unlock my full brain!", action: null, destination: null };
+      } else {
+        response = { text: "I'm currently in demo mode without an API key! I can still navigate you to places like the 'Library' or 'IBM Lab', but for conversational answers, please add a Gemini key to the backend.", action: null, destination: null };
       }
       
       return res.json(response);

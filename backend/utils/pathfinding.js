@@ -1,6 +1,7 @@
 /**
  * NavX Pathfinding Engine
  * Implements Dijkstra and A* algorithms for indoor navigation
+ * With auto-connect, fallback routing, and disconnected-graph handling
  */
 
 class PriorityQueue {
@@ -31,6 +32,15 @@ class PriorityQueue {
 }
 
 /**
+ * Compute geo-distance in meters between two lat/lng-like coordinates
+ */
+function geoDistMeters(x1, y1, x2, y2) {
+  const dx = (x1 - x2) * 111320;
+  const dy = (y1 - y2) * 111320 * Math.cos(x1 * Math.PI / 180);
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+/**
  * Build adjacency list from nodes and paths
  */
 function buildGraph(nodes, paths) {
@@ -43,7 +53,7 @@ function buildGraph(nodes, paths) {
       id,
       x: node.x,
       y: node.y,
-      floorId: node.floorId.toString(),
+      floorId: node.floorId ? node.floorId.toString() : null,
       type: node.type,
       neighbors: []
     };
@@ -81,13 +91,111 @@ function buildGraph(nodes, paths) {
 }
 
 /**
- * Heuristic function for A* (Euclidean distance)
+ * Auto-connect disconnected graph components.
+ * Finds isolated subgraphs and bridges them by adding virtual edges
+ * between the closest pair of nodes in different components.
+ * This ensures ANY node can reach ANY other node.
+ */
+function autoConnectGraph(graph) {
+  const nodeIds = Object.keys(graph);
+  if (nodeIds.length === 0) return graph;
+
+  // BFS to find connected components
+  const visited = new Set();
+  const components = [];
+
+  for (const startId of nodeIds) {
+    if (visited.has(startId)) continue;
+    const component = [];
+    const queue = [startId];
+    visited.add(startId);
+
+    while (queue.length > 0) {
+      const current = queue.shift();
+      component.push(current);
+      for (const neighbor of graph[current].neighbors) {
+        if (!visited.has(neighbor.nodeId) && graph[neighbor.nodeId]) {
+          visited.add(neighbor.nodeId);
+          queue.push(neighbor.nodeId);
+        }
+      }
+    }
+    components.push(component);
+  }
+
+  // If only one component, graph is already fully connected
+  if (components.length <= 1) return graph;
+
+  console.log(`[Pathfinding] Found ${components.length} disconnected components. Auto-connecting...`);
+
+  // Merge components by connecting closest nodes between them
+  // Strategy: iteratively merge the two closest components
+  while (components.length > 1) {
+    let bestDist = Infinity;
+    let bestA = null;
+    let bestB = null;
+    let bestI = -1;
+    let bestJ = -1;
+
+    // Find the closest pair of nodes across different components
+    for (let i = 0; i < components.length; i++) {
+      for (let j = i + 1; j < components.length; j++) {
+        for (const aId of components[i]) {
+          for (const bId of components[j]) {
+            const nodeA = graph[aId];
+            const nodeB = graph[bId];
+            const dist = geoDistMeters(nodeA.x, nodeA.y, nodeB.x, nodeB.y);
+            if (dist < bestDist) {
+              bestDist = dist;
+              bestA = aId;
+              bestB = bId;
+              bestI = i;
+              bestJ = j;
+            }
+          }
+        }
+      }
+    }
+
+    if (bestA && bestB) {
+      // Add bidirectional virtual edge
+      const virtualDistance = bestDist;
+      const virtualWeight = virtualDistance * 1.5; // Slightly penalize virtual edges
+      
+      graph[bestA].neighbors.push({
+        nodeId: bestB,
+        distance: virtualDistance,
+        weight: virtualWeight,
+        pathType: 'connector',
+        accessible: true
+      });
+      graph[bestB].neighbors.push({
+        nodeId: bestA,
+        distance: virtualDistance,
+        weight: virtualWeight,
+        pathType: 'connector',
+        accessible: true
+      });
+
+      console.log(`[Pathfinding] Connected component ${bestI} <-> ${bestJ} via virtual edge (${Math.round(bestDist)}m)`);
+
+      // Merge the two components
+      components[bestI] = components[bestI].concat(components[bestJ]);
+      components.splice(bestJ, 1);
+    } else {
+      break;
+    }
+  }
+
+  return graph;
+}
+
+/**
+ * Heuristic function for A* (geo-distance in meters)
  */
 function heuristic(nodeA, nodeB) {
   if (!nodeA || !nodeB) return 0;
-  const dx = nodeA.x - nodeB.x;
-  const dy = nodeA.y - nodeB.y;
-  return Math.sqrt(dx * dx + dy * dy);
+  return geoDistMeters(nodeA.x, nodeA.y, nodeB.x, nodeB.y);
 }
 
 /**
@@ -266,7 +374,7 @@ function findNearestNode(graph, x, y, floorId = null) {
   Object.values(graph).forEach(node => {
     if (floorId && node.floorId !== floorId) return;
     
-    const dist = Math.sqrt((node.x - x) ** 2 + (node.y - y) ** 2);
+    const dist = geoDistMeters(node.x, node.y, x, y);
     if (dist < minDist) {
       minDist = dist;
       nearest = node;
@@ -274,6 +382,70 @@ function findNearestNode(graph, x, y, floorId = null) {
   });
 
   return nearest;
+}
+
+/**
+ * Find all nodes reachable from a given startId using BFS.
+ * Returns a Set of reachable node IDs.
+ */
+function findReachableNodes(graph, startId) {
+  const reachable = new Set();
+  if (!graph[startId]) return reachable;
+
+  const queue = [startId];
+  reachable.add(startId);
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    for (const neighbor of graph[current].neighbors) {
+      if (!reachable.has(neighbor.nodeId) && graph[neighbor.nodeId]) {
+        reachable.add(neighbor.nodeId);
+        queue.push(neighbor.nodeId);
+      }
+    }
+  }
+
+  return reachable;
+}
+
+/**
+ * Find the nearest REACHABLE node to a target (x, y).
+ * Only considers nodes that are reachable from startId.
+ * This is the core fallback: if the destination node can't be reached,
+ * we find the closest node to the destination that CAN be reached.
+ */
+function findNearestReachableNode(graph, startId, targetX, targetY, floorId = null) {
+  const reachable = findReachableNodes(graph, startId);
+  
+  let nearest = null;
+  let minDist = Infinity;
+
+  for (const nodeId of reachable) {
+    const node = graph[nodeId];
+    if (!node) continue;
+    if (floorId && node.floorId !== floorId) continue;
+
+    const dist = geoDistMeters(node.x, node.y, targetX, targetY);
+    if (dist < minDist) {
+      minDist = dist;
+      nearest = node;
+    }
+  }
+
+  // If floor-restricted search found nothing, try all floors
+  if (!nearest && floorId) {
+    for (const nodeId of reachable) {
+      const node = graph[nodeId];
+      if (!node) continue;
+      const dist = geoDistMeters(node.x, node.y, targetX, targetY);
+      if (dist < minDist) {
+        minDist = dist;
+        nearest = node;
+      }
+    }
+  }
+
+  return { node: nearest, distanceToTarget: minDist };
 }
 
 /**
@@ -289,10 +461,9 @@ function generateDirections(detailedPath) {
     const current = detailedPath[i];
     const next = detailedPath[i + 1];
     
+    const distMeters = geoDistMeters(current.x, current.y, next.x, next.y);
     const dx = next.x - current.x;
     const dy = next.y - current.y;
-    const distDegrees = Math.sqrt(dx * dx + dy * dy);
-    const distMeters = distDegrees * 111320; // Approx convert degrees to meters
     const angle = Math.atan2(dy, dx) * (180 / Math.PI);
 
     let direction = 'Continue straight';
@@ -337,9 +508,13 @@ function generateDirections(detailedPath) {
 
 module.exports = {
   buildGraph,
+  autoConnectGraph,
   astar,
   dijkstra,
   findNearestNode,
+  findNearestReachableNode,
+  findReachableNodes,
   generateDirections,
+  geoDistMeters,
   PriorityQueue
 };

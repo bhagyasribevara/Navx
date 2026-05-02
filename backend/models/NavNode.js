@@ -1,8 +1,8 @@
 const mongoose = require('mongoose');
 
 const navNodeSchema = new mongoose.Schema({
-  floorId: { type: mongoose.Schema.Types.ObjectId, ref: 'Floor', required: true },
-  blockId: { type: mongoose.Schema.Types.ObjectId, ref: 'Block', required: true },
+  floorId: { type: mongoose.Schema.Types.ObjectId, ref: 'Floor', default: null },
+  blockId: { type: mongoose.Schema.Types.ObjectId, ref: 'Block', default: null },
   campusId: { type: mongoose.Schema.Types.ObjectId, ref: 'Campus', required: true },
   x: { type: Number, required: true },
   y: { type: Number, required: true },

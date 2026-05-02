@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 
 const navPathSchema = new mongoose.Schema({
-  floorId: { type: mongoose.Schema.Types.ObjectId, ref: 'Floor', required: true },
+  floorId: { type: mongoose.Schema.Types.ObjectId, ref: 'Floor', default: null },
   campusId: { type: mongoose.Schema.Types.ObjectId, ref: 'Campus', required: true },
   nodeA: { type: mongoose.Schema.Types.ObjectId, ref: 'NavNode', required: true },
   nodeB: { type: mongoose.Schema.Types.ObjectId, ref: 'NavNode', required: true },
