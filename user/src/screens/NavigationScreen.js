@@ -25,8 +25,8 @@ const DIR_ICONS = {
   arrived: "checkmark-circle",
 };
 
-function buildNavMapHTML(rooms, pathPoints, userPos, targetRoom) {
-  const center = userPos ? [userPos.x, userPos.y] : (pathPoints?.length ? [pathPoints[0].x, pathPoints[0].y] : [18.4665, 83.6629]);
+function buildNavMapHTML(rooms, pathPoints, initialPos, targetRoom) {
+  const center = initialPos ? [initialPos.x, initialPos.y] : (pathPoints?.length ? [pathPoints[0].x, pathPoints[0].y] : [18.4665, 83.6629]);
   
   const roomGeoJSON = rooms.map(r => {
     const s = r.shape;
@@ -48,7 +48,6 @@ function buildNavMapHTML(rooms, pathPoints, userPos, targetRoom) {
 
   const pathStr = pathPoints ? pathPoints.map(p => `[${p.x},${p.y}]`).join(',') : '';
   const routeLine = pathStr ? `L.polyline([${pathStr}],{color:'#4f46e5',weight:5,opacity:0.8,dashArray:'8,8'}).addTo(map);` : '';
-  const userDot = userPos ? `L.circleMarker([${userPos.x},${userPos.y}],{radius:8,color:'#fff',weight:2,fillColor:'#4f46e5',fillOpacity:1}).addTo(map);` : '';
   
   return `<!DOCTYPE html>
 <html><head>
@@ -62,8 +61,18 @@ var map=L.map('map',{zoomControl:false}).setView([${center[0]},${center[1]}], 19
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:22}).addTo(map);
 ${roomGeoJSON}
 ${routeLine}
-${userDot}
 ${destDot}
+
+window.userMarker = null;
+${initialPos ? `window.userMarker = L.circleMarker([${initialPos.x},${initialPos.y}],{radius:8,color:'#fff',weight:2,fillColor:'#4f46e5',fillOpacity:1}).addTo(map);` : ''}
+
+window.updateUserPos = function(lat, lng) {
+  if (!window.userMarker) {
+    window.userMarker = L.circleMarker([lat, lng], {radius:8,color:'#fff',weight:2,fillColor:'#4f46e5',fillOpacity:1}).addTo(map);
+  } else {
+    window.userMarker.setLatLng([lat, lng]);
+  }
+};
 </script></body></html>`;
 }
 
@@ -86,12 +95,32 @@ export default function NavigationScreen({ navigation, route }) {
   const [locationPerm, setLocationPerm] = useState(null);
   const [gpsLoading, setGpsLoading] = useState(false);
 
+  const webViewRef = useRef(null);
   const posEngine = useRef(new PositionEngine()).current;
   const stepDetector = useRef(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const progressAnim = useRef(new Animated.Value(0)).current;
   const dirCardAnim = useRef(new Animated.Value(0)).current;
   const arrivedAnim = useRef(new Animated.Value(0)).current;
+
+  // Memoize the HTML so it DOES NOT regenerate on every GPS tick
+  const initialUserPosRef = useRef(userPos);
+  const mapHtml = React.useMemo(() => {
+    const floorRooms = mapData?.rooms?.filter(r => r.floorId === room?.floorId) || [];
+    return buildNavMapHTML(floorRooms, routeData?.path, initialUserPosRef.current, room);
+  }, [mapData, routeData, room]);
+
+  // Push user location updates directly into the WebView via JS
+  useEffect(() => {
+    if (userPos && webViewRef.current) {
+      webViewRef.current.injectJavaScript(`
+        if (typeof window.updateUserPos === 'function') {
+          window.updateUserPos(${userPos.x}, ${userPos.y});
+        }
+        true;
+      `);
+    }
+  }, [userPos]);
 
   useEffect(() => {
     (async () => {
@@ -107,6 +136,89 @@ export default function NavigationScreen({ navigation, route }) {
       });
     }
   }, [campusId, mapData]);
+
+  // Preview route automatically when mapData and room are available
+  useEffect(() => {
+    if (mapData && room && locationPerm !== null && !routeData) {
+      previewRoute();
+    }
+  }, [mapData, room, locationPerm]);
+
+  const previewRoute = async () => {
+    try {
+      setError(null);
+      setGpsLoading(true);
+      let startNode = mapData.nodes?.[0];
+      let uLat = null;
+      let uLng = null;
+
+      if (locationPerm) {
+        try {
+          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+          uLat = loc.coords.latitude;
+          uLng = loc.coords.longitude;
+          setUserPos({ x: uLat, y: uLng, floor: room.floorId });
+          
+          if (mapData.nodes?.length > 0) {
+            let nearest = null;
+            let minDist = Infinity;
+            for (let n of mapData.nodes) {
+              const dx = (n.x - uLat) * 111320;
+              const dy = (n.y - uLng) * 111320 * Math.cos(uLat * Math.PI / 180);
+              const d = Math.sqrt(dx*dx + dy*dy);
+              if (d < minDist) { minDist = d; nearest = n; }
+            }
+            if (nearest) startNode = nearest;
+          }
+        } catch (e) {
+          console.warn("GPS preview error:", e);
+        }
+      }
+      
+      if (startNode) {
+        const result = await findRouteToRoom({ startNodeId: startNode._id, roomId: room._id, campusId });
+        
+        // Ensure path always visually starts from the exact user location
+        if (uLat && uLng && result.path && result.path.length > 0) {
+          const firstNode = result.path[0];
+          const dx = (uLat - firstNode.x) * 111320;
+          const dy = (uLng - firstNode.y) * 111320 * Math.cos(uLat * Math.PI / 180);
+          const distToFirst = Math.sqrt(dx*dx + dy*dy);
+          
+          if (distToFirst > 2) {
+            result.path.unshift({
+              nodeId: 'user_start',
+              x: uLat,
+              y: uLng,
+              floorId: room.floorId || null,
+              type: 'user'
+            });
+            result.distance += distToFirst;
+            
+            if (result.directions && result.directions.length > 0) {
+              result.directions.unshift({
+                step: 0,
+                instruction: "Walk towards the starting path",
+                distance: Math.round(distToFirst),
+                angle: 0,
+                eta: Math.round(distToFirst / 1.2)
+              });
+            }
+          }
+        }
+
+        setRouteData(result);
+        setLiveDistance(Math.round(result.distance));
+        if (result.routeType === 'nearest_reachable' && result.message) {
+          setRouteInfo(result.message);
+        }
+      }
+    } catch (err) {
+      setError("Could not calculate initial route preview.");
+    } finally {
+      setGpsLoading(false);
+    }
+  };
 
   useEffect(() => {
     const unsub = posEngine.onPositionUpdate(pos => {
@@ -220,61 +332,27 @@ export default function NavigationScreen({ navigation, route }) {
     if (!mapData || !room) return;
     try {
       setError(null);
-      setRouteInfo(null);
-      setGpsLoading(true);
-      setArrived(false); // Reset arrived state
-      let startNode = mapData.nodes?.[0];
+      setArrived(false);
+      
+      if (!routeData) {
+         // If preview failed, try again
+         await previewRoute();
+      }
 
-      if (locationPerm) {
-        try {
-          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
-          const userLat = loc.coords.latitude;
-          const userLng = loc.coords.longitude;
-          setUserPos({ x: userLat, y: userLng, floor: room.floorId });
-          
-          if (mapData.nodes?.length > 0) {
-            let nearest = null;
-            let minDist = Infinity;
-            for (let n of mapData.nodes) {
-              // Convert to meters using approximate haversine
-              const dx = (n.x - userLat) * 111320;
-              const dy = (n.y - userLng) * 111320 * Math.cos(userLat * Math.PI / 180);
-              const d = Math.sqrt(dx*dx + dy*dy);
-              if (d < minDist) { minDist = d; nearest = n; }
-            }
-            // Use nearest node as start to prevent snapping to isolated DB records
-            if (nearest) startNode = nearest;
-          }
-        } catch (e) {
-          console.warn("GPS fetch error:", e);
+      if (routeData) {
+        setCurrentStep(0);
+        setIsNavigating(true);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        if (voiceEnabled) {
+          const prefix = routeData.routeType === 'nearest_reachable'
+            ? `No direct path found. Navigating to the nearest accessible point near ${room.name}. `
+            : `Starting navigation to ${room.name}. `;
+          Speech.speak(prefix + (routeData.directions?.[0]?.instruction || "Follow the route."));
         }
+        Animated.spring(dirCardAnim, { toValue: 1, tension: 80, friction: 10, useNativeDriver: true }).start();
       }
-      setGpsLoading(false);
-
-      if (!startNode) return setError("No navigation nodes found on this campus.");
-      const result = await findRouteToRoom({ startNodeId: startNode._id, roomId: room._id, campusId });
-      setRouteData(result);
-      setLiveDistance(Math.round(result.distance));
-      setCurrentStep(0);
-      setIsNavigating(true);
-
-      // Show info banner if route is approximate (nearest reachable)
-      if (result.routeType === 'nearest_reachable' && result.message) {
-        setRouteInfo(result.message);
-      }
-
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      if (voiceEnabled) {
-        const prefix = result.routeType === 'nearest_reachable'
-          ? `No direct path found. Navigating to the nearest accessible point near ${room.name}. `
-          : `Starting navigation to ${room.name}. `;
-        Speech.speak(prefix + (result.directions?.[0]?.instruction || "Follow the route."));
-      }
-      Animated.spring(dirCardAnim, { toValue: 1, tension: 80, friction: 10, useNativeDriver: true }).start();
     } catch (err) {
-      setGpsLoading(false);
-      const msg = err.response?.data?.error || "Could not find a route. Please ensure paths are drawn in the admin panel.";
-      setError(msg);
+      setError("Could not start navigation.");
     }
   };
 
@@ -410,7 +488,8 @@ export default function NavigationScreen({ navigation, route }) {
       {/* Map Area */}
       <View style={s.mapArea}>
         <WebView
-          source={{ html: buildNavMapHTML(floorRooms, routeData?.path, userPos, room) }}
+          ref={webViewRef}
+          source={{ html: mapHtml }}
           style={{ flex: 1, backgroundColor: 'transparent' }}
           javaScriptEnabled
           scrollEnabled={false}
@@ -445,30 +524,32 @@ export default function NavigationScreen({ navigation, route }) {
       {/* Bottom panel */}
       <View style={s.bottomPanel}>
         {routeData && (
-          <>
+          <View style={{ marginBottom: 16 }}>
             <View style={s.metricsRow}>
               <View style={s.metric}>
-                <Text style={s.metricValue}>{liveDistance}m</Text>
-                <Text style={s.metricLabel}>Distance Left</Text>
+                <Text style={s.metricValue}>{isNavigating ? liveDistance : Math.round(routeData.distance)}m</Text>
+                <Text style={s.metricLabel}>{isNavigating ? "Distance Left" : "Total Distance"}</Text>
               </View>
               <View style={s.metric}>
-                <Text style={s.metricValue}>{Math.max(1, Math.ceil(liveDistance / 1.2 / 60))}'</Text>
-                <Text style={s.metricLabel}>Live ETA</Text>
+                <Text style={s.metricValue}>{Math.max(1, Math.ceil((isNavigating ? liveDistance : routeData.distance) / 1.2 / 60))}'</Text>
+                <Text style={s.metricLabel}>{isNavigating ? "Live ETA" : "Est. Time"}</Text>
               </View>
               <View style={s.metric}>
                 <Text style={s.metricValue}>{routeData.nodeCount || routeData.directions?.length}</Text>
                 <Text style={s.metricLabel}>Steps</Text>
               </View>
             </View>
-            <View style={s.progressTrack}>
-              <Animated.View style={[s.progressFill, { width: progressAnim.interpolate({ inputRange: [0, 1], outputRange: ["0%", "100%"] }) }]} />
-            </View>
-          </>
+            {isNavigating && (
+              <View style={s.progressTrack}>
+                <Animated.View style={[s.progressFill, { width: progressAnim.interpolate({ inputRange: [0, 1], outputRange: ["0%", "100%"] }) }]} />
+              </View>
+            )}
+          </View>
         )}
         {!isNavigating ? (
           <TouchableOpacity style={s.startBtn} onPress={startNavigation} disabled={gpsLoading}>
             {gpsLoading ? <ActivityIndicator color="#fff" /> : <Ionicons name="navigate" size={20} color="#fff" />}
-            <Text style={s.btnText}>{gpsLoading ? "Locating..." : "Start Navigation"}</Text>
+            <Text style={s.btnText}>{gpsLoading ? "Calculating Route..." : "Start Navigation"}</Text>
           </TouchableOpacity>
         ) : (
           <TouchableOpacity style={[s.startBtn, s.stopBtn]} onPress={() => { setIsNavigating(false); Speech.stop(); }}>

@@ -6,7 +6,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import '@geoman-io/leaflet-geoman-free';
 import '@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css';
-import { FiArrowLeft, FiPlus, FiTrash2, FiMap, FiLayers, FiSquare, FiNavigation, FiCheck, FiSettings, FiMove, FiInfo, FiCopy, FiRefreshCw, FiArrowRight, FiArrowLeftCircle, FiRepeat } from 'react-icons/fi';
+import { FiArrowLeft, FiPlus, FiTrash2, FiMap, FiLayers, FiSquare, FiNavigation, FiCheck, FiSettings, FiMove, FiInfo, FiCopy, FiRefreshCw, FiArrowRight, FiArrowLeftCircle, FiRepeat, FiMousePointer } from 'react-icons/fi';
 import { getBlocks, createBlock, updateBlock, deleteBlock, getFloors, createFloor, deleteFloor, getRooms, createRoom, updateRoom, deleteRoom, getNodes, createNode, getPaths, createPath, deletePath, updatePath, getCampus, getAllCampusNodes, getAllCampusPaths } from '../api';
 
 const GMRIT = [18.4665, 83.6629];
@@ -39,6 +39,9 @@ function GeomanController({ onShapeDraw, activeMode, mapReady }) {
     map.pm.disableDraw();
     if (activeMode === 'rotate') map.pm.enableGlobalRotateMode();
     else map.pm.disableGlobalRotateMode();
+    
+    if (activeMode === 'drag') map.pm.enableGlobalDragMode();
+    else map.pm.disableGlobalDragMode();
     
     if (activeMode === 'drawBlockRect') map.pm.enableDraw('Rectangle', { snappable: true, snapDistance: 20 });
     if (activeMode === 'drawBlockPoly') map.pm.enableDraw('Polygon', { snappable: true, snapDistance: 20 });
@@ -84,15 +87,25 @@ const EditablePolygon = ({ r, isSelected, isLocked, onUpdate, onClick, drawMode 
       onUpdate(r._id || 'temp', { points: pts, type: r.shape?.type || 'polygon' });
     };
 
+    const handleDrag = () => {
+      if (layer.getTooltip()) {
+        layer.getTooltip().setLatLng(layer.getBounds().getCenter());
+      }
+    };
+
     layer.on('pm:edit', handleEdit);
     layer.on('pm:dragend', handleEdit);
     layer.on('pm:rotateend', handleEdit);
+    layer.on('pm:drag', handleDrag);
+    layer.on('pm:markerdrag', handleDrag);
 
     if (isSelected && !isLocked) {
       if (drawMode === 'rotate') {
         layer.pm.disable();
+      } else if (drawMode === 'drag') {
+        layer.pm.disable();
       } else {
-        layer.pm.enable({ allowSelfIntersection: false, preventMarkerRemoval: true, snappable: true });
+        layer.pm.enable({ allowSelfIntersection: false, preventMarkerRemoval: true, snappable: true, draggable: true });
       }
     } else {
       layer.pm.disable();
@@ -102,6 +115,8 @@ const EditablePolygon = ({ r, isSelected, isLocked, onUpdate, onClick, drawMode 
       layer.off('pm:edit', handleEdit); 
       layer.off('pm:dragend', handleEdit); 
       layer.off('pm:rotateend', handleEdit); 
+      layer.off('pm:drag', handleDrag);
+      layer.off('pm:markerdrag', handleDrag);
       layer.pm.disable(); 
     };
   }, [isSelected, isLocked, drawMode, r._id, onUpdate]);
@@ -117,11 +132,78 @@ const EditablePolygon = ({ r, isSelected, isLocked, onUpdate, onClick, drawMode 
       }} 
       eventHandlers={{ click: (e) => { if(!isLocked) { L.DomEvent.stopPropagation(e); onClick(r); } } }}>
       {!r.isBlock && (
-        <Tooltip permanent direction="center" className="room-label">
+        <Tooltip key={bounds[0]?.[0] + '-' + bounds[0]?.[1]} permanent direction="center" className="room-label">
           <span style={{fontSize:10,fontWeight:700,color:'#fff',textShadow:'0 1px 2px rgba(0,0,0,0.8)'}}>{r.name}</span>
         </Tooltip>
       )}
     </Polygon>
+  );
+};
+
+const EditableNode = ({ n, stepMode, onUpdate, onDelete, isMain }) => {
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!ref.current) return;
+    const layer = ref.current;
+    const handleDragEnd = () => {
+      const ll = layer.getLatLng();
+      onUpdate(n._id, { x: ll.lat, y: ll.lng });
+    };
+    layer.on('pm:dragend', handleDragEnd);
+    return () => layer.off('pm:dragend', handleDragEnd);
+  }, [n._id, onUpdate]);
+
+  return (
+    <Circle ref={ref} center={[n.x, n.y]} radius={stepMode === 0 ? 2 : 1}
+      pathOptions={{ color: isMain ? '#f59e0b' : (NC[n.type] || '#94a3b8'), fillColor: isMain ? '#f59e0b' : (NC[n.type] || '#94a3b8'), fillOpacity: isMain ? 1 : 0.8, weight: isMain ? 3 : 2 }}
+      eventHandlers={{ 
+        click: (e) => { 
+          if(stepMode !== 0 && stepMode !== 4) return;
+          L.DomEvent.stopPropagation(e); 
+          const act = window.prompt(`Node options:\n1 = Delete Node\n2 = Change Type (Current: ${n.type || 'waypoint'})`, '1');
+          if (act === '1') {
+            if(window.confirm('Delete this node?')) onDelete(n._id);
+          } else if (act === '2') {
+            const newType = window.prompt(`Enter new type (waypoint, entrance, exit, elevator, stairs, room_entry, intersection, connector):`, n.type || 'waypoint');
+            if(newType) onUpdate(n._id, { type: newType });
+          }
+        } 
+      }} 
+    />
+  );
+};
+
+const EditablePath = ({ p, a, b, stepMode, onUpdate, onDelete }) => {
+  const color = p.bidirectional ? '#f59e0b' : '#ef4444';
+  const midX = (a.x + b.x) / 2;
+  const midY = (a.y + b.y) / 2;
+
+  return (
+    <React.Fragment>
+      <Polyline positions={[[a.x,a.y],[b.x,b.y]]} pathOptions={{color, weight: stepMode === 0 ? 4 : 3, dashArray: p.bidirectional ? null : (stepMode===0?'8,4':'6,6'), opacity: stepMode === 0 ? 0.9 : 0.8}}
+        eventHandlers={{ 
+          click: (e) => { 
+            if(stepMode !== 0 && stepMode !== 4) return;
+            L.DomEvent.stopPropagation(e);
+            const action = window.prompt('Path options:\n1 = Outgoing (→)\n2 = Incoming (←)\n3 = Both Ways (↔)\n4 = Delete Path', p.bidirectional ? '3' : '1');
+            if (action === '1') onUpdate(p._id, { bidirectional: false, nodeA: a._id, nodeB: b._id });
+            else if (action === '2') onUpdate(p._id, { bidirectional: false, nodeA: b._id, nodeB: a._id });
+            else if (action === '3') onUpdate(p._id, { bidirectional: true });
+            else if (action === '4') { if(window.confirm('Delete this path?')) onDelete(p._id); }
+          } 
+        }} 
+      />
+      {!p.bidirectional && (
+        <Circle center={[midX, midY]} radius={0.8} pathOptions={{color:'#ef4444', fillColor:'#ef4444', fillOpacity:1, weight:1}}>
+          <Tooltip permanent direction="center" className="room-label"><span style={{fontSize:9,color:'#ef4444',fontWeight:800}}>→</span></Tooltip>
+        </Circle>
+      )}
+      {p.bidirectional && (
+        <Circle center={[midX, midY]} radius={0.5} pathOptions={{color:'#f59e0b', fillColor:'#f59e0b', fillOpacity:0.6, weight:1}}>
+          <Tooltip permanent direction="center" className="room-label"><span style={{fontSize:8,color:'#f59e0b',fontWeight:800}}>↔</span></Tooltip>
+        </Circle>
+      )}
+    </React.Fragment>
   );
 };
 
@@ -163,6 +245,9 @@ export default function GuidedMapBuilder() {
   const [tempBlockShape, setTempBlockShape] = useState(null);
   const [blockForm, setBlockForm] = useState({ name: '', id: '' });
   
+  // Clipboard for copy/paste
+  const [clipboard, setClipboard] = useState(null);
+  
   // Step 2 State
   const [floorCount, setFloorCount] = useState(1);
 
@@ -200,6 +285,174 @@ export default function GuidedMapBuilder() {
 
   useEffect(() => { if (activeBlock) loadFloors(activeBlock._id); }, [activeBlock]);
   useEffect(() => { if (activeFloor) loadFloorData(activeFloor._id); }, [activeFloor]);
+
+  // Undo / Redo Stacks
+  const [undoStack, setUndoStack] = useState([]);
+  const [redoStack, setRedoStack] = useState([]);
+
+  const pushUndo = (action) => {
+    setUndoStack(prev => [...prev, action]);
+    setRedoStack([]);
+  };
+
+  const handleUndo = async () => {
+    if (undoStack.length === 0) return;
+    const action = undoStack[undoStack.length - 1];
+    setUndoStack(prev => prev.slice(0, -1));
+    setRedoStack(prev => [...prev, action]);
+
+    try {
+      if (action.type === 'PASTE_BLOCK' || action.type === 'DUPLICATE_BLOCK') {
+        await deleteBlock(action.id);
+        if (activeBlock?._id === action.id) setActiveBlock(null);
+        await loadBlocks();
+        toast.info('Undo: Removed Block');
+      } else if (action.type === 'PASTE_ROOM' || action.type === 'DUPLICATE_ROOM') {
+        await deleteRoom(action.id);
+        if (activeRoom?._id === action.id) setActiveRoom(null);
+        if (activeFloor) await loadFloorData(activeFloor._id);
+        toast.info('Undo: Removed Room');
+      }
+    } catch(err) { toast.error('Undo failed'); }
+  };
+
+  const handleRedo = async () => {
+    if (redoStack.length === 0) return;
+    const action = redoStack[redoStack.length - 1];
+    setRedoStack(prev => prev.slice(0, -1));
+    setUndoStack(prev => [...prev, action]);
+
+    try {
+      if (action.type === 'PASTE_BLOCK' || action.type === 'DUPLICATE_BLOCK') {
+        const res = await createBlock(action.blockData);
+        await updateBlock(res.data._id, { shape: action.blockData.shape });
+        action.id = res.data._id;
+        await loadBlocks();
+        toast.info('Redo: Restored Block');
+      } else if (action.type === 'PASTE_ROOM' || action.type === 'DUPLICATE_ROOM') {
+        const res = await createRoom(action.roomData);
+        action.id = res.data._id;
+        if (activeFloor) await loadFloorData(activeFloor._id);
+        toast.info('Redo: Restored Room');
+      }
+    } catch(err) { toast.error('Redo failed'); }
+  };
+
+  // Keyboard Shortcuts for Copy, Paste, Duplicate, Undo, Redo
+  useEffect(() => {
+    const handleKeyDown = async (e) => {
+      // Don't trigger if user is typing in an input field
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return;
+
+      const isCtrl = e.ctrlKey || e.metaKey;
+      
+      if (isCtrl && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        handleUndo();
+      }
+
+      if (isCtrl && e.key.toLowerCase() === 'y') {
+        e.preventDefault();
+        handleRedo();
+      }
+
+      if (isCtrl && e.key.toLowerCase() === 'c') {
+        e.preventDefault();
+        if (step === 1 && activeBlock) {
+          setClipboard({ type: 'block', data: activeBlock });
+          toast.info('Block copied to clipboard');
+        } else if (step === 3 && activeRoom) {
+          setClipboard({ type: 'room', data: activeRoom });
+          toast.info('Room copied to clipboard');
+        }
+      }
+
+      if (isCtrl && e.key.toLowerCase() === 'v') {
+        e.preventDefault();
+        if (!clipboard) return;
+        
+        if (step === 1 && clipboard.type === 'block') {
+          // Paste Block
+          const offset = 0.0001;
+          const newShape = { ...clipboard.data.shape };
+          if (newShape.points) {
+            newShape.points = newShape.points.map(p => ({ x: p.x + offset, y: p.y - offset }));
+          }
+          try {
+            setSaving(true);
+            const blockData = { name: `${clipboard.data.name} (Copy)`, description: clipboard.data.description, campusId, shape: newShape };
+            const res = await createBlock(blockData);
+            await updateBlock(res.data._id, { shape: newShape });
+            toast.success('Block pasted');
+            pushUndo({ type: 'PASTE_BLOCK', id: res.data._id, blockData });
+            await loadBlocks();
+            setActiveBlock({ ...res.data, shape: newShape });
+          } catch(err) { toast.error('Failed to paste block'); }
+          setSaving(false);
+        } else if (step === 3 && clipboard.type === 'room' && activeFloor) {
+          // Paste Room
+          const offset = 0.00005;
+          const newShape = { ...clipboard.data.shape };
+          if (newShape.points) {
+            newShape.points = newShape.points.map(p => ({ x: p.x + offset, y: p.y - offset }));
+          }
+          try {
+            setSaving(true);
+            const roomData = { floorId: activeFloor._id, blockId: activeBlock._id, campusId, name: `${clipboard.data.name} (Copy)`, type: clipboard.data.type, shape: newShape };
+            const res = await createRoom(roomData);
+            toast.success('Room pasted');
+            pushUndo({ type: 'PASTE_ROOM', id: res.data._id, roomData });
+            await loadFloorData(activeFloor._id);
+            setActiveRoom(res.data);
+          } catch(err) { toast.error('Failed to paste room'); }
+          setSaving(false);
+        }
+      }
+
+      if (isCtrl && e.key.toLowerCase() === 'd') {
+        e.preventDefault();
+        if (step === 1 && activeBlock) {
+          // Duplicate Block
+          const offset = 0.0001;
+          const newShape = { ...activeBlock.shape };
+          if (newShape.points) {
+            newShape.points = newShape.points.map(p => ({ x: p.x + offset, y: p.y - offset }));
+          }
+          try {
+            setSaving(true);
+            const blockData = { name: `${activeBlock.name} (Copy)`, description: activeBlock.description, campusId, shape: newShape };
+            const res = await createBlock(blockData);
+            await updateBlock(res.data._id, { shape: newShape });
+            toast.success('Block duplicated');
+            pushUndo({ type: 'DUPLICATE_BLOCK', id: res.data._id, blockData });
+            await loadBlocks();
+            setActiveBlock({ ...res.data, shape: newShape });
+          } catch(err) { toast.error('Failed to duplicate block'); }
+          setSaving(false);
+        } else if (step === 3 && activeRoom && activeFloor) {
+          // Duplicate Room
+          const offset = 0.00005;
+          const newShape = { ...activeRoom.shape };
+          if (newShape.points) {
+            newShape.points = newShape.points.map(p => ({ x: p.x + offset, y: p.y - offset }));
+          }
+          try {
+            setSaving(true);
+            const roomData = { floorId: activeFloor._id, blockId: activeBlock._id, campusId, name: `${activeRoom.name} (Copy)`, type: activeRoom.type, shape: newShape };
+            const res = await createRoom(roomData);
+            toast.success('Room duplicated');
+            pushUndo({ type: 'DUPLICATE_ROOM', id: res.data._id, roomData });
+            await loadFloorData(activeFloor._id);
+            setActiveRoom(res.data);
+          } catch(err) { toast.error('Failed to duplicate room'); }
+          setSaving(false);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [step, activeBlock, activeRoom, clipboard, activeFloor, campusId, undoStack, redoStack]);
 
   // Handle map drawing shapes
   const handleShapeDraw = async (layer, shapeType) => {
@@ -410,6 +663,22 @@ export default function GuidedMapBuilder() {
               </div>
             </div>
           ))}
+
+          <div style={{ marginTop: 30, padding: 16, borderRadius: 12, backgroundColor: '#1a2235', border: '1px solid #1e2d40' }}>
+            <h4 style={{ margin: '0 0 10px', fontSize: 13, color: '#f1f5f9', display: 'flex', alignItems: 'center', gap: 6 }}><FiInfo size={14} color="#6366f1"/> Shortcuts</h4>
+            <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '8px 12px', fontSize: 12, color: '#94a3b8' }}>
+              <span style={{ color: '#fff', fontWeight: 600, background: '#111827', padding: '2px 6px', borderRadius: 4, border: '1px solid #2a3352', textAlign: 'center' }}>Ctrl + C</span>
+              <span style={{ alignSelf: 'center' }}>Copy Selected</span>
+              <span style={{ color: '#fff', fontWeight: 600, background: '#111827', padding: '2px 6px', borderRadius: 4, border: '1px solid #2a3352', textAlign: 'center' }}>Ctrl + V</span>
+              <span style={{ alignSelf: 'center' }}>Paste Shape</span>
+              <span style={{ color: '#fff', fontWeight: 600, background: '#111827', padding: '2px 6px', borderRadius: 4, border: '1px solid #2a3352', textAlign: 'center' }}>Ctrl + D</span>
+              <span style={{ alignSelf: 'center' }}>Duplicate</span>
+              <span style={{ color: '#fff', fontWeight: 600, background: '#111827', padding: '2px 6px', borderRadius: 4, border: '1px solid #2a3352', textAlign: 'center' }}>Ctrl + Z</span>
+              <span style={{ alignSelf: 'center' }}>Undo</span>
+              <span style={{ color: '#fff', fontWeight: 600, background: '#111827', padding: '2px 6px', borderRadius: 4, border: '1px solid #2a3352', textAlign: 'center' }}>Ctrl + Y</span>
+              <span style={{ alignSelf: 'center' }}>Redo</span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -430,21 +699,24 @@ export default function GuidedMapBuilder() {
           )}
           {step === 1 && (
             <>
-              <button style={S.toolBtn(drawMode === 'select')} onClick={() => setDrawMode('select')}><FiMove/> Move</button>
+              <button style={S.toolBtn(drawMode === 'select')} onClick={() => setDrawMode('select')}><FiMousePointer/> Select</button>
+              <button style={S.toolBtn(drawMode === 'drag')} onClick={() => setDrawMode('drag')}><FiMove/> Drag</button>
               <button style={S.toolBtn(drawMode === 'rotate')} onClick={() => setDrawMode('rotate')}><FiRefreshCw/> Rotate</button>
               <button style={S.toolBtn(drawMode === 'drawBlockRect')} onClick={() => setDrawMode('drawBlockRect')}><FiSquare/> Draw Outer Block</button>
             </>
           )}
           {step === 3 && (
             <>
-              <button style={S.toolBtn(drawMode === 'select')} onClick={() => setDrawMode('select')}><FiMove/> Select Room</button>
+              <button style={S.toolBtn(drawMode === 'select')} onClick={() => setDrawMode('select')}><FiMousePointer/> Select Room</button>
+              <button style={S.toolBtn(drawMode === 'drag')} onClick={() => setDrawMode('drag')}><FiMove/> Drag Room</button>
               <button style={S.toolBtn(drawMode === 'rotate')} onClick={() => setDrawMode('rotate')}><FiRefreshCw/> Rotate</button>
               <button style={S.toolBtn(drawMode === 'drawRoomRect')} onClick={() => setDrawMode('drawRoomRect')}><FiSquare/> Draw Room</button>
             </>
           )}
           {step === 4 && (
             <>
-              <button style={S.toolBtn(drawMode === 'select')} onClick={() => setDrawMode('select')}><FiMove/> Select</button>
+              <button style={S.toolBtn(drawMode === 'select')} onClick={() => setDrawMode('select')}><FiMousePointer/> Select</button>
+              <button style={S.toolBtn(drawMode === 'drag')} onClick={() => setDrawMode('drag')}><FiMove/> Drag Node</button>
               <button style={S.toolBtn(drawMode === 'addNode')} onClick={() => setDrawMode('addNode')}><FiMap/> Add Node</button>
               <button style={S.toolBtn(drawMode === 'addPath')} onClick={() => { setDrawMode('addPath'); setPathStart(null); }}><FiNavigation/> Draw Path</button>
             </>
@@ -466,51 +738,25 @@ export default function GuidedMapBuilder() {
         )}
 
         <MapContainer center={GMRIT} zoom={17} style={{width:'100%', height:'100%', zIndex:0}} zoomControl={false} maxZoom={24} whenReady={() => setMapReady(true)}>
-          <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" maxZoom={24} />
+          <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" maxZoom={24} maxNativeZoom={19} />
           <GeomanController onShapeDraw={handleShapeDraw} activeMode={drawMode} mapReady={mapReady} />
           <ClickHandler onClick={handleMapClick} />
 
           {/* === ALWAYS VISIBLE: Main Campus Pathway Nodes & Paths === */}
           {showMainPathway && mainNodes.map(n => (
-            <Circle key={n._id} center={[n.x,n.y]} radius={step === 0 ? 2 : 1.5}
-              pathOptions={{color:'#f59e0b', fillColor:'#f59e0b', fillOpacity: step === 0 ? 1 : 0.5, weight: step === 0 ? 3 : 2}}
-              eventHandlers={step === 0 ? { click: (e) => { L.DomEvent.stopPropagation(e); if(window.confirm('Delete this main node?')){ import('../api').then(m => m.deleteNode(n._id).then(() => loadMainPathway())); } } } : {}}
+            <EditableNode key={n._id} n={n} stepMode={step} isMain={true} 
+              onUpdate={async (id, data) => { await import('../api').then(m => m.updateNode(id, data)); loadMainPathway(); }}
+              onDelete={async (id) => { await import('../api').then(m => m.deleteNode(id)); loadMainPathway(); }} 
             />
           ))}
           {showMainPathway && mainPaths.map(p => {
             const a = mainNodes.find(n => n._id === p.nodeA);
             const b = mainNodes.find(n => n._id === p.nodeB);
             if (!a || !b) return null;
-            const color = p.bidirectional ? '#f59e0b' : '#ef4444';
-            const midX = (a.x + b.x) / 2;
-            const midY = (a.y + b.y) / 2;
-            return (
-              <React.Fragment key={p._id}>
-                <Polyline positions={[[a.x,a.y],[b.x,b.y]]} pathOptions={{color, weight: step === 0 ? 4 : 2, dashArray: p.bidirectional ? null : '8,4', opacity: step === 0 ? 0.9 : 0.4}}
-                  eventHandlers={step === 0 ? { click: (e) => { 
-                    L.DomEvent.stopPropagation(e);
-                    const action = window.prompt('Enter action:\n1 = Outgoing (→)\n2 = Incoming (←)\n3 = Both Ways (↔)\n4 = Delete Path', '3');
-                    if (action === '1') updatePath(p._id, { bidirectional: false }).then(() => loadMainPathway());
-                    else if (action === '2') { updatePath(p._id, { bidirectional: false, nodeA: p.nodeB, nodeB: p.nodeA }).then(() => loadMainPathway()); }
-                    else if (action === '3') updatePath(p._id, { bidirectional: true }).then(() => loadMainPathway());
-                    else if (action === '4') { if(window.confirm('Delete this path?')) deletePath(p._id).then(() => loadMainPathway()); }
-                  } } : {}} />
-                {!p.bidirectional && (
-                  <Circle center={[midX, midY]} radius={0.8} pathOptions={{color:'#ef4444', fillColor:'#ef4444', fillOpacity:1, weight:1}}>
-                    <Tooltip permanent direction="center" className="room-label">
-                      <span style={{fontSize:9,color:'#ef4444',fontWeight:800}}>→</span>
-                    </Tooltip>
-                  </Circle>
-                )}
-                {p.bidirectional && step === 0 && (
-                  <Circle center={[midX, midY]} radius={0.5} pathOptions={{color:'#f59e0b', fillColor:'#f59e0b', fillOpacity:0.6, weight:1}}>
-                    <Tooltip permanent direction="center" className="room-label">
-                      <span style={{fontSize:8,color:'#f59e0b',fontWeight:800}}>↔</span>
-                    </Tooltip>
-                  </Circle>
-                )}
-              </React.Fragment>
-            );
+            return <EditablePath key={p._id} p={p} a={a} b={b} stepMode={step} 
+              onUpdate={async (id, data) => { await updatePath(id, data); loadMainPathway(); }}
+              onDelete={async (id) => { await deletePath(id); loadMainPathway(); }} 
+            />;
           })}
           {step === 0 && mainPathStart && <Circle center={[mainPathStart.x,mainPathStart.y]} radius={3} pathOptions={{color:'#22c55e',fillOpacity:1}} />}
 
@@ -535,11 +781,20 @@ export default function GuidedMapBuilder() {
           })}
 
           {/* Render Interior Nodes & Paths (Step 4) */}
-          {step === 4 && nodes.map(n => <Circle key={n._id} center={[n.x,n.y]} radius={1} pathOptions={{color:NC[n.type]||'#94a3b8',fillColor:NC[n.type]||'#94a3b8',fillOpacity:1, weight:3}} />)}
+          {step === 4 && nodes.map(n => (
+            <EditableNode key={n._id} n={n} stepMode={step} isMain={false} 
+              onUpdate={async (id, data) => { await import('../api').then(m => m.updateNode(id, data)); loadFloorData(activeFloor._id); }}
+              onDelete={async (id) => { await import('../api').then(m => m.deleteNode(id)); loadFloorData(activeFloor._id); }} 
+            />
+          ))}
           {step === 4 && paths.map(p => {
             const a=nodes.find(n=>n._id===p.nodeA) || mainNodes.find(n=>n._id===p.nodeA);
             const b=nodes.find(n=>n._id===p.nodeB) || mainNodes.find(n=>n._id===p.nodeB);
-            return a&&b?<Polyline key={p._id} positions={[[a.x,a.y],[b.x,b.y]]} pathOptions={{color:'#22c55e',weight:3,dashArray:'6,6'}} eventHandlers={{click:()=>{ if(window.confirm('Delete path?')){ deletePath(p._id); loadFloorData(activeFloor._id); } }}} /> : null;
+            if(!a || !b) return null;
+            return <EditablePath key={p._id} p={p} a={a} b={b} stepMode={step} 
+              onUpdate={async (id, data) => { await updatePath(id, data); loadFloorData(activeFloor._id); }}
+              onDelete={async (id) => { await deletePath(id); loadFloorData(activeFloor._id); }} 
+            />;
           })}
           {step === 4 && pathStart && <Circle center={[pathStart.x,pathStart.y]} radius={3} pathOptions={{color:'#f59e0b',fillOpacity:1}} />}
         </MapContainer>
@@ -661,7 +916,13 @@ export default function GuidedMapBuilder() {
                   {floors.map(f => (
                     <div key={f._id} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 12px', background: '#1a2235', borderRadius: 8, marginBottom: 8, border: '1px solid #2a3352' }}>
                       <span style={{ fontWeight: 600, color: '#fff', fontSize: 13 }}>{f.name}</span>
-                      <button onClick={() => removeFloor(f._id)} style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer' }}><FiTrash2/></button>
+                      <div style={{ display: 'flex' }}>
+                        <button onClick={() => {
+                          const newName = window.prompt('Rename Floor:', f.name);
+                          if(newName) { import('../api').then(m => m.updateFloor(f._id, {name: newName}).then(() => loadFloors(activeBlock._id))); }
+                        }} style={{ background: 'transparent', border: 'none', color: '#6366f1', cursor: 'pointer', marginRight: 8 }}><FiSettings/></button>
+                        <button onClick={() => removeFloor(f._id)} style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer' }}><FiTrash2/></button>
+                      </div>
                     </div>
                   ))}
                   <button style={{...S.primaryBtn, background: '#1a2235', border: '1px solid #1e2d40', marginTop: 10}} onClick={() => setStep(3)}>Proceed to Interior Design</button>
