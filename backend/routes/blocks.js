@@ -38,7 +38,9 @@ router.post('/', async (req, res) => {
 // PUT update block
 router.put('/:id', async (req, res) => {
   try {
+    console.log(`[UPDATE BLOCK] Received shape for ${req.params.id}:`, JSON.stringify(req.body.shape));
     const block = await Block.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    console.log(`[UPDATE BLOCK] Saved shape:`, JSON.stringify(block.shape));
     if (!block) return res.status(404).json({ error: 'Block not found' });
     res.json(block);
   } catch (err) {

@@ -9,6 +9,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import { ThemeContext } from "../context/ThemeContext";
 import { getCampuses, cachedGet } from "../api";
 import { SHADOWS, RADIUS, QUICK_ACTIONS } from "../theme/designSystem";
+import ChatbotOverlay from "../ChatbotOverlay";
 
 const { width: SW } = Dimensions.get("window");
 const HOUR = new Date().getHours();
@@ -33,6 +34,7 @@ export default function HomeScreen({ navigation }) {
   const { colors, isDark } = useContext(ThemeContext);
   const [campuses, setCampuses] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [chatOpen, setChatOpen] = useState(false);
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const headerAnim = useRef(new Animated.Value(0)).current;
   const cardAnims = useRef(QUICK_ACTIONS.map(() => new Animated.Value(0))).current;
@@ -56,6 +58,12 @@ export default function HomeScreen({ navigation }) {
       .then(d => { setCampuses(d); setLoading(false); })
       .catch(() => setLoading(false));
   }, []);
+
+  const [showNotifs, setShowNotifs] = useState(false);
+  const MOCK_NOTIFS = [
+    { id: 1, title: "Map Updated", desc: "Admin published new navigation paths for CSE Block.", time: "Just now", unread: true },
+    { id: 2, title: "New Floor Added", desc: "Floor 2 was added to Block A.", time: "1d ago", unread: false },
+  ];
 
   const s = StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.bg },
@@ -193,6 +201,7 @@ export default function HomeScreen({ navigation }) {
   const GRAD_BARS = [["#6366f1", "#4f46e5"], ["#22c55e", "#16a34a"], ["#3b82f6", "#2563eb"]];
 
   return (
+    <>
     <ScrollView style={s.container} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
       {/* Header */}
       <Animated.View style={[s.header, { opacity: headerAnim, transform: [{ translateY: headerAnim.interpolate({ inputRange: [0, 1], outputRange: [-16, 0] }) }] }]}>
@@ -201,10 +210,15 @@ export default function HomeScreen({ navigation }) {
             <Text style={s.greetingText}>{GREETING} 👋</Text>
             <Text style={s.appName}>Nav<Text style={s.appAccent}>X</Text></Text>
           </View>
-          <TouchableOpacity style={s.avatar} onPress={() => navigation.navigate("Settings")}>
-            <Ionicons name="person" size={22} color={colors.primary} />
-            <View style={s.notifDot} />
-          </TouchableOpacity>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+            <TouchableOpacity style={[s.avatar, { width: 42, height: 42 }]} onPress={() => setShowNotifs(true)}>
+              <Ionicons name="notifications" size={20} color={colors.primary} />
+              <View style={s.notifDot} />
+            </TouchableOpacity>
+            <TouchableOpacity style={[s.avatar, { width: 42, height: 42 }]} onPress={() => navigation.navigate("Settings")}>
+              <Ionicons name="person" size={20} color={colors.primary} />
+            </TouchableOpacity>
+          </View>
         </View>
         <View style={s.searchRow}>
           <Ionicons name="search" size={20} color={colors.textMuted} />
@@ -351,5 +365,57 @@ export default function HomeScreen({ navigation }) {
         )}
       </View>
     </ScrollView>
+
+    {/* ── AI Chatbot FAB ───────────────────────────────────── */}
+    <TouchableOpacity
+      onPress={() => setChatOpen(true)}
+      style={{
+        position: 'absolute', bottom: 24, right: 20,
+        width: 56, height: 56, borderRadius: 28,
+        backgroundColor: '#6366f1',
+        alignItems: 'center', justifyContent: 'center',
+        ...SHADOWS.lg,
+        shadowColor: '#6366f1',
+        shadowOpacity: 0.45,
+        elevation: 10,
+      }}
+      activeOpacity={0.85}>
+      <Ionicons name="sparkles" size={24} color="#fff" />
+    </TouchableOpacity>
+
+    {/* ── AI Chatbot Overlay ───────────────────────────────── */}
+    <ChatbotOverlay
+      visible={chatOpen}
+      onClose={() => setChatOpen(false)}
+      onNavigate={(room) => { setChatOpen(false); navigation.navigate('Navigation', { room }); }}
+      onOpenMap={() => { setChatOpen(false); navigation.navigate('Map'); }}
+      onStartAR={() => { setChatOpen(false); navigation.navigate('AR'); }}
+    />
+
+    {/* ── Notifications Panel ──────────────────────────────── */}
+    {showNotifs && (
+      <View style={{ position: "absolute", top: 0, bottom: 0, left: 0, right: 0, zIndex: 100 }}>
+        <TouchableOpacity style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.5)" }} activeOpacity={1} onPress={() => setShowNotifs(false)} />
+        <Animated.View style={{ position: "absolute", top: Platform.OS === "ios" ? 100 : 70, right: 20, width: SW * 0.85, backgroundColor: colors.card, borderRadius: RADIUS.lg, ...SHADOWS.lg, padding: 16 }}>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <Text style={{ fontSize: 16, fontWeight: "800", color: colors.text }}>Notifications</Text>
+            <TouchableOpacity onPress={() => setShowNotifs(false)}>
+              <Ionicons name="close" size={20} color={colors.textSec} />
+            </TouchableOpacity>
+          </View>
+          {MOCK_NOTIFS.map(n => (
+            <View key={n.id} style={{ paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                {n.unread && <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: "#ef4444" }} />}
+                <Text style={{ fontSize: 14, fontWeight: "700", color: colors.text }}>{n.title}</Text>
+                <Text style={{ fontSize: 11, color: colors.textMuted, marginLeft: "auto" }}>{n.time}</Text>
+              </View>
+              <Text style={{ fontSize: 13, color: colors.textSec, lineHeight: 18 }}>{n.desc}</Text>
+            </View>
+          ))}
+        </Animated.View>
+      </View>
+    )}
+  </>
   );
 }

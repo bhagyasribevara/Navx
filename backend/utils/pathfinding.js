@@ -291,7 +291,8 @@ function generateDirections(detailedPath) {
     
     const dx = next.x - current.x;
     const dy = next.y - current.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
+    const distDegrees = Math.sqrt(dx * dx + dy * dy);
+    const distMeters = distDegrees * 111320; // Approx convert degrees to meters
     const angle = Math.atan2(dy, dx) * (180 / Math.PI);
 
     let direction = 'Continue straight';
@@ -325,9 +326,9 @@ function generateDirections(detailedPath) {
       instruction: direction,
       from: { x: current.x, y: current.y, floorId: current.floorId },
       to: { x: next.x, y: next.y, floorId: next.floorId },
-      distance: Math.round(dist),
+      distance: Math.round(distMeters),
       angle: Math.round(angle),
-      eta: Math.round(dist / WALKING_SPEED)
+      eta: Math.round(distMeters / WALKING_SPEED)
     });
   }
 

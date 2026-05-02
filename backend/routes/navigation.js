@@ -35,15 +35,34 @@ router.post('/route-to-room', async (req, res) => {
   try {
     const { startNodeId, roomId, campusId, algorithm = 'astar', accessible = false } = req.body;
     
-    const roomNode = await NavNode.findOne({ roomId, isActive: true });
-    if (!roomNode) return res.status(404).json({ error: 'No navigation node linked to this room' });
-    
     const nodes = await NavNode.find({ campusId, isActive: true });
     const paths = await NavPath.find({ campusId, isActive: true });
     const graph = buildGraph(nodes, paths);
+
+    let endNodeId = null;
+    const roomNode = await NavNode.findOne({ roomId, isActive: true });
+    
+    if (roomNode) {
+      endNodeId = roomNode._id.toString();
+    } else {
+      // Fallback: Find nearest node to the room's location
+      const room = await Room.findById(roomId);
+      if (!room || !room.shape) return res.status(404).json({ error: 'Room not found or lacks geometry' });
+      
+      let destX = room.shape.x;
+      let destY = room.shape.y;
+      if (room.shape.points && room.shape.points.length > 0) {
+        destX = room.shape.points[0].x;
+        destY = room.shape.points[0].y;
+      }
+      
+      const nearest = findNearestNode(graph, destX, destY, room.floorId ? room.floorId.toString() : null);
+      if (!nearest) return res.status(404).json({ error: 'No navigation nodes near destination' });
+      endNodeId = nearest.id;
+    }
     
     const pathfinder = algorithm === 'dijkstra' ? dijkstra : astar;
-    const result = pathfinder(graph, startNodeId, roomNode._id.toString(), { requireAccessible: accessible });
+    const result = pathfinder(graph, startNodeId, endNodeId, { requireAccessible: accessible });
     
     if (!result.found) return res.status(404).json({ error: 'No route found to this room' });
     

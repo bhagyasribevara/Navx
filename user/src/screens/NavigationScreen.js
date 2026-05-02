@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useContext, useRef } from "react";
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  Dimensions, Animated, Platform,
+  Dimensions, Animated, Platform, ActivityIndicator
 } from "react-native";
-import Svg, { Rect, Circle, Line, G, Text as SvgText } from "react-native-svg";
+import { WebView } from "react-native-webview";
+import * as Location from "expo-location";
 import { Ionicons } from "@expo/vector-icons";
 import { Accelerometer, Magnetometer } from "expo-sensors";
 import * as Speech from "expo-speech";
@@ -24,9 +25,53 @@ const DIR_ICONS = {
   arrived: "checkmark-circle",
 };
 
+function buildNavMapHTML(rooms, pathPoints, userPos, targetRoom) {
+  const center = userPos ? [userPos.x, userPos.y] : (pathPoints?.length ? [pathPoints[0].x, pathPoints[0].y] : [18.4665, 83.6629]);
+  
+  const roomGeoJSON = rooms.map(r => {
+    const s = r.shape;
+    if (!s) return '';
+    const isSel = targetRoom?._id === r._id;
+    const c = isSel ? '#ef4444' : '#64748b';
+    let coords = '';
+    if (s.points && s.points.length > 0) {
+      coords = s.points.map(p => `[${p.x},${p.y}]`).join(',');
+    } else if (s.x && s.y) {
+      coords = `[${s.x},${s.y}],[${s.x},${s.y+(s.width||0.0003)}],[${s.x+(s.height||0.0002)},${s.y+(s.width||0.0003)}],[${s.x+(s.height||0.0002)},${s.y}]`;
+    } else { return ''; }
+    return `L.polygon([${coords}], {color:'${c}', fillColor:'${c}', fillOpacity:${isSel?0.6:0.2}, weight:${isSel?3:1}}).addTo(map);`;
+  }).join('\n');
+
+  const destX = targetRoom?.shape?.points?.[0]?.x || targetRoom?.shape?.x;
+  const destY = targetRoom?.shape?.points?.[0]?.y || targetRoom?.shape?.y;
+  const destDot = (destX && destY) ? `L.circleMarker([${destX},${destY}],{radius:9,color:'#fff',weight:2,fillColor:'#ef4444',fillOpacity:1}).addTo(map);` : '';
+
+  const pathStr = pathPoints ? pathPoints.map(p => `[${p.x},${p.y}]`).join(',') : '';
+  const routeLine = pathStr ? `L.polyline([${pathStr}],{color:'#4f46e5',weight:5,opacity:0.8,dashArray:'8,8'}).addTo(map);` : '';
+  const userDot = userPos ? `L.circleMarker([${userPos.x},${userPos.y}],{radius:8,color:'#fff',weight:2,fillColor:'#4f46e5',fillOpacity:1}).addTo(map);` : '';
+  
+  return `<!DOCTYPE html>
+<html><head>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>body{margin:0;padding:0}#map{width:100%;height:100vh}</style>
+</head><body><div id="map"></div>
+<script>
+var map=L.map('map',{zoomControl:false}).setView([${center[0]},${center[1]}], 19);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:22}).addTo(map);
+${roomGeoJSON}
+${routeLine}
+${userDot}
+${destDot}
+</script></body></html>`;
+}
+
 export default function NavigationScreen({ navigation, route }) {
   const { colors, language } = useContext(ThemeContext);
-  const { room, campusId, mapData } = route.params || {};
+  const { room, campusId: initialCampusId, mapData: initialMapData } = route.params || {};
+  const [mapData, setMapData] = useState(initialMapData);
+  const [campusId, setCampusId] = useState(initialCampusId || room?.campusId);
   const [routeData, setRouteData] = useState(null);
   const [currentStep, setCurrentStep] = useState(0);
   const [userPos, setUserPos] = useState(null);
@@ -35,6 +80,10 @@ export default function NavigationScreen({ navigation, route }) {
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [arrived, setArrived] = useState(false);
   const [error, setError] = useState(null);
+  const [liveDistance, setLiveDistance] = useState(0);
+
+  const [locationPerm, setLocationPerm] = useState(null);
+  const [gpsLoading, setGpsLoading] = useState(false);
 
   const posEngine = useRef(new PositionEngine()).current;
   const stepDetector = useRef(null);
@@ -42,6 +91,21 @@ export default function NavigationScreen({ navigation, route }) {
   const progressAnim = useRef(new Animated.Value(0)).current;
   const dirCardAnim = useRef(new Animated.Value(0)).current;
   const arrivedAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    (async () => {
+      let { status } = await Location.requestForegroundPermissionsAsync();
+      setLocationPerm(status === 'granted');
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (!mapData && campusId) {
+      import('../api').then(({ getMapData }) => {
+        getMapData(campusId).then(data => setMapData(data)).catch(console.warn);
+      });
+    }
+  }, [campusId, mapData]);
 
   useEffect(() => {
     const unsub = posEngine.onPositionUpdate(pos => {
@@ -52,24 +116,55 @@ export default function NavigationScreen({ navigation, route }) {
   }, []);
 
   useEffect(() => {
+    let locationWatcher;
     if (isNavigating) {
+      // Step detector for dead reckoning bridging
       stepDetector.current = new StepDetector(() => posEngine.processStep(heading));
       const accel = Accelerometer.addListener(d => stepDetector.current?.processAccelerometer(d.x, d.y, d.z));
       Accelerometer.setUpdateInterval(100);
+      
       const mag = Magnetometer.addListener(d => {
         const h = Math.atan2(d.y, d.x) * (180 / Math.PI);
         posEngine.updateHeading((h + 360) % 360);
       });
       Magnetometer.setUpdateInterval(100);
+
+      // GPS watch for live distance and map updates
+      if (locationPerm) {
+        Location.watchPositionAsync(
+          { accuracy: Location.Accuracy.High, distanceInterval: 1 },
+          (loc) => {
+            const lat = loc.coords.latitude;
+            const lng = loc.coords.longitude;
+            setUserPos({ x: lat, y: lng, floor: room?.floorId });
+            
+            if (routeData && routeData.path && !arrived) {
+              const target = routeData.path[currentStep];
+              if (target) {
+                // Approximate distance to next node + remaining path
+                const distToNextNodeMeters = Math.hypot(lat - target.x, lng - target.y) * 111320;
+                const remainingPathMeters = routeData.directions?.slice(currentStep).reduce((s,d)=>s+(d.distance||0), 0) || 0;
+                setLiveDistance(Math.round(distToNextNodeMeters + remainingPathMeters));
+              }
+            }
+          }
+        ).then(w => locationWatcher = w);
+      }
+
       Animated.loop(
         Animated.sequence([
           Animated.timing(pulseAnim, { toValue: 1.5, duration: 900, useNativeDriver: false }),
           Animated.timing(pulseAnim, { toValue: 1, duration: 900, useNativeDriver: false }),
         ])
       ).start();
-      return () => { accel.remove(); mag.remove(); };
+
+      return () => { 
+        accel.remove(); 
+        mag.remove(); 
+        if (locationWatcher) locationWatcher.remove();
+      };
     }
-  }, [isNavigating, heading]);
+  }, [isNavigating, heading, currentStep, routeData, arrived]);
 
   useEffect(() => {
     if (routeData) {
@@ -106,10 +201,36 @@ export default function NavigationScreen({ navigation, route }) {
     if (!mapData || !room) return;
     try {
       setError(null);
-      const startNode = mapData.nodes?.[0];
-      if (!startNode) return;
+      setGpsLoading(true);
+      let startNode = mapData.nodes?.[0];
+
+      if (locationPerm) {
+        try {
+          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+          const userLat = loc.coords.latitude;
+          const userLng = loc.coords.longitude;
+          setUserPos({ x: userLat, y: userLng, floor: room.floorId });
+          
+          if (mapData.nodes?.length > 0) {
+            let nearest = null;
+            let minDist = Infinity;
+            for (let n of mapData.nodes) {
+              const d = Math.hypot(n.x - userLat, n.y - userLng);
+              if (d < minDist) { minDist = d; nearest = n; }
+            }
+            // Use nearest node as start to prevent snapping to isolated DB records
+            if (nearest) startNode = nearest;
+          }
+        } catch (e) {
+          console.warn("GPS fetch error:", e);
+        }
+      }
+      setGpsLoading(false);
+
+      if (!startNode) return setError("No navigation nodes found on this campus.");
       const result = await findRouteToRoom({ startNodeId: startNode._id, roomId: room._id, campusId });
       setRouteData(result);
+      setLiveDistance(Math.round(result.distance));
       setCurrentStep(0);
       setIsNavigating(true);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -117,8 +238,9 @@ export default function NavigationScreen({ navigation, route }) {
         Speech.speak(`Starting navigation to ${room.name}. ${result.directions?.[0]?.instruction || "Follow the route."}`);
       }
       Animated.spring(dirCardAnim, { toValue: 1, tension: 80, friction: 10, useNativeDriver: true }).start();
-    } catch {
-      setError("Could not find a route. Try QR scan first.");
+    } catch (err) {
+      const msg = err.response?.data?.error || "Could not find a route. Please ensure you are near a mapped path.";
+      setError(msg);
     }
   };
 
@@ -244,62 +366,14 @@ export default function NavigationScreen({ navigation, route }) {
         </View>
       )}
 
-      {/* Map */}
+      {/* Map Area */}
       <View style={s.mapArea}>
-        <Svg width={SW} height={SH - 340} viewBox="0 0 800 600">
-          {/* Grid */}
-          {Array.from({ length: 40 }, (_, i) => (
-            <G key={i}>
-              <Line x1={i * 20} y1={0} x2={i * 20} y2={600} stroke="#0f1e33" strokeWidth={0.5} />
-              <Line x1={0} y1={i * 20} x2={800} y2={i * 20} stroke="#0f1e33" strokeWidth={0.5} />
-            </G>
-          ))}
-          {/* Rooms */}
-          {floorRooms.map(r => {
-            const sh = r.shape;
-            const isTarget = r._id === room?._id;
-            const rc = ROOM_COLORS[r.type] || "#3b82f6";
-            return (
-              <G key={r._id}>
-                {sh.type === "circle" ? (
-                  <Circle cx={sh.x + (sh.radius || 30)} cy={sh.y + (sh.radius || 30)} r={sh.radius || 30}
-                    fill={isTarget ? colors.primary + "60" : rc + "22"} stroke={isTarget ? colors.primaryLight : rc} strokeWidth={isTarget ? 2.5 : 1} />
-                ) : (
-                  <Rect x={sh.x} y={sh.y} width={sh.width || 80} height={sh.height || 60}
-                    rx={5} fill={isTarget ? colors.primary + "60" : rc + "22"} stroke={isTarget ? colors.primaryLight : rc} strokeWidth={isTarget ? 2.5 : 1} />
-                )}
-                <SvgText x={sh.type === "circle" ? sh.x + (sh.radius || 30) : sh.x + (sh.width || 80) / 2}
-                  y={sh.type === "circle" ? sh.y + (sh.radius || 30) : sh.y + (sh.height || 60) / 2 + 4}
-                  fill="#e2e8f0" fontSize={9} textAnchor="middle">{r.name}</SvgText>
-              </G>
-            );
-          })}
-          {/* Route */}
-          {routeData?.path?.map((p, i) => {
-            if (i === 0) return null;
-            const prev = routeData.path[i - 1];
-            const isPast = i <= currentStep;
-            return <Line key={i} x1={prev.x} y1={prev.y} x2={p.x} y2={p.y}
-              stroke={isPast ? colors.accent : colors.primary} strokeWidth={4} strokeLinecap="round" />;
-          })}
-          {/* User dot */}
-          {userPos && (
-            <G>
-              <Circle cx={userPos.x} cy={userPos.y} r={16} fill="#6366f118" />
-              <Circle cx={userPos.x} cy={userPos.y} r={8} fill="#6366f1" stroke="#fff" strokeWidth={2} />
-            </G>
-          )}
-          {/* Destination pin */}
-          {room?.shape && (
-            <G>
-              <Circle
-                cx={room.shape.type === "circle" ? room.shape.x + (room.shape.radius || 30) : room.shape.x + (room.shape.width || 80) / 2}
-                cy={room.shape.y - 12}
-                r={8} fill="#ef4444" stroke="#fff" strokeWidth={2}
-              />
-            </G>
-          )}
-        </Svg>
+        <WebView
+          source={{ html: buildNavMapHTML(floorRooms, routeData?.path, userPos, room) }}
+          style={{ flex: 1, backgroundColor: 'transparent' }}
+          javaScriptEnabled
+          scrollEnabled={false}
+        />
 
         {/* Direction card */}
         {isNavigating && currentDir && !arrived && (
@@ -333,12 +407,12 @@ export default function NavigationScreen({ navigation, route }) {
           <>
             <View style={s.metricsRow}>
               <View style={s.metric}>
-                <Text style={s.metricValue}>{Math.round(routeData.distance)}m</Text>
-                <Text style={s.metricLabel}>Distance</Text>
+                <Text style={s.metricValue}>{liveDistance}m</Text>
+                <Text style={s.metricLabel}>Distance Left</Text>
               </View>
               <View style={s.metric}>
-                <Text style={s.metricValue}>{Math.ceil(routeData.distance / 1.2 / 60)}'</Text>
-                <Text style={s.metricLabel}>ETA</Text>
+                <Text style={s.metricValue}>{Math.max(1, Math.ceil(liveDistance / 1.2 / 60))}'</Text>
+                <Text style={s.metricLabel}>Live ETA</Text>
               </View>
               <View style={s.metric}>
                 <Text style={s.metricValue}>{routeData.nodeCount || routeData.directions?.length}</Text>
@@ -351,9 +425,9 @@ export default function NavigationScreen({ navigation, route }) {
           </>
         )}
         {!isNavigating ? (
-          <TouchableOpacity style={s.startBtn} onPress={startNavigation}>
-            <Ionicons name="navigate" size={20} color="#fff" />
-            <Text style={s.btnText}>Start Navigation</Text>
+          <TouchableOpacity style={s.startBtn} onPress={startNavigation} disabled={gpsLoading}>
+            {gpsLoading ? <ActivityIndicator color="#fff" /> : <Ionicons name="navigate" size={20} color="#fff" />}
+            <Text style={s.btnText}>{gpsLoading ? "Locating..." : "Start Navigation"}</Text>
           </TouchableOpacity>
         ) : (
           <TouchableOpacity style={[s.startBtn, s.stopBtn]} onPress={() => { setIsNavigating(false); Speech.stop(); }}>

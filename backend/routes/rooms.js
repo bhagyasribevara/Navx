@@ -68,7 +68,9 @@ router.post('/', async (req, res) => {
 // PUT update room
 router.put('/:id', async (req, res) => {
   try {
+    console.log(`[UPDATE ROOM] Received shape for ${req.params.id}:`, JSON.stringify(req.body.shape));
     const room = await Room.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    console.log(`[UPDATE ROOM] Saved shape:`, JSON.stringify(room.shape));
     if (!room) return res.status(404).json({ error: 'Room not found' });
     res.json(room);
   } catch (err) {

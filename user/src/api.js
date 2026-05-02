@@ -1,10 +1,14 @@
 import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Platform } from "react-native";
+import Constants from "expo-constants";
 
-const devHost = Platform.OS === "android" ? "10.0.2.2" : "localhost";
-const API_BASE =
-  process.env.EXPO_PUBLIC_API_BASE_URL || `http://${devHost}:5000/api`;
+let devHost = Platform.OS === "android" ? "10.0.2.2" : "localhost";
+if (Constants?.expoConfig?.hostUri) {
+  devHost = Constants.expoConfig.hostUri.split(':')[0];
+}
+
+const API_BASE = process.env.EXPO_PUBLIC_API_BASE_URL || `http://${devHost}:5000/api`;
 
 const api = axios.create({
   baseURL: API_BASE,
@@ -44,7 +48,7 @@ export const getRooms = (floorId) =>
 export const searchRooms = (query, campusId) =>
   api.get(`/rooms/search/${query}?campusId=${campusId}`).then((r) => r.data);
 export const getMapData = (campusId) =>
-  api.get(`/navigation/map-data/${campusId}`).then((r) => r.data);
+  api.get(`/navigation/map-data/${campusId}?t=${Date.now()}`).then((r) => r.data);
 export const findRoute = (data) =>
   api.post("/navigation/route", data).then((r) => r.data);
 export const findRouteToRoom = (data) =>
@@ -57,5 +61,10 @@ export const getBeaconsForFloor = (floorId) =>
   api.get(`/beacons/floor/${floorId}`).then((r) => r.data);
 export const logAnalytics = (data) =>
   api.post("/analytics", data).catch(() => {});
+
+// AI Chatbot
+export const chatWithAI = (message, sessionId, context) =>
+  api.post("/ai/chat", { message, sessionId, context }).then((r) => r.data);
+
 
 export default api;
