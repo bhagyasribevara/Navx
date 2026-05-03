@@ -8,18 +8,12 @@ import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { ThemeContext } from "../context/ThemeContext";
 import { getCampuses, cachedGet } from "../api";
-import { SHADOWS, RADIUS, QUICK_ACTIONS } from "../theme/designSystem";
-import ChatbotOverlay from "../ChatbotOverlay";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { SHADOWS, RADIUS, QUICK_ACTIONS, ROOM_COLORS } from "../theme/designSystem";
 
 const { width: SW } = Dimensions.get("window");
 const HOUR = new Date().getHours();
 const GREETING = HOUR < 12 ? "Good Morning" : HOUR < 17 ? "Good Afternoon" : "Good Evening";
-
-const RECENT = [
-  { id: "r1", name: "Computer Lab 3", floor: "Floor 2", block: "Block A", icon: "flask", color: "#22c55e" },
-  { id: "r2", name: "Library Hall", floor: "Floor 1", block: "Block B", icon: "library", color: "#06b6d4" },
-  { id: "r3", name: "Principal Office", floor: "Floor 3", block: "Block C", icon: "business", color: "#8b5cf6" },
-];
 
 const CATS = [
   { label: "Labs", icon: "flask", color: "#22c55e", filter: "lab" },
@@ -33,8 +27,8 @@ const CATS = [
 export default function HomeScreen({ navigation }) {
   const { colors, isDark } = useContext(ThemeContext);
   const [campuses, setCampuses] = useState([]);
+  const [recentRooms, setRecentRooms] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [chatOpen, setChatOpen] = useState(false);
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const headerAnim = useRef(new Animated.Value(0)).current;
   const cardAnims = useRef(QUICK_ACTIONS.map(() => new Animated.Value(0))).current;
@@ -43,6 +37,10 @@ export default function HomeScreen({ navigation }) {
     Animated.stagger(70, cardAnims.map(a =>
       Animated.spring(a, { toValue: 1, useNativeDriver: true, tension: 130, friction: 9 })
     )).start();
+    // Load real recent rooms
+    AsyncStorage.getItem("navx_recent").then(stored => {
+      if (stored) setRecentRooms(JSON.parse(stored));
+    }).catch(() => {});
     return () => cardAnims.forEach(a => a.setValue(0));
   }, []));
 
@@ -296,6 +294,7 @@ export default function HomeScreen({ navigation }) {
       </View>
 
       {/* Recently Visited */}
+      {recentRooms.length > 0 && (
       <View style={s.section}>
         <View style={s.secRow}>
           <Text style={s.secTitle}>Recently Visited</Text>
@@ -303,21 +302,25 @@ export default function HomeScreen({ navigation }) {
             <Text style={s.seeAll}>See All →</Text>
           </TouchableOpacity>
         </View>
-        {RECENT.map(loc => (
-          <TouchableOpacity key={loc.id} style={s.recentCard} onPress={() => navigation.navigate("Map")} activeOpacity={0.82}>
-            <View style={[s.recentIcon, { backgroundColor: loc.color + "20" }]}>
-              <Ionicons name={loc.icon} size={22} color={loc.color} />
+        {recentRooms.map(rm => {
+          const roomColor = ROOM_COLORS[rm.type] || colors.primary;
+          return (
+          <TouchableOpacity key={rm._id} style={s.recentCard} onPress={() => navigation.navigate("Navigation", { room: rm, campusId: rm.campusId })} activeOpacity={0.82}>
+            <View style={[s.recentIcon, { backgroundColor: roomColor + "20" }]}>
+              <Ionicons name="location" size={22} color={roomColor} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={s.recentName}>{loc.name}</Text>
-              <Text style={s.recentMeta}>{loc.floor} · {loc.block}</Text>
+              <Text style={s.recentName}>{rm.name}</Text>
+              <Text style={s.recentMeta}>{(rm.type || "room").toUpperCase()}{rm.roomNumber ? ` · Room ${rm.roomNumber}` : ""}</Text>
             </View>
             <View style={s.navBadge}>
               <Ionicons name="navigate" size={18} color={colors.primary} />
             </View>
           </TouchableOpacity>
-        ))}
+          );
+        })}
       </View>
+      )}
 
       {/* Campuses */}
       <View style={s.section}>
@@ -353,9 +356,9 @@ export default function HomeScreen({ navigation }) {
                       <Ionicons name="map" size={16} color="#fff" />
                       <Text style={{ color: "#fff", fontWeight: "700", fontSize: 13, marginLeft: 6 }}>Explore Map</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity style={s.arBtn} onPress={() => navigation.navigate("AR")}>
-                      <Ionicons name="camera" size={16} color={colors.primary} />
-                      <Text style={{ color: colors.primary, fontWeight: "700", fontSize: 13, marginLeft: 6 }}>AR</Text>
+                    <TouchableOpacity style={s.arBtn} onPress={() => navigation.navigate("Search", { campusId: campus._id })}>
+                      <Ionicons name="search" size={16} color={colors.primary} />
+                      <Text style={{ color: colors.primary, fontWeight: "700", fontSize: 13, marginLeft: 6 }}>Search</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -365,32 +368,6 @@ export default function HomeScreen({ navigation }) {
         )}
       </View>
     </ScrollView>
-
-    {/* ── AI Chatbot FAB ───────────────────────────────────── */}
-    <TouchableOpacity
-      onPress={() => setChatOpen(true)}
-      style={{
-        position: 'absolute', bottom: 24, right: 20,
-        width: 56, height: 56, borderRadius: 28,
-        backgroundColor: '#6366f1',
-        alignItems: 'center', justifyContent: 'center',
-        ...SHADOWS.lg,
-        shadowColor: '#6366f1',
-        shadowOpacity: 0.45,
-        elevation: 10,
-      }}
-      activeOpacity={0.85}>
-      <Ionicons name="sparkles" size={24} color="#fff" />
-    </TouchableOpacity>
-
-    {/* ── AI Chatbot Overlay ───────────────────────────────── */}
-    <ChatbotOverlay
-      visible={chatOpen}
-      onClose={() => setChatOpen(false)}
-      onNavigate={(room) => { setChatOpen(false); navigation.navigate('Navigation', { room }); }}
-      onOpenMap={() => { setChatOpen(false); navigation.navigate('Map'); }}
-      onStartAR={() => { setChatOpen(false); navigation.navigate('AR'); }}
-    />
 
     {/* ── Notifications Panel ──────────────────────────────── */}
     {showNotifs && (

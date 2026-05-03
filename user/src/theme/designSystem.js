@@ -145,8 +145,8 @@ export const TYPOGRAPHY = {
 };
 
 export const QUICK_ACTIONS = [
-  { icon: "navigate", label: "Navigate", color: "#6366f1", bg: "#6366f115", screen: "Navigation" },
+  { icon: "navigate", label: "Navigate", color: "#6366f1", bg: "#6366f115", screen: "Search" },
   { icon: "qr-code", label: "Scan QR", color: "#22c55e", bg: "#22c55e15", screen: "QRScan" },
   { icon: "map", label: "Open Map", color: "#3b82f6", bg: "#3b82f615", screen: "Map" },
-  { icon: "camera", label: "AR View", color: "#f59e0b", bg: "#f59e0b15", screen: "AR" },
+  { icon: "search", label: "Search", color: "#f59e0b", bg: "#f59e0b15", screen: "Search" },
 ];

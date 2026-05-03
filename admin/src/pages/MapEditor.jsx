@@ -51,6 +51,16 @@ function GeomanController({ onShapeDraw, activeMode, mapReady }) {
   return null;
 }
 
+function MapUpdater({ center }) {
+  const map = useMap();
+  useEffect(() => {
+    if (center && center[0] && center[1]) {
+      map.setView(center, 18);
+    }
+  }, [center, map]);
+  return null;
+}
+
 const EditablePolygon = ({ r, isSelected, isLocked, onUpdate, onClick, drawMode }) => {
   const polyRef = useRef(null);
   const s = r.shape;
@@ -243,7 +253,7 @@ export default function GuidedMapBuilder() {
 
   // Step 1 State: Temporary Block before DB save
   const [tempBlockShape, setTempBlockShape] = useState(null);
-  const [blockForm, setBlockForm] = useState({ name: '', id: '' });
+  const [blockForm, setBlockForm] = useState({ name: '', domain: 'Academic Blocks', id: '' });
   
   // Clipboard for copy/paste
   const [clipboard, setClipboard] = useState(null);
@@ -570,11 +580,11 @@ export default function GuidedMapBuilder() {
     setSaving(true);
     try {
       if (activeBlock) {
-        await updateBlock(activeBlock._id, { shape: activeBlock.shape });
+        await updateBlock(activeBlock._id, { shape: activeBlock.shape, domain: blockForm.domain });
         toast.success('Block Updated!');
         setStep(2);
       } else {
-        const res = await createBlock({ name: blockForm.name, description: 'Block Shape stored', campusId });
+        const res = await createBlock({ name: blockForm.name, description: 'Block Shape stored', domain: blockForm.domain, campusId });
         setActiveBlock({ ...res.data, shape: tempBlockShape });
         toast.success('Block Locked & Saved!');
         await loadBlocks();
@@ -739,6 +749,7 @@ export default function GuidedMapBuilder() {
 
         <MapContainer center={GMRIT} zoom={17} style={{width:'100%', height:'100%', zIndex:0}} zoomControl={false} maxZoom={24} whenReady={() => setMapReady(true)}>
           <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" maxZoom={24} maxNativeZoom={19} />
+          {campus?.location?.lat && campus?.location?.lng && <MapUpdater center={[campus.location.lat, campus.location.lng]} />}
           <GeomanController onShapeDraw={handleShapeDraw} activeMode={drawMode} mapReady={mapReady} />
           <ClickHandler onClick={handleMapClick} />
 
@@ -869,12 +880,15 @@ export default function GuidedMapBuilder() {
                 <div style={{ marginBottom: 20 }}>
                   <label style={S.label}>Existing Blocks</label>
                   {blocks.map(b => (
-                    <div key={b._id} style={{ display: 'flex', justifyContent: 'space-between', padding: 12, background: '#1a2235', borderRadius: 8, marginBottom: 8, border: '1px solid #2a3352', cursor: 'pointer' }} onClick={() => { setActiveBlock(b); setTempBlockShape(null); }}>
-                      <span style={{ fontWeight: 600, color: '#fff' }}>{b.name}</span>
+                    <div key={b._id} style={{ display: 'flex', justifyContent: 'space-between', padding: 12, background: '#1a2235', borderRadius: 8, marginBottom: 8, border: '1px solid #2a3352', cursor: 'pointer' }} onClick={() => { setActiveBlock(b); setTempBlockShape(null); setBlockForm({name: b.name, domain: b.domain || 'Academic Blocks', id: b._id}); }}>
+                      <div>
+                        <div style={{ fontWeight: 600, color: '#fff' }}>{b.name}</div>
+                        <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>{b.domain || 'Academic Blocks'}</div>
+                      </div>
                       <button onClick={(e) => { e.stopPropagation(); removeBlock(b._id); }} style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer' }}><FiTrash2/></button>
                     </div>
                   ))}
-                  <button style={{...S.primaryBtn, background: '#1a2235', border: '1px solid #1e2d40'}} onClick={() => { setActiveBlock(null); setTempBlockShape(null); setBlockForm({name:'', id:''}); }}>+ Draw New Block</button>
+                  <button style={{...S.primaryBtn, background: '#1a2235', border: '1px solid #1e2d40'}} onClick={() => { setActiveBlock(null); setTempBlockShape(null); setBlockForm({name:'', domain: 'Academic Blocks', id:''}); }}>+ Draw New Block</button>
                 </div>
               )}
 
@@ -884,6 +898,19 @@ export default function GuidedMapBuilder() {
                     <label style={S.label}>New Block Name</label>
                     <input style={S.input} placeholder="e.g. CSE Block" value={blockForm.name} onChange={e => setBlockForm({ ...blockForm, name: e.target.value })} />
                   </div>
+                  <div style={S.formGroup}>
+                    <label style={S.label}>Domain / Category</label>
+                    <select style={S.input} value={blockForm.domain} onChange={e => setBlockForm({ ...blockForm, domain: e.target.value })}>
+                      <option value="Academic Blocks">Academic Blocks</option>
+                      <option value="Boys Hostels">Boys Hostels</option>
+                      <option value="Girls Hostels">Girls Hostels</option>
+                      <option value="Main Gates">Main Gates</option>
+                      <option value="Libraries">Libraries</option>
+                      <option value="Cafeteria & Dining">Cafeteria & Dining</option>
+                      <option value="Sports & Recreation">Sports & Recreation</option>
+                      <option value="Other Facilities">Other Facilities</option>
+                    </select>
+                  </div>
                   <button style={S.successBtn} onClick={saveBlock} disabled={saving}>{saving ? 'Saving...' : 'Confirm & Lock Block Shape'}</button>
                 </>
               )}
@@ -892,6 +919,19 @@ export default function GuidedMapBuilder() {
                 <>
                   <div style={S.formGroup}>
                     <label style={S.label}>Editing Block: {activeBlock.name}</label>
+                  </div>
+                  <div style={S.formGroup}>
+                    <label style={S.label}>Domain / Category</label>
+                    <select style={S.input} value={blockForm.domain} onChange={e => setBlockForm({ ...blockForm, domain: e.target.value })}>
+                      <option value="Academic Blocks">Academic Blocks</option>
+                      <option value="Boys Hostels">Boys Hostels</option>
+                      <option value="Girls Hostels">Girls Hostels</option>
+                      <option value="Main Gates">Main Gates</option>
+                      <option value="Libraries">Libraries</option>
+                      <option value="Cafeteria & Dining">Cafeteria & Dining</option>
+                      <option value="Sports & Recreation">Sports & Recreation</option>
+                      <option value="Other Facilities">Other Facilities</option>
+                    </select>
                   </div>
                   <div style={{ display: 'flex', gap: 10 }}>
                     <button style={{ ...S.primaryBtn, flex: 1, background: '#1a2235', color: '#ef4444', border: '1px solid #ef444450' }} onClick={() => removeBlock(activeBlock._id)}>Delete</button>

@@ -18,13 +18,17 @@ export default function MapScreen({ navigation, route }) {
   const [selectedFloor, setSelectedFloor] = useState(null);
 
   useEffect(() => {
-    if (!campusId) {
+    if (route.params?.campusId) {
+      setCampusId(route.params.campusId);
+      setSelectedBlock(null);
+      setSelectedFloor(null);
+    } else if (!campusId) {
       getCampuses().then(data => {
         if (data.length) setCampusId(data[0]._id);
         else setLoading(false);
       }).catch(() => setLoading(false));
     }
-  }, []);
+  }, [route.params?.campusId]);
 
   useEffect(() => {
     if (campusId) {
@@ -123,19 +127,33 @@ export default function MapScreen({ navigation, route }) {
     const blocks = mapData?.blocks || [];
     if (blocks.length === 0) return <Text style={{ textAlign: "center", color: colors.textSec, marginTop: 40 }}>No blocks found.</Text>;
     
-    return blocks.map(block => (
-      <TouchableOpacity key={block._id} style={s.card} activeOpacity={0.7} onPress={() => setSelectedBlock(block)}>
-        <View style={{ flexDirection: "row", alignItems: "center" }}>
-          <View style={s.cardIcon}>
-            <Ionicons name="business" size={20} color={colors.primary} />
-          </View>
-          <View>
-            <Text style={s.cardTitle}>{block.name}</Text>
-            <Text style={s.cardMeta}>Tap to browse floors</Text>
-          </View>
-        </View>
-        <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
-      </TouchableOpacity>
+    const domains = {};
+    blocks.forEach(block => {
+      const domain = block.domain || "Academic Blocks";
+      if (!domains[domain]) domains[domain] = [];
+      domains[domain].push(block);
+    });
+
+    return Object.keys(domains).map(domain => (
+      <View key={domain} style={{ marginBottom: 24 }}>
+        <Text style={{ fontSize: 16, fontWeight: "800", color: colors.textSec, marginBottom: 12, marginLeft: 4, textTransform: "uppercase", letterSpacing: 1 }}>
+          {domain}
+        </Text>
+        {domains[domain].map(block => (
+          <TouchableOpacity key={block._id} style={s.card} activeOpacity={0.7} onPress={() => setSelectedBlock(block)}>
+            <View style={{ flexDirection: "row", alignItems: "center" }}>
+              <View style={s.cardIcon}>
+                <Ionicons name="business" size={20} color={colors.primary} />
+              </View>
+              <View>
+                <Text style={s.cardTitle}>{block.name}</Text>
+                <Text style={s.cardMeta}>Tap to browse floors</Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+          </TouchableOpacity>
+        ))}
+      </View>
     ));
   };
 

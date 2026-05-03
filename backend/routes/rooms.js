@@ -8,7 +8,11 @@ router.get('/', async (req, res) => {
     if (req.query.floorId) filter.floorId = req.query.floorId;
     if (req.query.blockId) filter.blockId = req.query.blockId;
     if (req.query.campusId) filter.campusId = req.query.campusId;
-    const rooms = await Room.find(filter).sort({ name: 1 });
+    if (req.query.type) filter.type = req.query.type;
+    const rooms = await Room.find(filter)
+      .populate('floorId', 'name level')
+      .populate('blockId', 'name')
+      .sort({ name: 1 });
     res.json(rooms);
   } catch (err) {
     res.status(500).json({ error: err.message });

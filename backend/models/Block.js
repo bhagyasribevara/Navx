@@ -4,6 +4,7 @@ const blockSchema = new mongoose.Schema({
   campusId: { type: mongoose.Schema.Types.ObjectId, ref: 'Campus', required: true },
   name: { type: String, required: true },
   description: { type: String, default: '' },
+  domain: { type: String, default: 'Academic Blocks' },
   shape: {
     type: { type: String, enum: ['rectangle', 'polygon', 'circle'], default: 'rectangle' },
     x: { type: Number, default: 0 },

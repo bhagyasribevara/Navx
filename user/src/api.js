@@ -45,6 +45,8 @@ export const getFloors = (blockId) =>
   api.get(`/floors?blockId=${blockId}`).then((r) => r.data);
 export const getRooms = (floorId) =>
   api.get(`/rooms?floorId=${floorId}`).then((r) => r.data);
+export const getRoomsByCat = (campusId, type) =>
+  api.get(`/rooms?campusId=${campusId}&type=${type}`).then((r) => r.data);
 export const searchRooms = (query, campusId) =>
   api.get(`/rooms/search/${query}?campusId=${campusId}`).then((r) => r.data);
 export const getMapData = (campusId) =>

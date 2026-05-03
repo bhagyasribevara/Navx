@@ -40,7 +40,7 @@ router.post('/route', async (req, res) => {
 // POST find route to a room — with multi-level fallback
 router.post('/route-to-room', async (req, res) => {
   try {
-    const { startNodeId, roomId, campusId, algorithm = 'astar', accessible = false } = req.body;
+    const { startNodeId, startX, startY, roomId, campusId, algorithm = 'astar', accessible = false } = req.body;
     
     const nodes = await NavNode.find({ campusId, isActive: true });
     const paths = await NavPath.find({ campusId, isActive: true });
@@ -52,6 +52,21 @@ router.post('/route-to-room', async (req, res) => {
     // Build graph and auto-connect disconnected components
     let graph = buildGraph(nodes, paths);
     graph = autoConnectGraph(graph);
+
+    // --- Resolve start node from GPS coordinates if provided ---
+    let startId;
+    if (startX != null && startY != null) {
+      const nearestStart = findNearestNode(graph, startX, startY, null);
+      if (!nearestStart) {
+        return res.status(400).json({ error: 'No navigation node found near your location.' });
+      }
+      startId = nearestStart.id;
+      console.log(`[Navigation] GPS start (${startX.toFixed(6)}, ${startY.toFixed(6)}) → nearest node ${startId} (${geoDistMeters(startX, startY, nearestStart.x, nearestStart.y).toFixed(1)}m away)`);
+    } else if (startNodeId) {
+      startId = startNodeId.toString();
+    } else {
+      return res.status(400).json({ error: 'Provide startNodeId or startX/startY coordinates.' });
+    }
 
     // --- Step 1: Resolve the destination node ---
     let endNodeId = null;
@@ -101,23 +116,24 @@ router.post('/route-to-room', async (req, res) => {
     }
 
     // Verify start node exists in graph
-    if (!graph[startNodeId]) {
+    if (!graph[startId]) {
+      console.log(`[Navigation] Start node ${startId} not found. Available nodes: ${Object.keys(graph).length}`);
       return res.status(400).json({ error: 'Start node not found in navigation graph.' });
     }
 
     // --- Step 2: Try direct route ---
     const pathfinder = algorithm === 'dijkstra' ? dijkstra : astar;
-    let result = pathfinder(graph, startNodeId, endNodeId, { requireAccessible: accessible });
+    let result = pathfinder(graph, startId, endNodeId, { requireAccessible: accessible });
     let routeType = 'direct'; // direct | nearest_reachable
 
     // --- Step 3: If direct route failed, find nearest reachable node to destination ---
     if (!result.found && destX !== null && destY !== null) {
       console.log(`[Navigation] Direct route failed. Trying nearest reachable node fallback...`);
       
-      const fallback = findNearestReachableNode(graph, startNodeId, destX, destY, destFloorId);
+      const fallback = findNearestReachableNode(graph, startId, destX, destY, destFloorId);
       
       if (fallback.node) {
-        result = pathfinder(graph, startNodeId, fallback.node.id, { requireAccessible: accessible });
+        result = pathfinder(graph, startId, fallback.node.id, { requireAccessible: accessible });
         if (result.found) {
           routeType = 'nearest_reachable';
           console.log(`[Navigation] Fallback route found via nearest reachable node (${Math.round(fallback.distanceToTarget)}m from destination)`);

@@ -6,17 +6,10 @@ import { Ionicons } from "@expo/vector-icons";
 import { ThemeContext } from "../context/ThemeContext";
 import { SHADOWS, RADIUS } from "../theme/designSystem";
 
-const LANGUAGES = [
-  { code: "en", label: "English", flag: "🇺🇸" },
-  { code: "hi", label: "हिंदी", flag: "🇮🇳" },
-  { code: "te", label: "తెలుగు", flag: "🇮🇳" },
-  { code: "ta", label: "தமிழ்", flag: "🇮🇳" },
-  { code: "kn", label: "ಕನ್ನಡ", flag: "🇮🇳" },
-  { code: "es", label: "Español", flag: "🇪🇸" },
-];
+
 
 export default function SettingsScreen({ navigation }) {
-  const { colors, isDark, setIsDark, language, setLanguage } = useContext(ThemeContext);
+  const { colors, isDark, setIsDark } = useContext(ThemeContext);
   const [voiceNav, setVoiceNav] = useState(true);
   const [highContrast, setHighContrast] = useState(false);
   const [largeText, setLargeText] = useState(false);
@@ -77,14 +70,7 @@ export default function SettingsScreen({ navigation }) {
     },
     rowLabel: { flex: 1, fontSize: 15, fontWeight: "600", color: colors.text },
     rowValue: { fontSize: 13, color: colors.textMuted },
-    // Language grid
-    langGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8, padding: 16 },
-    langChip: {
-      paddingHorizontal: 14, paddingVertical: 8,
-      borderRadius: 99, borderWidth: 1.5,
-      flexDirection: "row", alignItems: "center", gap: 6,
-    },
-    langText: { fontSize: 13, fontWeight: "600" },
+
     // Theme toggle
     themeRow: {
       flexDirection: "row", margin: 16, gap: 10,
@@ -162,28 +148,7 @@ export default function SettingsScreen({ navigation }) {
         </TouchableOpacity>
       </View>
 
-      {/* Language */}
-      <Text style={s.secLabel}>Language</Text>
-      <View style={[s.group]}>
-        <View style={[s.langGrid]}>
-          {LANGUAGES.map(lang => {
-            const isActive = language === lang.code;
-            return (
-              <TouchableOpacity
-                key={lang.code}
-                style={[s.langChip, {
-                  borderColor: isActive ? colors.primary : colors.border,
-                  backgroundColor: isActive ? colors.primary + "18" : "transparent",
-                }]}
-                onPress={() => setLanguage(lang.code)}
-              >
-                <Text style={{ fontSize: 16 }}>{lang.flag}</Text>
-                <Text style={[s.langText, { color: isActive ? colors.primary : colors.textSec }]}>{lang.label}</Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      </View>
+
 
       {/* Accessibility */}
       <Text style={s.secLabel}>Accessibility</Text>
@@ -227,7 +192,7 @@ export default function SettingsScreen({ navigation }) {
       </View>
 
       <Text style={s.versionText}>
-        NavX Indoor Navigation v1.0{"\n"}Built with ❤️ using Expo & React Native
+        NavX Indoor Navigation v1.0{"\n"}Built by Team NavX 
       </Text>
     </ScrollView>
   );

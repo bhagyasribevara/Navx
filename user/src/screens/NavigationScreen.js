@@ -10,6 +10,7 @@ import { Accelerometer, Magnetometer } from "expo-sensors";
 import * as Speech from "expo-speech";
 import * as Haptics from "expo-haptics";
 import { ThemeContext } from "../context/ThemeContext";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { findRouteToRoom } from "../api";
 import { PositionEngine, StepDetector } from "../positioning";
 import { SHADOWS, RADIUS, ROOM_COLORS } from "../theme/designSystem";
@@ -44,7 +45,7 @@ function buildNavMapHTML(rooms, pathPoints, initialPos, targetRoom) {
 
   const destX = targetRoom?.shape?.points?.[0]?.x || targetRoom?.shape?.x;
   const destY = targetRoom?.shape?.points?.[0]?.y || targetRoom?.shape?.y;
-  const destDot = (destX && destY) ? `L.circleMarker([${destX},${destY}],{radius:9,color:'#fff',weight:2,fillColor:'#ef4444',fillOpacity:1}).addTo(map);` : '';
+  const destDot = (destX && destY) ? `L.circleMarker([${destX},${destY}],{radius:9,color:'#fff',weight:2,fillColor:'#3b82f6',fillOpacity:1}).addTo(map);` : '';
 
   const pathStr = pathPoints ? pathPoints.map(p => `[${p.x},${p.y}]`).join(',') : '';
   const routeLine = pathStr ? `L.polyline([${pathStr}],{color:'#4f46e5',weight:5,opacity:0.8,dashArray:'8,8'}).addTo(map);` : '';
@@ -64,11 +65,11 @@ ${routeLine}
 ${destDot}
 
 window.userMarker = null;
-${initialPos ? `window.userMarker = L.circleMarker([${initialPos.x},${initialPos.y}],{radius:8,color:'#fff',weight:2,fillColor:'#4f46e5',fillOpacity:1}).addTo(map);` : ''}
+${initialPos ? `window.userMarker = L.circleMarker([${initialPos.x},${initialPos.y}],{radius:8,color:'#fff',weight:2,fillColor:'#22c55e',fillOpacity:1}).addTo(map);` : ''}
 
 window.updateUserPos = function(lat, lng) {
   if (!window.userMarker) {
-    window.userMarker = L.circleMarker([lat, lng], {radius:8,color:'#fff',weight:2,fillColor:'#4f46e5',fillOpacity:1}).addTo(map);
+    window.userMarker = L.circleMarker([lat, lng], {radius:8,color:'#fff',weight:2,fillColor:'#22c55e',fillOpacity:1}).addTo(map);
   } else {
     window.userMarker.setLatLng([lat, lng]);
   }
@@ -90,6 +91,8 @@ export default function NavigationScreen({ navigation, route }) {
   const [arrived, setArrived] = useState(false);
   const [error, setError] = useState(null);
   const [liveDistance, setLiveDistance] = useState(0);
+  const [liveStepDist, setLiveStepDist] = useState(0);
+  const [totalSteps, setTotalSteps] = useState(0);
   const [routeInfo, setRouteInfo] = useState(null);
 
   const [locationPerm, setLocationPerm] = useState(null);
@@ -146,75 +149,94 @@ export default function NavigationScreen({ navigation, route }) {
 
   const previewRoute = async () => {
     try {
+      // Save to recent (fire-and-forget)
+      if (room) {
+        AsyncStorage.getItem("navx_recent").then(stored => {
+          let recent = stored ? JSON.parse(stored) : [];
+          recent = recent.filter(r => r._id !== room._id);
+          recent.unshift(room);
+          if (recent.length > 5) recent = recent.slice(0, 5);
+          AsyncStorage.setItem("navx_recent", JSON.stringify(recent));
+        }).catch(() => {});
+      }
+
       setError(null);
       setGpsLoading(true);
-      let startNode = mapData.nodes?.[0];
       let uLat = null;
       let uLng = null;
 
+      // Step 1: Check location services are enabled
+      const locEnabled = await Location.hasServicesEnabledAsync();
+      if (!locEnabled) {
+        setError("Please turn ON your Location/GPS in phone settings for accurate navigation.");
+        setGpsLoading(false);
+        return;
+      }
+
+      // Step 2: Get user's real GPS position with HIGHEST accuracy
       if (locationPerm) {
         try {
-          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+          const loc = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.BestForNavigation,
+            maximumAge: 5000,
+          });
           uLat = loc.coords.latitude;
           uLng = loc.coords.longitude;
-          setUserPos({ x: uLat, y: uLng, floor: room.floorId });
-          
-          if (mapData.nodes?.length > 0) {
-            let nearest = null;
-            let minDist = Infinity;
-            for (let n of mapData.nodes) {
-              const dx = (n.x - uLat) * 111320;
-              const dy = (n.y - uLng) * 111320 * Math.cos(uLat * Math.PI / 180);
-              const d = Math.sqrt(dx*dx + dy*dy);
-              if (d < minDist) { minDist = d; nearest = n; }
-            }
-            if (nearest) startNode = nearest;
-          }
+          console.log(`[NavX GPS] User at: ${uLat.toFixed(6)}, ${uLng.toFixed(6)} accuracy: ${loc.coords.accuracy}m`);
         } catch (e) {
-          console.warn("GPS preview error:", e);
+          console.warn("GPS error:", e);
+          setError("Could not get GPS location. Please enable Location and try again.");
+          setGpsLoading(false);
+          return;
+        }
+      } else {
+        setError("Location permission required. Please allow location access in your phone settings.");
+        setGpsLoading(false);
+        return;
+      }
+
+      setUserPos({ x: uLat, y: uLng, floor: room.floorId });
+
+      // Step 3: Send raw GPS coords to the backend — let the SERVER find nearest node
+      // This eliminates all client-side ID mismatch issues
+      const result = await findRouteToRoom({
+        startX: uLat,
+        startY: uLng,
+        roomId: String(room._id),
+        campusId: String(campusId),
+      });
+
+      // Step 4: Prepend user's exact GPS position to the path for visual line
+      if (result.path && result.path.length > 0) {
+        const firstNode = result.path[0];
+        const dx = (uLat - firstNode.x) * 111320;
+        const dy = (uLng - firstNode.y) * 111320 * Math.cos(uLat * Math.PI / 180);
+        const distToFirst = Math.sqrt(dx * dx + dy * dy);
+
+        if (distToFirst > 3) {
+          result.path.unshift({ nodeId: 'user_start', x: uLat, y: uLng, floorId: room.floorId || null, type: 'user' });
+          result.distance += distToFirst;
+          if (result.directions?.length > 0) {
+            result.directions.unshift({
+              step: 0,
+              instruction: "Walk towards the nearest path",
+              distance: Math.round(distToFirst),
+              angle: 0,
+              eta: Math.round(distToFirst / 1.2)
+            });
+          }
         }
       }
-      
-      if (startNode) {
-        const result = await findRouteToRoom({ startNodeId: startNode._id, roomId: room._id, campusId });
-        
-        // Ensure path always visually starts from the exact user location
-        if (uLat && uLng && result.path && result.path.length > 0) {
-          const firstNode = result.path[0];
-          const dx = (uLat - firstNode.x) * 111320;
-          const dy = (uLng - firstNode.y) * 111320 * Math.cos(uLat * Math.PI / 180);
-          const distToFirst = Math.sqrt(dx*dx + dy*dy);
-          
-          if (distToFirst > 2) {
-            result.path.unshift({
-              nodeId: 'user_start',
-              x: uLat,
-              y: uLng,
-              floorId: room.floorId || null,
-              type: 'user'
-            });
-            result.distance += distToFirst;
-            
-            if (result.directions && result.directions.length > 0) {
-              result.directions.unshift({
-                step: 0,
-                instruction: "Walk towards the starting path",
-                distance: Math.round(distToFirst),
-                angle: 0,
-                eta: Math.round(distToFirst / 1.2)
-              });
-            }
-          }
-        }
 
-        setRouteData(result);
-        setLiveDistance(Math.round(result.distance));
-        if (result.routeType === 'nearest_reachable' && result.message) {
-          setRouteInfo(result.message);
-        }
+      setRouteData(result);
+      setLiveDistance(Math.round(result.distance));
+      setLiveStepDist(Math.round(result.directions?.[0]?.distance || 0));
+      if (result.routeType === 'nearest_reachable' && result.message) {
+        setRouteInfo(result.message);
       }
     } catch (err) {
-      setError("Could not calculate initial route preview.");
+      console.warn("Route error:", err);
+      setError("Could not calculate route. Please check your connection and try again.");
     } finally {
       setGpsLoading(false);
     }
@@ -255,7 +277,7 @@ export default function NavigationScreen({ navigation, route }) {
       // GPS watch for live distance and map updates
       if (locationPerm) {
         Location.watchPositionAsync(
-          { accuracy: Location.Accuracy.High, distanceInterval: 1 },
+          { accuracy: Location.Accuracy.BestForNavigation, timeInterval: 1000, distanceInterval: 0.5 },
           (loc) => {
             const lat = loc.coords.latitude;
             const lng = loc.coords.longitude;
@@ -266,14 +288,18 @@ export default function NavigationScreen({ navigation, route }) {
             const isArrived = arrivedRef.current;
 
             if (rData && rData.path && !isArrived) {
-              const target = rData.path[cStep];
-              if (target) {
-                // Approximate distance to next node + remaining path
-                const dx = (lat - target.x) * 111320;
-                const dy = (lng - target.y) * 111320 * Math.cos(lat * Math.PI / 180);
+              const targetNode = rData.path[cStep + 1] || rData.path[cStep];
+              if (targetNode) {
+                // Approximate distance to the END of the current segment
+                const dx = (lat - targetNode.x) * 111320;
+                const dy = (lng - targetNode.y) * 111320 * Math.cos(lat * Math.PI / 180);
                 const distToNextNodeMeters = Math.sqrt(dx*dx + dy*dy);
-                const remainingPathMeters = rData.directions?.slice(cStep).reduce((s,d)=>s+(d.distance||0), 0) || 0;
-                setLiveDistance(Math.round(distToNextNodeMeters + remainingPathMeters));
+                setLiveStepDist(Math.round(distToNextNodeMeters));
+                
+                // Sum distances of all SUBSEQUENT segments
+                const remainingPathMeters = rData.directions?.slice(cStep + 1).reduce((s,d)=>s+(d.distance||0), 0) || 0;
+                
+                setLiveDistance(Math.max(0, Math.round(distToNextNodeMeters + remainingPathMeters)));
               }
             }
           }
@@ -304,29 +330,34 @@ export default function NavigationScreen({ navigation, route }) {
 
   useEffect(() => {
     if (routeData && userPos && isNavigating && !arrived) {
-      const target = routeData.path[currentStep];
-      if (target) {
-        const dx = (userPos.x - target.x) * 111320;
-        const dy = (userPos.y - target.y) * 111320 * Math.cos(userPos.x * Math.PI / 180);
+      const targetNode = routeData.path[currentStep + 1] || routeData.path[currentStep];
+      if (targetNode) {
+        const dx = (userPos.x - targetNode.x) * 111320;
+        const dy = (userPos.y - targetNode.y) * 111320 * Math.cos(userPos.x * Math.PI / 180);
         const distInMeters = Math.sqrt(dx*dx + dy*dy);
-        if (distInMeters < 15) {
-          if (currentStep < routeData.path.length - 1) {
+        
+        // Threshold to advance to next step (e.g. 10 meters)
+        if (distInMeters < 10) {
+          if (currentStep < (routeData.directions?.length || 1) - 1) {
             setCurrentStep(s => s + 1);
+            setLiveStepDist(Math.round(routeData.directions[currentStep + 1]?.distance || 0));
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            if (voiceEnabled && routeData.directions[currentStep]) {
-              Speech.speak(routeData.directions[currentStep].instruction, { language: language === "te" ? "te-IN" : "en-US" });
+            if (voiceEnabled && routeData.directions[currentStep + 1]) {
+              Speech.speak(routeData.directions[currentStep + 1].instruction, { language: "en-US" });
             }
           } else {
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            if (voiceEnabled) Speech.speak("You have arrived at your destination!");
-            setIsNavigating(false);
             setArrived(true);
-            Animated.spring(arrivedAnim, { toValue: 1, tension: 60, friction: 8, useNativeDriver: true }).start();
+            setIsNavigating(false);
+            setLiveDistance(0);
+            setLiveStepDist(0);
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            if (voiceEnabled) Speech.speak("You have arrived at " + (room?.name || "your destination"), { language: "en-US" });
+            Animated.spring(arrivedAnim, { toValue: 1, friction: 8, tension: 40, useNativeDriver: true }).start();
           }
         }
       }
     }
-  }, [userPos, currentStep, isNavigating, arrived]);
+  }, [userPos, isNavigating, arrived]);
 
   const startNavigation = async () => {
     if (!mapData || !room) return;
@@ -503,7 +534,7 @@ export default function NavigationScreen({ navigation, route }) {
             </Animated.View>
             <View style={{ flex: 1 }}>
               <Text style={s.dirInstruction}>{currentDir.instruction}</Text>
-              <Text style={s.dirMeta}>{Math.round(currentDir.distance)}m away</Text>
+              <Text style={s.dirMeta}>{isNavigating ? liveStepDist : Math.round(currentDir.distance)}m away</Text>
               <View style={s.stepPill}>
                 <Text style={s.stepPillText}>Step {currentStep + 1} of {routeData.directions.length}</Text>
               </View>
@@ -535,8 +566,8 @@ export default function NavigationScreen({ navigation, route }) {
                 <Text style={s.metricLabel}>{isNavigating ? "Live ETA" : "Est. Time"}</Text>
               </View>
               <View style={s.metric}>
-                <Text style={s.metricValue}>{routeData.nodeCount || routeData.directions?.length}</Text>
-                <Text style={s.metricLabel}>Steps</Text>
+                <Text style={s.metricValue}>{Math.round((isNavigating ? liveDistance : routeData.distance) / 0.76)}</Text>
+                <Text style={s.metricLabel}>Steps Count</Text>
               </View>
             </View>
             {isNavigating && (

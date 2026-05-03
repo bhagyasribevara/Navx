@@ -102,6 +102,7 @@ export default function ARScreen({ navigation, route }) {
   const [currentStep, setCurrentStep] = useState(0);
   const [lastSpokenStep, setLastSpokenStep] = useState(-1);
   const [liveDistance, setLiveDistance] = useState(routeData?.distance || 0);
+  const [liveStepDist, setLiveStepDist] = useState(Math.round(routeData?.directions?.[0]?.distance || 0));
   const [arrived, setArrived] = useState(false);
   const [userLatLng, setUserLatLng] = useState(null);
 
@@ -151,7 +152,7 @@ export default function ARScreen({ navigation, route }) {
     let locationWatcher;
     (async () => {
       locationWatcher = await Location.watchPositionAsync(
-        { accuracy: Location.Accuracy.High, distanceInterval: 1 },
+        { accuracy: Location.Accuracy.BestForNavigation, timeInterval: 1000, distanceInterval: 0.5 },
         (loc) => {
           const lat = loc.coords.latitude;
           const lng = loc.coords.longitude;
@@ -163,28 +164,32 @@ export default function ARScreen({ navigation, route }) {
 
           if (!rData || !rData.path || isArrived) return;
 
-          const target = rData.path[cStep];
-          if (!target) return;
+          const targetNode = rData.path[cStep + 1] || rData.path[cStep];
+          if (!targetNode) return;
 
-          // Distance to current target node
-          const distToNode = haversineDist(lat, lng, target.x, target.y);
+          // Distance to current target node (end of current segment)
+          const distToNode = haversineDist(lat, lng, targetNode.x, targetNode.y);
+          setLiveStepDist(Math.round(distToNode));
 
-          // Sum remaining segment distances from current step onward
+          // Sum remaining segment distances from NEXT step onward
           const remainingPathMeters = rData.directions
-            ?.slice(cStep)
+            ?.slice(cStep + 1)
             .reduce((sum, d) => sum + (d.distance || 0), 0) || 0;
 
           // Total live distance = distance to next node + remaining path after it
-          const totalLive = Math.round(distToNode + remainingPathMeters);
+          const totalLive = Math.max(0, Math.round(distToNode + remainingPathMeters));
           setLiveDistance(totalLive);
 
           // Auto-advance step when close to the current target node
-          if (distToNode < 15) {
-            if (cStep < rData.path.length - 1) {
+          if (distToNode < 10) {
+            if (cStep < (rData.directions?.length || 1) - 1) {
               setCurrentStep(s => s + 1);
+              setLiveStepDist(Math.round(rData.directions[cStep + 1]?.distance || 0));
             } else {
               // Final node reached — arrived!
               setArrived(true);
+              setLiveDistance(0);
+              setLiveStepDist(0);
               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
               Speech.speak("You have arrived at your destination!");
               Animated.spring(arrivedAnim, { toValue: 1, tension: 60, friction: 8, useNativeDriver: true }).start();
@@ -368,7 +373,7 @@ export default function ARScreen({ navigation, route }) {
           <View style={{ flex: 1 }}>
             <Text style={styles.dirInstruction} numberOfLines={2}>{dirLabel}</Text>
             <Text style={styles.dirDist}>
-              {currentDir ? `in ${Math.round(currentDir.distance)} m` : ""}
+              {currentDir ? `in ${liveStepDist} m` : ""}
             </Text>
           </View>
           {/* Step counter pill */}

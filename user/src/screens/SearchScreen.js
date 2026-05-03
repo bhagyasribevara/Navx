@@ -5,7 +5,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { ThemeContext } from "../context/ThemeContext";
-import { searchRooms, getCampuses, cachedGet } from "../api";
+import { searchRooms, getRoomsByCat, getCampuses, cachedGet } from "../api";
 import { SHADOWS, RADIUS, ROOM_COLORS, ROOM_ICONS } from "../theme/designSystem";
 
 const CATS = [
@@ -40,7 +40,9 @@ export default function SearchScreen({ navigation, route }) {
   }, []);
 
   useEffect(() => {
-    if (query.length >= 2 && campusId) {
+    if (!campusId) return;
+
+    if (query.length >= 2) {
       const timer = setTimeout(() => {
         searchRooms(query, campusId).then(data => {
           const filtered = activeCat ? data.filter(r => r.type === activeCat) : data;
@@ -49,6 +51,11 @@ export default function SearchScreen({ navigation, route }) {
         }).catch(() => setResults([]));
       }, 280);
       return () => clearTimeout(timer);
+    } else if (activeCat) {
+      getRoomsByCat(campusId, activeCat).then(data => {
+        setResults(data);
+        Animated.spring(listAnim, { toValue: 1, tension: 100, friction: 12, useNativeDriver: true }).start();
+      }).catch(() => setResults([]));
     } else {
       setResults([]);
       listAnim.setValue(0);
