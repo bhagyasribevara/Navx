@@ -4,6 +4,7 @@ import { toast } from 'react-toastify';
 import { FiPlus, FiEdit2, FiTrash2, FiMap, FiSearch } from 'react-icons/fi';
 import { MapContainer, TileLayer, CircleMarker, Popup, useMap, useMapEvents } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
+import { QRCodeSVG } from 'qrcode.react';
 import { getCampuses, createCampus, updateCampus, deleteCampus } from '../api';
 
 function MapUpdater({ center }) {
@@ -29,6 +30,8 @@ function MapClickHandler({ setMarkerPos, setMapCenter }) {
 export default function CampusManager() {
   const [campuses, setCampuses] = useState([]);
   const [showModal, setShowModal] = useState(false);
+  const [showQRModal, setShowQRModal] = useState(false);
+  const [selectedQR, setSelectedQR] = useState(null);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({ name: '', description: '', address: '' });
   const [mapCenter, setMapCenter] = useState([18.4665, 83.6629]);
@@ -172,6 +175,9 @@ export default function CampusManager() {
                 <button className="btn btn-primary btn-sm" onClick={() => navigate(`/editor/${c._id}`)}>
                   <FiMap /> Open Editor
                 </button>
+                <button className="btn btn-secondary btn-sm" onClick={() => { setSelectedQR(c); setShowQRModal(true); }}>
+                  QR Code
+                </button>
                 <button className="btn btn-secondary btn-sm" onClick={() => openEdit(c)}>
                   <FiEdit2 /> Edit
                 </button>
@@ -181,6 +187,31 @@ export default function CampusManager() {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {showQRModal && selectedQR && (
+        <div className="modal-overlay" onClick={() => setShowQRModal(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '400px', textAlign: 'center' }}>
+            <div className="modal-header">
+              <h2 className="modal-title">Campus QR Code</h2>
+              <button className="btn-icon" onClick={() => setShowQRModal(false)}>✕</button>
+            </div>
+            <div style={{ padding: '20px', background: '#fff', borderRadius: '8px', margin: '20px auto', display: 'inline-block' }}>
+              <QRCodeSVG 
+                value={`navx://campus/${selectedQR._id}`} 
+                size={256} 
+                level="H" 
+                includeMargin={true}
+              />
+            </div>
+            <p style={{ marginTop: '10px', fontSize: '14px', color: 'var(--text-muted)' }}>
+              Scan this QR to open the map for <strong>{selectedQR.name}</strong>.
+            </p>
+            <div className="modal-actions" style={{ marginTop: '20px' }}>
+              <button className="btn btn-primary" onClick={() => setShowQRModal(false)} style={{ width: '100%' }}>Close</button>
+            </div>
+          </div>
         </div>
       )}
 

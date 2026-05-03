@@ -28,6 +28,7 @@ export default function HomeScreen({ navigation }) {
   const { colors, isDark } = useContext(ThemeContext);
   const [campuses, setCampuses] = useState([]);
   const [recentRooms, setRecentRooms] = useState([]);
+  const [activeCampusId, setActiveCampusId] = useState(null);
   const [loading, setLoading] = useState(true);
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const headerAnim = useRef(new Animated.Value(0)).current;
@@ -40,6 +41,13 @@ export default function HomeScreen({ navigation }) {
     // Load real recent rooms
     AsyncStorage.getItem("navx_recent").then(stored => {
       if (stored) setRecentRooms(JSON.parse(stored));
+    }).catch(() => {});
+    // Load active campus
+    AsyncStorage.getItem("navx_active_campus").then(stored => {
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        setActiveCampusId(parsed.id);
+      }
     }).catch(() => {});
     return () => cardAnims.forEach(a => a.setValue(0));
   }, []));
@@ -325,19 +333,25 @@ export default function HomeScreen({ navigation }) {
       {/* Campuses */}
       <View style={s.section}>
         <View style={s.secRow}>
-          <Text style={s.secTitle}>Your Campuses</Text>
+          <Text style={s.secTitle}>{activeCampusId ? "Your Campus" : "Unlock Your Campus"}</Text>
           <Ionicons name="business-outline" size={18} color={colors.textMuted} />
         </View>
-        {campuses.length === 0 ? (
+        {(!activeCampusId || !campuses.find(c => c._id === activeCampusId)) ? (
           <View style={s.empty}>
             <View style={s.emptyIcon}>
-              <Ionicons name="school-outline" size={30} color={colors.textMuted} />
+              <Ionicons name="qr-code-outline" size={30} color={colors.textMuted} />
             </View>
-            <Text style={s.emptyTitle}>No Campuses Yet</Text>
-            <Text style={s.emptyText}>Ask your admin to set up{"\n"}your campus on NavX.</Text>
+            <Text style={s.emptyTitle}>No Campus Unlocked</Text>
+            <Text style={s.emptyText}>Scan the campus QR code at the entrance{"\n"}to load the map and navigation.</Text>
+            <TouchableOpacity 
+              style={{ marginTop: 16, backgroundColor: colors.primary, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8 }}
+              onPress={() => navigation.navigate("QRScan")}
+            >
+              <Text style={{ color: "#fff", fontWeight: "700" }}>Scan QR Code</Text>
+            </TouchableOpacity>
           </View>
         ) : (
-          campuses.map((campus, i) => {
+          campuses.filter(c => c._id === activeCampusId).map((campus, i) => {
             const g = GRAD_BARS[i % GRAD_BARS.length];
             return (
               <TouchableOpacity key={campus._id} style={s.campusCard} activeOpacity={0.88} onPress={() => navigation.navigate("Map", { campusId: campus._id, campusName: campus.name })}>

@@ -96,4 +96,23 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
+// GET campus by QR code — resolves QR data to campus info
+router.get('/qr/:campusId', async (req, res) => {
+  try {
+    const campus = await Campus.findById(req.params.campusId);
+    if (!campus || !campus.isActive) {
+      return res.status(404).json({ error: 'Campus not found or inactive.' });
+    }
+    res.json({
+      _id: campus._id,
+      name: campus.name,
+      description: campus.description,
+      address: campus.address,
+      location: campus.location,
+    });
+  } catch (err) {
+    res.status(400).json({ error: 'Invalid QR code.' });
+  }
+});
+
 module.exports = router;

@@ -59,6 +59,8 @@ export const findNearestNode = (data) =>
   api.post("/navigation/nearest-node", data).then((r) => r.data);
 export const scanQRCode = (code) =>
   api.get(`/qrcodes/scan/${code}`).then((r) => r.data);
+export const getCampusByQR = (campusId) =>
+  api.get(`/campus/qr/${campusId}`).then((r) => r.data);
 export const getBeaconsForFloor = (floorId) =>
   api.get(`/beacons/floor/${floorId}`).then((r) => r.data);
 export const logAnalytics = (data) =>

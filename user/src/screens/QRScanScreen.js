@@ -7,8 +7,9 @@ import { CameraView, useCameraPermissions } from "expo-camera";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { ThemeContext } from "../context/ThemeContext";
-import { scanQRCode } from "../api";
+import { scanQRCode, getCampusByQR } from "../api";
 import { SHADOWS, RADIUS } from "../theme/designSystem";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const { width: SW, height: SH } = Dimensions.get("window");
 const FRAME = 240;
@@ -20,6 +21,7 @@ export default function QRScanScreen({ navigation }) {
   const [scanning, setScanning] = useState(true);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
+  const [isCampusQR, setIsCampusQR] = useState(false);
 
   const scanLineAnim = useRef(new Animated.Value(0)).current;
   const successAnim = useRef(new Animated.Value(0)).current;
@@ -52,9 +54,18 @@ export default function QRScanScreen({ navigation }) {
     Animated.spring(successAnim, { toValue: 1, tension: 80, friction: 8, useNativeDriver: true }).start();
 
     try {
-      const qrData = await scanQRCode(data);
-      setResult(qrData);
-      setError(null);
+      if (data.startsWith("navx://campus/")) {
+        const campusId = data.split("navx://campus/")[1];
+        const campusData = await getCampusByQR(campusId);
+        setResult(campusData);
+        setIsCampusQR(true);
+        setError(null);
+      } else {
+        const qrData = await scanQRCode(data);
+        setResult(qrData);
+        setIsCampusQR(false);
+        setError(null);
+      }
     } catch {
       setError("QR not recognized. Try another code.");
     }
@@ -154,17 +165,26 @@ export default function QRScanScreen({ navigation }) {
       <View style={s.bottomPanel}>
         {result && !error && (
           <Animated.View style={[s.resultCard, { transform: [{ translateY: successAnim.interpolate({ inputRange: [0, 1], outputRange: [60, 0] }) }], opacity: successAnim }]}>
-            <View style={s.resultIconWrap}>
-              <Ionicons name="location" size={22} color="#22c55e" />
+            <View style={[s.resultIconWrap, { backgroundColor: isCampusQR ? "rgba(99,102,241,0.15)" : "rgba(34,197,94,0.15)" }]}>
+              <Ionicons name={isCampusQR ? "business" : "location"} size={22} color={isCampusQR ? "#6366f1" : "#22c55e"} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={s.resultTitle}>{result.label || "Location Set"}</Text>
-              <Text style={s.resultMeta}>
-                {result.floorId?.name || "Floor ?"} · {result.blockId?.name || "Block ?"}
-              </Text>
-              <Text style={s.resultCoords}>
-                Position: ({result.position?.x}, {result.position?.y})
-              </Text>
+              <Text style={s.resultTitle}>{isCampusQR ? result.name : (result.label || "Location Set")}</Text>
+              {isCampusQR ? (
+                <>
+                  <Text style={s.resultMeta}>{result.address || "Campus Map Unlocked"}</Text>
+                  <Text style={s.resultCoords}>Welcome to {result.name}</Text>
+                </>
+              ) : (
+                <>
+                  <Text style={s.resultMeta}>
+                    {result.floorId?.name || "Floor ?"} · {result.blockId?.name || "Block ?"}
+                  </Text>
+                  <Text style={s.resultCoords}>
+                    Position: ({result.position?.x}, {result.position?.y})
+                  </Text>
+                </>
+              )}
             </View>
           </Animated.View>
         )}
@@ -184,10 +204,22 @@ export default function QRScanScreen({ navigation }) {
               {result && (
                 <TouchableOpacity
                   style={s.navigateBtn}
-                  onPress={() => navigation.navigate("Map", { userPosition: result.position, floorId: result.floorId?._id })}
+                  onPress={async () => {
+                    if (isCampusQR) {
+                      try {
+                        await AsyncStorage.setItem('navx_active_campus', JSON.stringify({
+                          id: result._id,
+                          name: result.name
+                        }));
+                      } catch (e) {}
+                      navigation.navigate("MainTabs", { screen: "Map", params: { campusId: result._id } });
+                    } else {
+                      navigation.navigate("MainTabs", { screen: "Map", params: { userPosition: result.position, floorId: result.floorId?._id } });
+                    }
+                  }}
                 >
-                  <Ionicons name="navigate" size={18} color="#fff" />
-                  <Text style={s.navigateBtnText}>Go to Map</Text>
+                  <Ionicons name={isCampusQR ? "arrow-forward" : "navigate"} size={18} color="#fff" />
+                  <Text style={s.navigateBtnText}>{isCampusQR ? "Enter Campus" : "Go to Map"}</Text>
                 </TouchableOpacity>
               )}
             </>
