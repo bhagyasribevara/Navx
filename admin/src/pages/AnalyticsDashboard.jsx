@@ -3,12 +3,22 @@ import { FiBarChart2, FiNavigation, FiSearch } from 'react-icons/fi';
 import { MdQrCode2 } from 'react-icons/md';
 import * as api from '../api';
 
-export default function AnalyticsDashboard() {
+export default function AnalyticsDashboard({ admin }) {
   const [campuses, setCampuses] = useState([]);
   const [selectedCampus, setSelectedCampus] = useState(null);
   const [summary, setSummary] = useState(null);
 
-  useEffect(() => { api.getCampuses().then(r => { setCampuses(r.data); if (r.data.length) setSelectedCampus(r.data[0]); }); }, []);
+  useEffect(() => { 
+    api.getCampuses().then(r => { 
+      let campusList = r.data;
+      if (admin && admin.role === 'CampusAdmin' && admin.campusId) {
+        const cId = admin.campusId._id || admin.campusId;
+        campusList = campusList.filter(c => c._id === cId);
+      }
+      setCampuses(campusList); 
+      if (campusList.length) setSelectedCampus(campusList[0]); 
+    }); 
+  }, []);
 
   useEffect(() => {
     if (selectedCampus) {

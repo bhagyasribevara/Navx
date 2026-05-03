@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { FiMap, FiGrid, FiLayers, FiNavigation, FiPlus } from "react-icons/fi";
 import { getBlocks, getCampuses, getFloors } from "../api";
 
-export default function Dashboard() {
+export default function Dashboard({ admin }) {
   const [campuses, setCampuses] = useState([]);
   const [networkStats, setNetworkStats] = useState({
     totalFloors: 0,
@@ -18,7 +18,14 @@ export default function Dashboard() {
     const load = async () => {
       try {
         const campusesRes = await getCampuses();
-        const campusList = campusesRes.data;
+        let campusList = campusesRes.data;
+        
+        // Filter for CampusAdmin
+        if (admin && admin.role === 'CampusAdmin' && admin.campusId) {
+          const cId = admin.campusId._id || admin.campusId;
+          campusList = campusList.filter(c => c._id === cId);
+        }
+
         if (!mounted) return;
         setCampuses(campusList);
 
@@ -113,9 +120,11 @@ export default function Dashboard() {
             Welcome to NavX Indoor Navigation Admin
           </p>
         </div>
-        <button className="btn btn-primary" onClick={() => navigate("/campus")}>
-          <FiPlus /> New Campus
-        </button>
+        {(!admin || admin.role === 'SuperAdmin') && (
+          <button className="btn btn-primary" onClick={() => navigate("/campus")}>
+            <FiPlus /> New Campus
+          </button>
+        )}
       </div>
 
       <div className="card-grid" style={{ marginBottom: 24 }}>

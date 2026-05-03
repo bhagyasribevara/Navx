@@ -1,4 +1,4 @@
-import React, { useState, useContext } from "react";
+import React, { useState, useContext, useCallback } from "react";
 import { View, Platform } from "react-native";
 import { NavigationContainer } from "@react-navigation/native";
 import { DefaultTheme, DarkTheme } from "@react-navigation/native";
@@ -16,6 +16,7 @@ import ARScreen from "./src/screens/ARScreen";
 import QRScanScreen from "./src/screens/QRScanScreen";
 import SettingsScreen from "./src/screens/SettingsScreen";
 import FavoritesScreen from "./src/screens/FavoritesScreen";
+import SplashScreen from "./src/screens/SplashScreen";
 
 const DARK = {
   bg: "#070B14",
@@ -113,6 +114,7 @@ function MainTabs() {
 export default function App() {
   const [isDark, setIsDark] = useState(true);
   const [language, setLanguage] = useState("en");
+  const [showSplash, setShowSplash] = useState(true);
   const colors = isDark ? DARK : LIGHT;
   const baseTheme = isDark ? DarkTheme : DefaultTheme;
 
@@ -128,6 +130,10 @@ export default function App() {
       notification: colors.danger,
     },
   };
+
+  if (showSplash) {
+    return <SplashScreen onFinish={() => setShowSplash(false)} />;
+  }
 
   return (
     <ThemeContext.Provider value={{ colors, isDark, setIsDark, language, setLanguage }}>

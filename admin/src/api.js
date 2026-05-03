@@ -8,6 +8,13 @@ const api = axios.create({
   headers: { "Content-Type": "application/json" },
 });
 
+// Admin Auth
+export const loginAdmin = (data) => api.post("/admin/login", data);
+export const createCampusAdmin = (data) => api.post("/admin/create-campus-admin", data);
+export const getAdmins = (superAdminId) => api.get(`/admin/admins/${superAdminId}`);
+export const deleteCampusAdmin = (superAdminId, adminId) => api.delete(`/admin/admins/${superAdminId}/${adminId}`);
+export const updateCampusAdmin = (superAdminId, adminId, data) => api.put(`/admin/admins/${superAdminId}/${adminId}`, data);
+
 // Campus
 export const getCampuses = () => api.get("/campus");
 export const getCampus = (id) => api.get(`/campus/${id}`);

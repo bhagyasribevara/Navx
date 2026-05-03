@@ -1,3 +1,4 @@
+import React from 'react';
 import { Routes, Route, NavLink, useLocation } from 'react-router-dom';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
@@ -8,30 +9,68 @@ import CampusManager from './pages/CampusManager';
 import MapEditor from './pages/MapEditor';
 import PositioningSetup from './pages/PositioningSetup';
 import AnalyticsDashboard from './pages/AnalyticsDashboard';
+import Login from './pages/Login';
+import SuperAdminDashboard from './pages/SuperAdminDashboard';
 
 function App() {
+  const [admin, setAdmin] = React.useState(null);
   const location = useLocation();
   const isEditorPage = location.pathname.startsWith('/editor');
+
+  React.useEffect(() => {
+    const savedAdmin = localStorage.getItem('navx_admin');
+    if (savedAdmin) {
+      setAdmin(JSON.parse(savedAdmin));
+    }
+  }, []);
+
+  const handleLogin = (adminData) => {
+    localStorage.setItem('navx_admin', JSON.stringify(adminData));
+    setAdmin(adminData);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('navx_admin');
+    setAdmin(null);
+  };
+
+  if (!admin) {
+    return (
+      <>
+        <ToastContainer position="bottom-right" theme="dark" autoClose={3000} />
+        <Login onLogin={handleLogin} />
+      </>
+    );
+  }
+
+  if (admin.role === 'SuperAdmin') {
+    return (
+      <>
+        <ToastContainer position="bottom-right" theme="dark" autoClose={3000} />
+        <SuperAdminDashboard admin={admin} onLogout={handleLogout} />
+      </>
+    );
+  }
 
   return (
     <div className="app-layout">
       <ToastContainer position="bottom-right" theme="dark" autoClose={3000} />
-      {!isEditorPage && <Sidebar />}
+      {!isEditorPage && <Sidebar admin={admin} onLogout={handleLogout} />}
       <div className="main-content" style={isEditorPage ? { marginLeft: 0 } : {}}>
         {!isEditorPage && <TopBar />}
         <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/campus" element={<CampusManager />} />
+          <Route path="/" element={<Dashboard admin={admin} />} />
+          <Route path="/campus" element={<CampusManager admin={admin} />} />
           <Route path="/editor/:campusId" element={<MapEditor />} />
           <Route path="/positioning/:campusId" element={<PositioningSetup />} />
-          <Route path="/analytics" element={<AnalyticsDashboard />} />
+          <Route path="/analytics" element={<AnalyticsDashboard admin={admin} />} />
         </Routes>
       </div>
     </div>
   );
 }
 
-function Sidebar() {
+function Sidebar({ admin, onLogout }) {
   return (
     <aside className="sidebar">
       <div className="sidebar-header">
@@ -62,7 +101,10 @@ function Sidebar() {
         </div>
       </nav>
       <div style={{ padding: '16px', borderTop: '1px solid var(--border-color)', fontSize: '11px', color: 'var(--text-muted)' }}>
-        NavX Admin v1.0
+        <div>NavX Admin v1.0</div>
+        <div style={{ marginTop: '8px', cursor: 'pointer', color: 'var(--danger-color, #ef4444)' }} onClick={onLogout}>
+          Logout
+        </div>
       </div>
     </aside>
   );

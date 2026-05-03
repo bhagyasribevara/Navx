@@ -27,7 +27,7 @@ function MapClickHandler({ setMarkerPos, setMapCenter }) {
   return null;
 }
 
-export default function CampusManager() {
+export default function CampusManager({ admin }) {
   const [campuses, setCampuses] = useState([]);
   const [showModal, setShowModal] = useState(false);
   const [showQRModal, setShowQRModal] = useState(false);
@@ -103,7 +103,16 @@ export default function CampusManager() {
     toast.error('Location not found. Please click on the map to pinpoint manually.');
   };
 
-  const load = () => getCampuses().then(r => setCampuses(r.data)).catch(e => toast.error('Failed to load'));
+  const load = () => {
+    getCampuses().then(r => {
+      let campusList = r.data;
+      if (admin && admin.role === 'CampusAdmin' && admin.campusId) {
+        const cId = admin.campusId._id || admin.campusId;
+        campusList = campusList.filter(c => c._id === cId);
+      }
+      setCampuses(campusList);
+    }).catch(e => toast.error('Failed to load'));
+  };
 
   useEffect(() => { load(); }, []);
 
@@ -154,9 +163,11 @@ export default function CampusManager() {
           <h1 className="page-title">Campus Management</h1>
           <p className="page-subtitle">Create and manage campus structures</p>
         </div>
-        <button className="btn btn-primary" onClick={() => { setEditing(null); setForm({ name: '', description: '', address: '' }); setMarkerPos(null); setShowModal(true); }}>
-          <FiPlus /> New Campus
-        </button>
+        {(!admin || admin.role === 'SuperAdmin') && (
+          <button className="btn btn-primary" onClick={() => { setEditing(null); setForm({ name: '', description: '', address: '' }); setMarkerPos(null); setShowModal(true); }}>
+            <FiPlus /> New Campus
+          </button>
+        )}
       </div>
 
       {campuses.length === 0 ? (
@@ -178,12 +189,16 @@ export default function CampusManager() {
                 <button className="btn btn-secondary btn-sm" onClick={() => { setSelectedQR(c); setShowQRModal(true); }}>
                   QR Code
                 </button>
-                <button className="btn btn-secondary btn-sm" onClick={() => openEdit(c)}>
-                  <FiEdit2 /> Edit
-                </button>
-                <button className="btn btn-danger btn-sm" onClick={() => handleDelete(c._id)}>
-                  <FiTrash2 />
-                </button>
+                {(!admin || admin.role === 'SuperAdmin') && (
+                  <>
+                    <button className="btn btn-secondary btn-sm" onClick={() => openEdit(c)}>
+                      <FiEdit2 /> Edit
+                    </button>
+                    <button className="btn btn-danger btn-sm" onClick={() => handleDelete(c._id)}>
+                      <FiTrash2 />
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           ))}

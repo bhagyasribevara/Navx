@@ -29,6 +29,7 @@ app.use('/api/beacons', require('./routes/beacons'));
 app.use('/api/navigation', require('./routes/navigation'));
 app.use('/api/analytics', require('./routes/analytics'));
 app.use('/api/ai', require('./routes/ai'));
+app.use('/api/admin', require('./routes/admin'));
 
 // Health check
 app.get('/api/health', (req, res) => {
