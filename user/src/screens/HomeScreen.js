@@ -7,7 +7,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { ThemeContext } from "../context/ThemeContext";
-import { getCampuses, cachedGet } from "../api";
+import { getCampuses, cachedGet, downloadCampusOffline } from "../api";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SHADOWS, RADIUS, QUICK_ACTIONS, ROOM_COLORS } from "../theme/designSystem";
 
@@ -30,6 +30,8 @@ export default function HomeScreen({ navigation }) {
   const [recentRooms, setRecentRooms] = useState([]);
   const [activeCampusId, setActiveCampusId] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [downloadingCampus, setDownloadingCampus] = useState(false);
+  const [downloadedStatus, setDownloadedStatus] = useState({});
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const headerAnim = useRef(new Animated.Value(0)).current;
   const cardAnims = useRef(QUICK_ACTIONS.map(() => new Animated.Value(0))).current;
@@ -64,6 +66,14 @@ export default function HomeScreen({ navigation }) {
       .then(d => { setCampuses(d); setLoading(false); })
       .catch(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    if (activeCampusId) {
+      AsyncStorage.getItem(`navx_offline_${activeCampusId}`).then(res => {
+        if (res) setDownloadedStatus(prev => ({ ...prev, [activeCampusId]: true }));
+      }).catch(() => {});
+    }
+  }, [activeCampusId]);
 
   const [showNotifs, setShowNotifs] = useState(false);
   const MOCK_NOTIFS = [
@@ -373,6 +383,29 @@ export default function HomeScreen({ navigation }) {
                     <TouchableOpacity style={s.arBtn} onPress={() => navigation.navigate("Search", { campusId: campus._id })}>
                       <Ionicons name="search" size={16} color={colors.primary} />
                       <Text style={{ color: colors.primary, fontWeight: "700", fontSize: 13, marginLeft: 6 }}>Search</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity 
+                      style={[s.arBtn, downloadedStatus[campus._id] && { borderColor: "#22c55e", backgroundColor: "rgba(34,197,94,0.1)" }]} 
+                      onPress={async () => {
+                        if (downloadingCampus || downloadedStatus[campus._id]) return;
+                        setDownloadingCampus(true);
+                        const success = await downloadCampusOffline(campus._id);
+                        if (success) {
+                          setDownloadedStatus(prev => ({ ...prev, [campus._id]: true }));
+                        }
+                        setDownloadingCampus(false);
+                      }}
+                    >
+                      {downloadingCampus ? (
+                        <ActivityIndicator size="small" color={colors.primary} />
+                      ) : (
+                        <>
+                          <Ionicons name={downloadedStatus[campus._id] ? "cloud-done" : "cloud-download"} size={16} color={downloadedStatus[campus._id] ? "#22c55e" : colors.primary} />
+                          <Text style={{ color: downloadedStatus[campus._id] ? "#22c55e" : colors.primary, fontWeight: "700", fontSize: 13, marginLeft: 6 }}>
+                            {downloadedStatus[campus._id] ? "Downloaded" : "Download"}
+                          </Text>
+                        </>
+                      )}
                     </TouchableOpacity>
                   </View>
                 </View>
