@@ -289,7 +289,7 @@ export default function GuidedMapBuilder() {
   };
   const loadFloorData = async (fid) => {
     if(!fid) return;
-    const [a, b, c] = await Promise.all([getRooms(fid), getNodes(fid), getPaths(fid)].map(p => p.catch(() => ({ data: [] }))));
+    const [a, b, c] = await Promise.all([getRooms(fid, activeBlock?._id), getNodes(fid, activeBlock?._id), getPaths(fid)].map(p => p.catch(() => ({ data: [] }))));
     setRooms(a.data); setNodes(b.data); setPaths(c.data);
   };
 

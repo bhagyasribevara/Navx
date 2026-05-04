@@ -207,6 +207,13 @@ export default function QRScanScreen({ navigation }) {
                   onPress={async () => {
                     if (isCampusQR) {
                       try {
+                        const previousCampusStr = await AsyncStorage.getItem('navx_active_campus');
+                        if (previousCampusStr) {
+                          const previousCampus = JSON.parse(previousCampusStr);
+                          if (previousCampus.id !== result._id) {
+                            await AsyncStorage.removeItem('navx_recent');
+                          }
+                        }
                         await AsyncStorage.setItem('navx_active_campus', JSON.stringify({
                           id: result._id,
                           name: result.name
@@ -214,6 +221,14 @@ export default function QRScanScreen({ navigation }) {
                       } catch (e) {}
                       navigation.navigate("MainTabs", { screen: "Map", params: { campusId: result._id } });
                     } else {
+                      try {
+                        await AsyncStorage.setItem('navx_last_scan', JSON.stringify({
+                          x: result.position.x,
+                          y: result.position.y,
+                          floorId: result.floorId?._id,
+                          timestamp: Date.now()
+                        }));
+                      } catch (e) {}
                       navigation.navigate("MainTabs", { screen: "Map", params: { userPosition: result.position, floorId: result.floorId?._id } });
                     }
                   }}

@@ -5,8 +5,15 @@ const Room = require('../models/Room');
 router.get('/', async (req, res) => {
   try {
     const filter = { isActive: true };
-    if (req.query.floorId) filter.floorId = req.query.floorId;
-    if (req.query.blockId) filter.blockId = req.query.blockId;
+    if (req.query.floorId && req.query.blockId) {
+      filter.$or = [
+        { floorId: req.query.floorId },
+        { blockId: req.query.blockId, type: { $in: ['stairs', 'elevator'] } }
+      ];
+    } else {
+      if (req.query.floorId) filter.floorId = req.query.floorId;
+      if (req.query.blockId) filter.blockId = req.query.blockId;
+    }
     if (req.query.campusId) filter.campusId = req.query.campusId;
     if (req.query.type) filter.type = req.query.type;
     const rooms = await Room.find(filter)

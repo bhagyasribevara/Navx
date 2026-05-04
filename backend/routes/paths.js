@@ -6,7 +6,9 @@ const NavNode = require('../models/NavNode');
 router.get('/', async (req, res) => {
   try {
     const filter = { isActive: true };
-    if (req.query.floorId) filter.floorId = req.query.floorId;
+    if (req.query.floorId) {
+      filter.floorId = req.query.floorId === 'null' ? { $eq: null } : req.query.floorId;
+    }
     if (req.query.campusId) filter.campusId = req.query.campusId;
     const paths = await NavPath.find(filter);
     res.json(paths);

@@ -7,32 +7,29 @@ import { Ionicons } from "@expo/vector-icons";
 import { ThemeContext } from "../context/ThemeContext";
 import { SHADOWS, RADIUS, ROOM_COLORS } from "../theme/designSystem";
 
-const MOCK_FAVORITES = [
-  { id: "f1", name: "Computer Lab 3", type: "lab", floor: "Floor 2", block: "Block A", icon: "flask", color: "#22c55e" },
-  { id: "f2", name: "Main Library", type: "library", floor: "Floor 1", block: "Block B", icon: "library", color: "#06b6d4" },
-  { id: "f3", name: "Principal Office", type: "office", floor: "Floor 3", block: "Block C", icon: "business", color: "#8b5cf6" },
-  { id: "f4", name: "Canteen", type: "cafeteria", floor: "Ground Floor", block: "Block D", icon: "restaurant", color: "#ef4444" },
-  { id: "f5", name: "Seminar Hall", type: "auditorium", floor: "Floor 2", block: "Block A", icon: "megaphone", color: "#ec4899" },
-];
-
-const MOCK_RECENTS = [
-  { id: "r1", name: "CS301 Classroom", type: "classroom", floor: "Floor 3", block: "Block B", icon: "school", color: "#3b82f6" },
-  { id: "r2", name: "Boys Restroom", type: "restroom", floor: "Floor 1", block: "Block A", icon: "water", color: "#f59e0b" },
-  { id: "r3", name: "Elevator B", type: "elevator", floor: "Floor 2", block: "Block B", icon: "arrow-up", color: "#6366f1" },
-];
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 export default function FavoritesScreen({ navigation }) {
   const { colors } = useContext(ThemeContext);
-  const [favorites, setFavorites] = useState(MOCK_FAVORITES);
-  const [activeTab, setActiveTab] = useState("favorites");
+  const [favorites, setFavorites] = useState([]);
+  const [recents, setRecents] = useState([]);
+  const [activeTab, setActiveTab] = useState("recent");
   const headerAnim = useRef(new Animated.Value(0)).current;
-  const itemAnims = useRef([...MOCK_FAVORITES, ...MOCK_RECENTS].map(() => new Animated.Value(0))).current;
+  const itemAnims = useRef(Array(20).fill(0).map(() => new Animated.Value(0))).current;
 
   useEffect(() => {
     Animated.timing(headerAnim, { toValue: 1, duration: 400, useNativeDriver: true }).start();
-    Animated.stagger(60, itemAnims.map(a =>
-      Animated.spring(a, { toValue: 1, tension: 120, friction: 10, useNativeDriver: true })
-    )).start();
+    
+    // Fetch real recent history
+    AsyncStorage.getItem("navx_recent").then(stored => {
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        setRecents(parsed);
+        Animated.stagger(60, parsed.map((_, i) =>
+          Animated.spring(itemAnims[i], { toValue: 1, tension: 120, friction: 10, useNativeDriver: true })
+        )).start();
+      }
+    });
   }, []);
 
   const removeFavorite = (id) => {
@@ -88,19 +85,10 @@ export default function FavoritesScreen({ navigation }) {
     },
     emptyTitle: { fontSize: 17, fontWeight: "700", color: colors.text, marginBottom: 8 },
     emptyText: { fontSize: 14, color: colors.textSec, textAlign: "center", lineHeight: 20 },
-    statsRow: {
-      flexDirection: "row", gap: 10, marginHorizontal: 20, marginTop: 16, marginBottom: 4,
-    },
-    statCard: {
-      flex: 1, backgroundColor: colors.card, borderRadius: RADIUS.md,
-      padding: 14, alignItems: "center",
-      borderWidth: 1, borderColor: colors.border,
-    },
-    statVal: { fontSize: 22, fontWeight: "800", color: colors.primary },
     statLbl: { fontSize: 11, color: colors.textMuted, marginTop: 2, fontWeight: "600" },
   });
 
-  const data = activeTab === "favorites" ? favorites : MOCK_RECENTS;
+  const data = activeTab === "favorites" ? favorites : recents;
 
   return (
     <View style={s.container}>
@@ -134,34 +122,20 @@ export default function FavoritesScreen({ navigation }) {
         </View>
       </Animated.View>
 
-      {/* Stats */}
-      <View style={s.statsRow}>
-        <View style={s.statCard}>
-          <Text style={s.statVal}>{favorites.length}</Text>
-          <Text style={s.statLbl}>Saved Places</Text>
-        </View>
-        <View style={s.statCard}>
-          <Text style={s.statVal}>{MOCK_RECENTS.length}</Text>
-          <Text style={s.statLbl}>Recent Visits</Text>
-        </View>
-        <View style={s.statCard}>
-          <Text style={[s.statVal, { color: colors.accent }]}>5</Text>
-          <Text style={s.statLbl}>This Week</Text>
-        </View>
-      </View>
-
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.listContent}>
         {data.length === 0 ? (
           <View style={s.empty}>
             <View style={s.emptyIcon}>
               <Ionicons name="heart-outline" size={32} color={colors.textMuted} />
             </View>
-            <Text style={s.emptyTitle}>No Saved Places</Text>
-            <Text style={s.emptyText}>Tap the ❤️ icon on any{"\n"}room to save it here.</Text>
+            <Text style={s.emptyTitle}>No {activeTab === "favorites" ? "Saved" : "Recent"} Places</Text>
+            <Text style={s.emptyText}>
+              {activeTab === "favorites" ? "Tap the ❤️ icon on any\nroom to save it here." : "Your recent navigation history\nwill appear here."}
+            </Text>
           </View>
         ) : (
           data.map((loc, i) => (
-            <Animated.View key={loc.id} style={{
+            <Animated.View key={loc._id || loc.id || i} style={{
               opacity: itemAnims[i],
               transform: [
                 { translateX: itemAnims[i].interpolate({ inputRange: [0, 1], outputRange: [-30, 0] }) }
@@ -172,19 +146,12 @@ export default function FavoritesScreen({ navigation }) {
                 onPress={() => navigation.navigate("Map")}
                 activeOpacity={0.85}
               >
-                <View style={[s.iconWrap, { backgroundColor: loc.color + "20" }]}>
-                  <Ionicons name={loc.icon} size={24} color={loc.color} />
+                <View style={[s.iconWrap, { backgroundColor: (ROOM_COLORS[loc.type] || colors.primary) + "20" }]}>
+                  <Ionicons name="location" size={24} color={ROOM_COLORS[loc.type] || colors.primary} />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={s.name}>{loc.name}</Text>
-                  <Text style={s.meta}>{loc.floor} · {loc.block}</Text>
-                  <View style={{ flexDirection: "row", alignItems: "center", marginTop: 6 }}>
-                    <View style={{ paddingHorizontal: 8, paddingVertical: 2, borderRadius: 99, backgroundColor: loc.color + "18" }}>
-                      <Text style={{ fontSize: 10, fontWeight: "700", color: loc.color }}>
-                        {loc.type.toUpperCase()}
-                      </Text>
-                    </View>
-                  </View>
+                  <Text style={s.meta}>{loc.type.toUpperCase()}</Text>
                 </View>
                 <View style={s.actions}>
                   <TouchableOpacity
@@ -196,7 +163,7 @@ export default function FavoritesScreen({ navigation }) {
                   {activeTab === "favorites" && (
                     <TouchableOpacity
                       style={[s.actionBtn, { backgroundColor: colors.danger + "15" }]}
-                      onPress={() => removeFavorite(loc.id)}
+                      onPress={() => removeFavorite(loc._id)}
                     >
                       <Ionicons name="heart-dislike" size={18} color={colors.danger} />
                     </TouchableOpacity>

@@ -35,21 +35,21 @@ export const updateFloor = (id, data) => api.put(`/floors/${id}`, data);
 export const deleteFloor = (id) => api.delete(`/floors/${id}`);
 
 // Rooms
-export const getRooms = (floorId) => api.get(`/rooms?floorId=${floorId}`);
+export const getRooms = (floorId, blockId) => api.get(`/rooms?floorId=${floorId}${blockId ? `&blockId=${blockId}` : ''}`);
 export const createRoom = (data) => api.post("/rooms", data);
 export const updateRoom = (id, data) => api.put(`/rooms/${id}`, data);
 export const deleteRoom = (id) => api.delete(`/rooms/${id}`);
 
 // Nav Nodes
-export const getNodes = (floorId) => api.get(`/nodes?floorId=${floorId}`);
-export const getAllCampusNodes = (campusId) => api.get(`/nodes?campusId=${campusId}`);
+export const getNodes = (floorId, blockId) => api.get(`/nodes?floorId=${floorId}${blockId ? `&blockId=${blockId}` : ''}`);
+export const getAllCampusNodes = (campusId) => api.get(`/nodes?campusId=${campusId}&floorId=null`);
 export const createNode = (data) => api.post("/nodes", data);
 export const updateNode = (id, data) => api.put(`/nodes/${id}`, data);
 export const deleteNode = (id) => api.delete(`/nodes/${id}`);
 
 // Nav Paths
 export const getPaths = (floorId) => api.get(`/paths?floorId=${floorId}`);
-export const getAllCampusPaths = (campusId) => api.get(`/paths?campusId=${campusId}`);
+export const getAllCampusPaths = (campusId) => api.get(`/paths?campusId=${campusId}&floorId=null`);
 export const createPath = (data) => api.post("/paths", data);
 export const updatePath = (id, data) => api.put(`/paths/${id}`, data);
 export const deletePath = (id) => api.delete(`/paths/${id}`);

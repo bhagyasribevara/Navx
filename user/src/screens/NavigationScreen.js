@@ -164,41 +164,66 @@ export default function NavigationScreen({ navigation, route }) {
       setGpsLoading(true);
       let uLat = null;
       let uLng = null;
+      let usedQR = false;
 
-      // Step 1: Check location services are enabled
-      const locEnabled = await Location.hasServicesEnabledAsync();
-      if (!locEnabled) {
-        setError("Please turn ON your Location/GPS in phone settings for accurate navigation.");
-        setGpsLoading(false);
-        return;
+      // Check for explicitly passed position or recent QR scan
+      if (route.params?.userPosition) {
+        uLat = route.params.userPosition.x;
+        uLng = route.params.userPosition.y;
+        usedQR = true;
+      } else {
+        try {
+          const lastScanStr = await AsyncStorage.getItem('navx_last_scan');
+          if (lastScanStr) {
+            const lastScan = JSON.parse(lastScanStr);
+            // If scanned within the last 15 minutes
+            if (Date.now() - lastScan.timestamp < 900000) {
+              uLat = lastScan.x;
+              uLng = lastScan.y;
+              usedQR = true;
+            }
+          }
+        } catch (e) {}
       }
 
-      // Step 2: Get user's real GPS position with HIGHEST accuracy
-      if (locationPerm) {
-        try {
-          const loc = await Location.getCurrentPositionAsync({
-            accuracy: Location.Accuracy.BestForNavigation,
-            maximumAge: 5000,
-          });
-          uLat = loc.coords.latitude;
-          uLng = loc.coords.longitude;
-          console.log(`[NavX GPS] User at: ${uLat.toFixed(6)}, ${uLng.toFixed(6)} accuracy: ${loc.coords.accuracy}m`);
-        } catch (e) {
-          console.warn("GPS error:", e);
-          setError("Could not get GPS location. Please enable Location and try again.");
+      if (!usedQR) {
+        // Step 1: Check location services are enabled
+        const locEnabled = await Location.hasServicesEnabledAsync();
+        if (!locEnabled) {
+          setError("Please turn ON your Location/GPS in phone settings for accurate navigation.");
           setGpsLoading(false);
           return;
         }
-      } else {
-        setError("Location permission required. Please allow location access in your phone settings.");
-        setGpsLoading(false);
-        return;
+
+        // Step 2: Get user's real GPS position with HIGHEST accuracy
+        if (locationPerm) {
+          try {
+            const loc = await Location.getCurrentPositionAsync({
+              accuracy: Location.Accuracy.BestForNavigation,
+              maximumAge: 5000,
+            });
+            uLat = loc.coords.latitude;
+            uLng = loc.coords.longitude;
+            console.log(`[NavX GPS] User at: ${uLat.toFixed(6)}, ${uLng.toFixed(6)} accuracy: ${loc.coords.accuracy}m`);
+          } catch (e) {
+            console.warn("GPS error:", e);
+            setError("Could not get GPS location. Please enable Location and try again.");
+            setGpsLoading(false);
+            return;
+          }
+        } else {
+          setError("Location permission required. Please allow location access in your phone settings.");
+          setGpsLoading(false);
+          return;
+        }
       }
 
-      setUserPos({ x: uLat, y: uLng, floor: room.floorId });
+      if (usedQR) {
+        posEngine.setPositionFromQR(uLat, uLng, room?.floorId);
+      }
+      setUserPos({ x: uLat, y: uLng, floor: room?.floorId });
 
-      // Step 3: Send raw GPS coords to the backend — let the SERVER find nearest node
-      // This eliminates all client-side ID mismatch issues
+      // Step 3: Send raw GPS/QR coords to the backend
       const result = await findRouteToRoom({
         startX: uLat,
         startY: uLng,
@@ -281,18 +306,25 @@ export default function NavigationScreen({ navigation, route }) {
           (loc) => {
             const lat = loc.coords.latitude;
             const lng = loc.coords.longitude;
-            setUserPos({ x: lat, y: lng, floor: room?.floorId });
+            // Only use raw GPS if we haven't calibrated with a highly accurate QR code recently
+            if (!posEngine.isCalibrated) {
+              setUserPos({ x: lat, y: lng, floor: room?.floorId });
+            }
             
             const rData = routeDataRef.current;
             const cStep = currentStepRef.current;
             const isArrived = arrivedRef.current;
+            
+            // To calculate live distance, use the current active user position
+            const activeLat = posEngine.isCalibrated ? posEngine.position.x : lat;
+            const activeLng = posEngine.isCalibrated ? posEngine.position.y : lng;
 
             if (rData && rData.path && !isArrived) {
               const targetNode = rData.path[cStep + 1] || rData.path[cStep];
               if (targetNode) {
                 // Approximate distance to the END of the current segment
-                const dx = (lat - targetNode.x) * 111320;
-                const dy = (lng - targetNode.y) * 111320 * Math.cos(lat * Math.PI / 180);
+                const dx = (activeLat - targetNode.x) * 111320;
+                const dy = (activeLng - targetNode.y) * 111320 * Math.cos(activeLat * Math.PI / 180);
                 const distToNextNodeMeters = Math.sqrt(dx*dx + dy*dy);
                 setLiveStepDist(Math.round(distToNextNodeMeters));
                 

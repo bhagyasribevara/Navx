@@ -22,20 +22,32 @@ const SUGGESTED = [
   "Computer Lab", "Library", "Principal Office", "Canteen", "Auditorium", "Seminar Hall",
 ];
 
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
 export default function SearchScreen({ navigation, route }) {
   const { colors } = useContext(ThemeContext);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
-  const [campusId, setCampusId] = useState(null);
+  const [campusId, setCampusId] = useState(route.params?.campusId || null);
   const [activeCat, setActiveCat] = useState(route.params?.filter || null);
   const inputRef = useRef(null);
   const listAnim = useRef(new Animated.Value(0)).current;
   const searchFocusAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    cachedGet("campuses", getCampuses).then(data => {
-      if (data.length) setCampusId(data[0]._id);
-    });
+    if (!campusId) {
+      AsyncStorage.getItem("navx_active_campus").then(stored => {
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          setCampusId(parsed.id);
+        } else {
+          // Fallback if no active campus
+          cachedGet("campuses", getCampuses).then(data => {
+            if (data.length) setCampusId(data[0]._id);
+          });
+        }
+      });
+    }
     setTimeout(() => inputRef.current?.focus(), 200);
   }, []);
 
@@ -136,7 +148,7 @@ export default function SearchScreen({ navigation, route }) {
       <Animated.View style={{ opacity: listAnim, transform: [{ translateY: listAnim.interpolate({ inputRange: [0, 1], outputRange: [10, 0] }) }] }}>
         <TouchableOpacity
           style={s.resultItem}
-          onPress={() => navigation.navigate("Map", { campusId, selectedRoom: item })}
+          onPress={() => navigation.navigate("Navigation", { room: item, campusId })}
           activeOpacity={0.8}
         >
           <View style={[s.iconWrap, { backgroundColor: color + "18" }]}>
@@ -152,7 +164,7 @@ export default function SearchScreen({ navigation, route }) {
           </View>
           <TouchableOpacity
             style={s.navChip}
-            onPress={() => navigation.navigate("Map", { campusId, selectedRoom: item })}
+            onPress={() => navigation.navigate("Navigation", { room: item, campusId })}
           >
             <Ionicons name="navigate" size={16} color={colors.primary} />
           </TouchableOpacity>
@@ -222,7 +234,7 @@ export default function SearchScreen({ navigation, route }) {
             <Ionicons name="search-outline" size={30} color={colors.textMuted} />
           </View>
           <Text style={s.emptyTitle}>No Results Found</Text>
-          <Text style={s.emptyText}>Try a different name or category</Text>
+          <Text style={s.emptyText}>Admin will upload soon</Text>
         </View>
       ) : (
         <ScrollView showsVerticalScrollIndicator={false}>
