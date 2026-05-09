@@ -17,6 +17,7 @@ import QRScanScreen from "./src/screens/QRScanScreen";
 import SettingsScreen from "./src/screens/SettingsScreen";
 import FavoritesScreen from "./src/screens/FavoritesScreen";
 import SplashScreen from "./src/screens/SplashScreen";
+import OfflineMapsScreen from "./src/screens/OfflineMapsScreen";
 
 const DARK = {
   bg: "#070B14",
@@ -154,6 +155,11 @@ export default function App() {
           <Stack.Screen
             name="QRScan"
             component={QRScanScreen}
+            options={{ animation: "slide_from_bottom", gestureEnabled: true }}
+          />
+          <Stack.Screen
+            name="OfflineMaps"
+            component={OfflineMapsScreen}
             options={{ animation: "slide_from_bottom", gestureEnabled: true }}
           />
         </Stack.Navigator>

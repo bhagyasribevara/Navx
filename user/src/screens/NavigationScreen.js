@@ -187,8 +187,8 @@ export default function NavigationScreen({ navigation, route }) {
           const lastScanStr = await AsyncStorage.getItem('navx_last_scan');
           if (lastScanStr) {
             const lastScan = JSON.parse(lastScanStr);
-            // If scanned within the last 15 minutes
-            if (Date.now() - lastScan.timestamp < 900000) {
+            // If scanned within the last 1 minute
+            if (Date.now() - lastScan.timestamp < 60000) {
               uLat = lastScan.x;
               uLng = lastScan.y;
               usedQR = true;

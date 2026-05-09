@@ -17,6 +17,5 @@ const qrCodeSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 qrCodeSchema.index({ floorId: 1 });
-qrCodeSchema.index({ code: 1 });
 
 module.exports = mongoose.model('QRCode', qrCodeSchema);

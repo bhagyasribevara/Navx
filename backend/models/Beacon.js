@@ -24,6 +24,5 @@ const beaconSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 beaconSchema.index({ floorId: 1 });
-beaconSchema.index({ beaconId: 1 });
 
 module.exports = mongoose.model('Beacon', beaconSchema);
