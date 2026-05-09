@@ -96,6 +96,27 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
+// POST trigger emergency
+router.post('/:id/emergency', async (req, res) => {
+  try {
+    const { isActive, message, type } = req.body;
+    const campus = await Campus.findById(req.params.id);
+    if (!campus) return res.status(404).json({ error: 'Campus not found' });
+    
+    campus.emergencyState = {
+      isActive,
+      message: message || '',
+      type: type || 'Fire',
+      timestamp: isActive ? new Date() : null
+    };
+    
+    await campus.save();
+    res.json({ success: true, emergencyState: campus.emergencyState });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET campus by QR code — resolves QR data to campus info
 router.get('/qr/:campusId', async (req, res) => {
   try {
@@ -109,6 +130,7 @@ router.get('/qr/:campusId', async (req, res) => {
       description: campus.description,
       address: campus.address,
       location: campus.location,
+      venueType: campus.venueType || 'campus',
     });
   } catch (err) {
     res.status(400).json({ error: 'Invalid QR code.' });

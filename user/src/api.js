@@ -87,7 +87,14 @@ const runOfflinePathfinding = async (campusId, from, to, isToRoom = false) => {
 
   if (!startNodeId || !endNodeId) throw new Error("Start or End node not found offline");
 
-  const result = astar(graph, startNodeId, endNodeId);
+  let result = astar(graph, startNodeId, endNodeId);
+  
+  if (!result.found) {
+    console.log('[Offline Navigation] A* route failed, falling back to Dijkstra...');
+    const { dijkstra } = require('./utils/pathfinding');
+    result = dijkstra(graph, startNodeId, endNodeId);
+  }
+
   const directions = generateDirections(result.path);
   
   return { ...result, directions, offline: true };
@@ -132,6 +139,14 @@ export const findRouteToRoom = async (data) => {
     return await api.post("/navigation/route-to-room", data).then((r) => r.data);
   } catch (error) {
     return runOfflinePathfinding(data.campusId, data.from, { roomId: data.roomId }, true);
+  }
+};
+
+export const findRouteToExit = async (data) => {
+  try {
+    return await api.post("/navigation/route-to-exit", data).then((r) => r.data);
+  } catch (error) {
+    throw error;
   }
 };
 

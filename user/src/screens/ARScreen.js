@@ -507,7 +507,7 @@ const styles = StyleSheet.create({
   // Top destination card
   topCard: {
     position: "absolute", top: 0, left: 0, right: 0,
-    paddingTop: Platform.OS === "ios" ? 54 : 20,
+    paddingTop: 16,
     paddingBottom: 16, paddingHorizontal: 16,
     backgroundColor: "rgba(17,24,39,0.88)",
     borderBottomLeftRadius: 24, borderBottomRightRadius: 24,

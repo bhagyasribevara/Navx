@@ -31,7 +31,7 @@ router.post('/login', async (req, res) => {
     }
     
     let campusDetails = null;
-    if (admin.role === 'CampusAdmin' && admin.campusId) {
+    if ((admin.role === 'CampusAdmin' || admin.role === 'VenueAdmin') && admin.campusId) {
       campusDetails = await Campus.findById(admin.campusId);
     }
     
@@ -42,7 +42,8 @@ router.post('/login', async (req, res) => {
         username: admin.username,
         role: admin.role,
         campusId: admin.campusId,
-        campus: campusDetails
+        campus: campusDetails,
+        managedVenueType: admin.managedVenueType || campusDetails?.venueType || 'campus'
       }
     });
   } catch (err) {
@@ -50,20 +51,26 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// Create new Campus Admin (SuperAdmin only)
+// Create new Venue Admin (SuperAdmin only)
 router.post('/create-campus-admin', async (req, res) => {
   try {
-    const { superAdminId, newUsername, newPassword, campusName, campusAddress } = req.body;
+    const { superAdminId, newUsername, newPassword, campusName, campusAddress, venueType } = req.body;
     
     const superAdmin = await Admin.findById(superAdminId);
     if (!superAdmin || superAdmin.role !== 'SuperAdmin') {
-      return res.status(403).json({ error: 'Unauthorized. Only SuperAdmin can create Campus Admins.' });
+      return res.status(403).json({ error: 'Unauthorized. Only SuperAdmin can create Venue Admins.' });
     }
     
-    // Create the campus first
+    const resolvedVenueType = venueType || 'campus';
+
+    // Create the venue first
     let campus = await Campus.findOne({ name: campusName });
     if (!campus) {
-      campus = new Campus({ name: campusName, address: campusAddress });
+      campus = new Campus({ name: campusName, address: campusAddress, venueType: resolvedVenueType });
+      await campus.save();
+    } else if (venueType && campus.venueType !== venueType) {
+      // Update venue type if changed
+      campus.venueType = venueType;
       await campus.save();
     }
     
@@ -71,8 +78,9 @@ router.post('/create-campus-admin', async (req, res) => {
     const newAdmin = new Admin({
       username: newUsername,
       password: newPassword,
-      role: 'CampusAdmin',
-      campusId: campus._id
+      role: 'VenueAdmin',
+      campusId: campus._id,
+      managedVenueType: resolvedVenueType
     });
     
     await newAdmin.save();

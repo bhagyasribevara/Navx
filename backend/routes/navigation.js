@@ -10,6 +10,49 @@ const {
   haversineDistMeters
 } = require('../utils/pathfinding');
 
+// POST find route to nearest exit
+router.post('/route-to-exit', async (req, res) => {
+  try {
+    const { startX, startY, campusId } = req.body;
+    const nodes = await NavNode.find({ campusId, isActive: true });
+    const paths = await NavPath.find({ campusId, isActive: true });
+    if (nodes.length === 0) return res.status(400).json({ error: 'No nodes found' });
+    
+    // Find all exits
+    const exits = nodes.filter(n => n.type === 'entrance' || n.type === 'exit' || (n.label && (n.label.toLowerCase().includes('exit') || n.label.toLowerCase().includes('entrance'))));
+    if (exits.length === 0) return res.status(404).json({ error: 'No exit found on campus' });
+    
+    let graph = buildGraph(nodes, paths);
+    graph = autoConnectGraph(graph);
+
+    let startNodeId = req.body.startNodeId;
+    if (!startNodeId && startX && startY) {
+      const nearestStart = findNearestNode(nodes, startX, startY);
+      if (nearestStart) startNodeId = nearestStart.id;
+    }
+    if (!startNodeId) return res.status(404).json({ error: 'Could not find starting point' });
+
+    let bestResult = null;
+    let shortestDist = Infinity;
+
+    // Try routing to all exits and pick the shortest
+    for (const exit of exits) {
+      const result = astar(graph, startNodeId, exit._id.toString());
+      if (result.found && result.distance < shortestDist) {
+        shortestDist = result.distance;
+        bestResult = { ...result, targetExit: exit };
+      }
+    }
+
+    if (!bestResult) return res.status(404).json({ error: 'No path to any exit found' });
+
+    const directions = generateDirections(bestResult.path);
+    res.json({ ...bestResult, directions, routeType: 'emergency_exit' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST find route between two points
 router.post('/route', async (req, res) => {
   try {
@@ -25,7 +68,13 @@ router.post('/route', async (req, res) => {
     graph = autoConnectGraph(graph);
 
     const pathfinder = algorithm === 'dijkstra' ? dijkstra : astar;
-    const result = pathfinder(graph, startNodeId, endNodeId, { requireAccessible: accessible });
+    let result = pathfinder(graph, startNodeId, endNodeId, { requireAccessible: accessible });
+    
+    // Fallback to Dijkstra if A* fails
+    if (!result.found && algorithm === 'astar') {
+      console.log('[Navigation] A* route failed, falling back to Dijkstra...');
+      result = dijkstra(graph, startNodeId, endNodeId, { requireAccessible: accessible });
+    }
     
     if (!result.found) return res.status(404).json({ error: 'No route found' });
     
@@ -139,6 +188,13 @@ router.post('/route-to-room', async (req, res) => {
     // --- Step 2: Try direct route ---
     const pathfinder = astar;
     let result = pathfinder(graph, startId, endNodeId, { requireAccessible: accessible });
+    
+    // Fallback to Dijkstra
+    if (!result.found && algorithm === 'astar') {
+      console.log('[Navigation] A* direct route failed. Falling back to Dijkstra...');
+      result = dijkstra(graph, startId, endNodeId, { requireAccessible: accessible });
+    }
+
     let routeType = 'direct'; // direct | nearest_reachable
 
     // --- Step 3: If direct route failed, find nearest reachable node to destination ---
@@ -149,6 +205,13 @@ router.post('/route-to-room', async (req, res) => {
       
       if (fallback.node) {
         result = pathfinder(graph, startId, fallback.node.id, { requireAccessible: accessible });
+        
+        // Fallback to Dijkstra again if A* failed on nearest
+        if (!result.found && algorithm === 'astar') {
+          console.log(`[Navigation] A* fallback route failed. Falling back to Dijkstra...`);
+          result = dijkstra(graph, startId, fallback.node.id, { requireAccessible: accessible });
+        }
+
         if (result.found) {
           routeType = 'nearest_reachable';
           console.log(`[Navigation] Fallback route found via nearest reachable node (${Math.round(fallback.distanceToTarget)}m from destination)`);

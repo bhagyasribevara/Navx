@@ -24,22 +24,31 @@ let retryCount = 0;
 const connectWithRetry = async () => {
   try {
     await mongoose.connect(MONGODB_URI, {
-      serverSelectionTimeoutMS: 10000,   // Timeout after 10s instead of 30s default
-      heartbeatFrequencyMS: 5000,        // Check server health every 5s
+      serverSelectionTimeoutMS: 10000,
+      heartbeatFrequencyMS: 5000,
       retryWrites: true,
       retryReads: true,
     });
-    retryCount = 0; // Reset on successful connection
+    retryCount = 0;
     console.log('✅ MongoDB connected successfully');
   } catch (err) {
     retryCount++;
+<<<<<<< HEAD
     const delay = Math.min(5000 * retryCount, 30000); // Exponential backoff, max 30s
     console.error(`❌ MongoDB connection attempt ${retryCount}/${MAX_RETRIES} failed:`, err.message);
+=======
+    const delay = Math.min(5000 * retryCount, 30000);
+>>>>>>> 451abd41ec2c55bc04e555df68cfc1c0b0b64112
     const isIPError = err.message?.includes('IP') || err.message?.includes('whitelist') || err.message?.includes('Could not connect');
     if (isIPError) {
       console.error('\n❌ MongoDB Atlas IP Whitelist Error!');
       console.error('👉 Fix: Go to https://cloud.mongodb.com → Security → Network Access');
       console.error('👉 Click "+ ADD IP ADDRESS" → "ADD CURRENT IP ADDRESS" → Confirm\n');
+<<<<<<< HEAD
+=======
+    } else {
+      console.error(`❌ MongoDB connection attempt ${retryCount}/${MAX_RETRIES} failed:`, err.message);
+>>>>>>> 451abd41ec2c55bc04e555df68cfc1c0b0b64112
     }
     if (retryCount < MAX_RETRIES) {
       console.log(`🔄 Retrying in ${delay / 1000}s...`);
@@ -58,7 +67,7 @@ mongoose.connection.on('connected', () => {
 mongoose.connection.on('disconnected', () => {
   console.warn('⚠️ Mongoose disconnected from MongoDB. Attempting reconnect...');
   if (retryCount < MAX_RETRIES) {
-    retryCount = 0; // Reset retry count for reconnection attempts
+    retryCount = 0;
     setTimeout(connectWithRetry, 3000);
   }
 });
@@ -67,7 +76,7 @@ mongoose.connection.on('error', (err) => {
   console.error('❌ Mongoose connection error:', err.message);
 });
 
-// Graceful shutdown — close DB connection when server stops
+// Graceful shutdown
 process.on('SIGINT', async () => {
   await mongoose.connection.close();
   console.log('🛑 MongoDB connection closed (app shutdown)');

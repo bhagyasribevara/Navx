@@ -43,7 +43,7 @@ export default function MapScreen({ navigation, route }) {
   const s = StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.bg },
     header: {
-      paddingTop: Platform.OS === "ios" ? 54 : 20,
+      paddingTop: 16,
       paddingHorizontal: 20, paddingBottom: 20,
       backgroundColor: colors.card,
       borderBottomWidth: 1, borderBottomColor: colors.border,

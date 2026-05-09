@@ -81,7 +81,7 @@ export default function SearchScreen({ navigation, route }) {
   const s = StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.bg },
     header: {
-      paddingTop: Platform.OS === "ios" ? 54 : 16,
+      paddingTop: 16,
       paddingHorizontal: 16, paddingBottom: 12,
       backgroundColor: colors.card,
       borderBottomWidth: 1, borderBottomColor: colors.border,

@@ -257,7 +257,7 @@ const s = StyleSheet.create({
   topBar: {
     position: "absolute", top: 0, left: 0, right: 0,
     flexDirection: "row", alignItems: "center",
-    paddingTop: Platform.OS === "ios" ? 54 : 20,
+    paddingTop: 20,
     paddingBottom: 12, paddingHorizontal: 16,
   },
   backBtn: {

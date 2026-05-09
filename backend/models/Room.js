@@ -7,9 +7,24 @@ const roomSchema = new mongoose.Schema({
   name: { type: String, required: true },
   type: { 
     type: String, 
-    enum: ['classroom', 'office', 'lab', 'restroom', 'cafeteria', 'library', 
-           'auditorium', 'elevator', 'stairs', 'corridor', 'entrance', 'exit', 'other'],
-    default: 'classroom' 
+    enum: [
+      // Campus types
+      'classroom', 'office', 'lab', 'restroom', 'cafeteria', 'library', 
+      'auditorium', 'elevator', 'stairs', 'corridor', 'entrance', 'exit', 'other',
+      // Hospital types
+      'ward', 'icu', 'ot', 'pharmacy', 'reception', 'emergency', 'radiology',
+      'pathology', 'blood_bank', 'consultation', 'waiting_area', 'nursing_station',
+      // Airport types
+      'gate', 'terminal', 'check_in', 'security', 'lounge', 'baggage_claim',
+      'immigration', 'duty_free', 'boarding', 'customs',
+      // Mall types
+      'store', 'food_court', 'anchor_store', 'kiosk', 'parking',
+      'entertainment', 'atm', 'customer_service', 'fitting_room',
+      // Building types (generic large building)
+      'conference', 'server_room', 'lobby', 'mail_room', 'gym',
+      'rooftop', 'storage', 'utility', 'break_room', 'reception_desk'
+    ],
+    default: 'other' 
   },
   roomNumber: { type: String, default: '' },
   description: { type: String, default: '' },

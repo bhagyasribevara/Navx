@@ -20,8 +20,8 @@ export default function Dashboard({ admin }) {
         const campusesRes = await getCampuses();
         let campusList = campusesRes.data;
         
-        // Filter for CampusAdmin
-        if (admin && admin.role === 'CampusAdmin' && admin.campusId) {
+        // Filter for CampusAdmin or VenueAdmin
+        if (admin && (admin.role === 'CampusAdmin' || admin.role === 'VenueAdmin') && admin.campusId) {
           const cId = admin.campusId._id || admin.campusId;
           campusList = campusList.filter(c => c._id === cId);
         }
@@ -86,7 +86,7 @@ export default function Dashboard({ admin }) {
 
   const stats = [
     {
-      label: "Total Campuses",
+      label: "Total Venues",
       value: campuses.length,
       icon: <FiGrid />,
       color: "#6366f1",
@@ -122,7 +122,7 @@ export default function Dashboard({ admin }) {
         </div>
         {(!admin || admin.role === 'SuperAdmin') && (
           <button className="btn btn-primary" onClick={() => navigate("/campus")}>
-            <FiPlus /> New Campus
+            <FiPlus /> New Venue
           </button>
         )}
       </div>
@@ -150,7 +150,7 @@ export default function Dashboard({ admin }) {
       </div>
 
       <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 16 }}>
-        Your Campuses
+        Your Venues
       </h2>
       {loading ? (
         <div className="empty-state">
@@ -159,14 +159,14 @@ export default function Dashboard({ admin }) {
       ) : campuses.length === 0 ? (
         <div className="empty-state">
           <FiMap style={{ fontSize: 48, opacity: 0.3 }} />
-          <h3>No campuses yet</h3>
-          <p>Create your first campus to start building indoor maps</p>
+          <h3>No venues yet</h3>
+          <p>Create your first venue to start building indoor maps</p>
           <button
             className="btn btn-primary"
             style={{ marginTop: 16 }}
             onClick={() => navigate("/campus")}
           >
-            <FiPlus /> Create Campus
+            <FiPlus /> Create Venue
           </button>
         </div>
       ) : (
@@ -186,7 +186,12 @@ export default function Dashboard({ admin }) {
                 }}
               >
                 <div>
-                  <h3 style={{ fontSize: 16, fontWeight: 600 }}>{c.name}</h3>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 18 }}>
+                      {({'campus':'🎓','hospital':'🏥','airport':'✈️','mall':'🛍️','building':'🏢'})[c.venueType] || '📍'}
+                    </span>
+                    <h3 style={{ fontSize: 16, fontWeight: 600, margin: 0 }}>{c.name}</h3>
+                  </div>
                   <p
                     style={{
                       fontSize: 13,

@@ -71,7 +71,7 @@ export default function OfflineMapsScreen({ navigation }) {
     container: { flex: 1, backgroundColor: colors.bg },
     header: {
       flexDirection: "row", alignItems: "center",
-      paddingHorizontal: 20, paddingTop: Platform.OS === "ios" ? 10 : 20,
+      paddingHorizontal: 20, paddingTop: 20,
       paddingBottom: 16, backgroundColor: colors.card,
       borderBottomWidth: 1, borderBottomColor: colors.border
     },

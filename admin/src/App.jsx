@@ -2,13 +2,14 @@ import React from 'react';
 import { Routes, Route, NavLink, useLocation } from 'react-router-dom';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
-import { FiMap, FiGrid, FiLayers, FiNavigation, FiBarChart2, FiSettings, FiHome } from 'react-icons/fi';
+import { FiMap, FiGrid, FiLayers, FiNavigation, FiBarChart2, FiSettings, FiHome, FiAlertCircle } from 'react-icons/fi';
 import { MdQrCode2, MdBluetooth } from 'react-icons/md';
 import Dashboard from './pages/Dashboard';
 import CampusManager from './pages/CampusManager';
 import MapEditor from './pages/MapEditor';
 import PositioningSetup from './pages/PositioningSetup';
 import AnalyticsDashboard from './pages/AnalyticsDashboard';
+import EmergencyDashboard from './pages/EmergencyDashboard';
 import Login from './pages/Login';
 import SuperAdminDashboard from './pages/SuperAdminDashboard';
 
@@ -64,6 +65,7 @@ function App() {
           <Route path="/editor/:campusId" element={<MapEditor />} />
           <Route path="/positioning/:campusId" element={<PositioningSetup />} />
           <Route path="/analytics" element={<AnalyticsDashboard admin={admin} />} />
+          <Route path="/emergency" element={<EmergencyDashboard admin={admin} />} />
         </Routes>
       </div>
     </div>
@@ -90,7 +92,13 @@ function Sidebar({ admin, onLogout }) {
         <div className="nav-section">
           <div className="nav-section-title">Management</div>
           <NavLink to="/campus" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-            <FiGrid /> Campus & Structures
+            <FiGrid /> Venues & Maps
+          </NavLink>
+        </div>
+        <div className="nav-section">
+          <div className="nav-section-title">Safety</div>
+          <NavLink to="/emergency" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+            <FiAlertCircle /> Emergency Alert
           </NavLink>
         </div>
         <div className="nav-section">
