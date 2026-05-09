@@ -131,17 +131,19 @@ function angleDiff(fromDeg, toDeg) {
 //  Build adjacency list from nodes and paths
 // ──────────────────────────────────────────────
 
-function buildGraph(nodes, paths) {
+function buildGraph(nodes, paths, floorMap = {}) {
   const graph = {};
 
   // Initialize all nodes
   nodes.forEach(node => {
     const id = node._id.toString();
+    const floorId = node.floorId ? node.floorId.toString() : null;
     graph[id] = {
       id,
       x: node.x,
       y: node.y,
-      floorId: node.floorId ? node.floorId.toString() : null,
+      floorId,
+      floorLevel: floorId && floorMap[floorId] != null ? floorMap[floorId] : null,
       type: node.type,
       neighbors: []
     };
@@ -315,6 +317,7 @@ function reconstructPath(graph, previous, startId, endId, distances) {
       x: gNode.x,
       y: gNode.y,
       floorId: gNode.floorId,
+      floorLevel: gNode.floorLevel != null ? gNode.floorLevel : null,
       type: gNode.type,
     };
 
@@ -489,6 +492,29 @@ function generateDirections(detailedPath) {
 
   const directions = [];
 
+  // ── Pre-scan: count total floor transitions and collect their info ──
+  const floorTransitions = [];
+  for (let i = 0; i < detailedPath.length - 1; i++) {
+    const current = detailedPath[i];
+    const next    = detailedPath[i + 1];
+    if (current.floorId !== next.floorId) {
+      let changeType = 'floor_change';
+      if (next.type === 'elevator' || current.type === 'elevator') changeType = 'elevator';
+      else if (next.type === 'stairs' || current.type === 'stairs') changeType = 'stairs';
+      floorTransitions.push({
+        segmentIndex: i,
+        fromFloorId: current.floorId,
+        toFloorId: next.floorId,
+        fromFloorLevel: current.floorLevel != null ? current.floorLevel : null,
+        toFloorLevel: next.floorLevel != null ? next.floorLevel : null,
+        changeType,
+      });
+    }
+  }
+
+  const totalFloorTransitions = floorTransitions.length;
+  let floorTransitionCounter = 0;
+
   for (let i = 0; i < detailedPath.length - 1; i++) {
     const current = detailedPath[i];
     const next    = detailedPath[i + 1];
@@ -523,11 +549,58 @@ function generateDirections(detailedPath) {
       instruction = `Head ${compassLabel(fwdBearing)}`;
     }
 
-    // Floor-change overrides
+    // ── Approach override: when heading TOWARD a stairs/elevator node ──
+    // If the next node is a stairs/elevator (even on the same floor),
+    // replace any U-turn or sharp-turn with a contextual approach instruction.
+    const nextIsTransitionNode = (next.type === 'stairs' || next.type === 'elevator');
+    const currentIsTransitionNode = (current.type === 'stairs' || current.type === 'elevator');
+
+    if (nextIsTransitionNode && current.floorId === next.floorId) {
+      // We're approaching a stairs/elevator on the same floor — guide toward it
+      if (next.type === 'elevator') {
+        instruction = 'Proceed to the elevator';
+      } else {
+        instruction = 'Proceed to the stairs';
+      }
+    }
+
+    // ── Floor-change overrides — when the user is AT the transition point ──
+    let isFloorChange = false;
+    let floorChangeData = null;
+
     if (current.floorId !== next.floorId) {
-      if (next.type === 'elevator' || current.type === 'elevator') instruction = 'Take the elevator';
-      else if (next.type === 'stairs' || current.type === 'stairs') instruction = 'Take the stairs';
-      else instruction = 'Change floor';
+      isFloorChange = true;
+      floorTransitionCounter++;
+
+      let changeType = 'floor_change';
+      if (next.type === 'elevator' || current.type === 'elevator') {
+        changeType = 'elevator';
+      } else if (next.type === 'stairs' || current.type === 'stairs') {
+        changeType = 'stairs';
+      }
+
+      // Build natural floor-change instruction with ordinal floor name
+      const targetLevel = next.floorLevel != null ? next.floorLevel : null;
+      if (targetLevel != null) {
+        instruction = `Go to the ${ordinalFloor(targetLevel)}`;
+      } else if (changeType === 'elevator') {
+        instruction = 'Take the elevator to the next floor';
+      } else if (changeType === 'stairs') {
+        instruction = 'Take the stairs to the next floor';
+      } else {
+        instruction = 'Change floor';
+      }
+
+      floorChangeData = {
+        isFloorChange: true,
+        floorChangeType: changeType,
+        fromFloorId: current.floorId,
+        toFloorId: next.floorId,
+        fromFloorLevel: current.floorLevel != null ? current.floorLevel : null,
+        targetFloorLevel: targetLevel,
+        floorTransitionNumber: floorTransitionCounter,
+        totalFloorTransitions,
+      };
     }
 
     // Walking speed depends on segment type
@@ -536,7 +609,7 @@ function generateDirections(detailedPath) {
     const segEta  = Math.round(segDist / speed);           // seconds
     const segSteps = Math.max(1, Math.round(segDist / AVG_STRIDE_M));
 
-    directions.push({
+    const dirEntry = {
       step: i + 1,
       instruction,
       from: { x: current.x, y: current.y, floorId: current.floorId },
@@ -546,7 +619,14 @@ function generateDirections(detailedPath) {
       eta: segEta,
       steps: segSteps,
       pathType: segType,
-    });
+    };
+
+    // Attach floor-change metadata only on actual transition segments
+    if (isFloorChange && floorChangeData) {
+      Object.assign(dirEntry, floorChangeData);
+    }
+
+    directions.push(dirEntry);
   }
 
   return directions;
@@ -559,6 +639,24 @@ function generateDirections(detailedPath) {
 function compassLabel(deg) {
   const dirs = ['north','north-east','east','south-east','south','south-west','west','north-west'];
   return dirs[Math.round(deg / 45) % 8];
+}
+
+// ──────────────────────────────────────────────
+//  Ordinal floor name from level number
+//  0 → "ground floor", 1 → "1st floor", 2 → "2nd floor", etc.
+// ──────────────────────────────────────────────
+
+function ordinalFloor(level) {
+  if (level === 0) return 'ground floor';
+  const abs = Math.abs(level);
+  const suffix =
+    abs % 100 >= 11 && abs % 100 <= 13 ? 'th'
+    : abs % 10 === 1 ? 'st'
+    : abs % 10 === 2 ? 'nd'
+    : abs % 10 === 3 ? 'rd'
+    : 'th';
+  if (level < 0) return `basement ${abs}`;
+  return `${level}${suffix} floor`;
 }
 
 // ──────────────────────────────────────────────

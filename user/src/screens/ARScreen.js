@@ -23,6 +23,10 @@ function getDirectionType(instruction) {
   if (lower.includes("left")) return "left";
   if (lower.includes("sharp right")) return "sharp_right";
   if (lower.includes("right")) return "right";
+  if (lower.includes("go to the") && lower.includes("floor")) return "floor_change";
+  if (lower.includes("change floor")) return "floor_change";
+  if (lower.includes("proceed to the stairs") || lower.includes("head to the stairs")) return "stairs";
+  if (lower.includes("proceed to the elevator") || lower.includes("head to the elevator")) return "elevator";
   if (lower.includes("stairs")) return "stairs";
   if (lower.includes("elevator")) return "elevator";
   if (lower.includes("arrived")) return "arrived";
@@ -38,6 +42,7 @@ function getDirIcon(dirType) {
     case "sharp_right": return "return-down-forward";
     case "stairs": return "trending-up";
     case "elevator": return "git-merge";
+    case "floor_change": return "swap-vertical";
     case "arrived": return "checkmark-circle";
     default: return "arrow-up";
   }
@@ -51,7 +56,8 @@ function getDirColor(dirType) {
     case "right":
     case "sharp_right": return "#3b82f6";  // blue for right
     case "stairs":
-    case "elevator": return "#22c55e";      // green for floor change
+    case "elevator": return "#22c55e";      // green for transition area
+    case "floor_change": return "#06b6d4";  // cyan for active floor change
     case "arrived": return "#10b981";
     default: return "#7c3aed";              // purple for straight
   }
@@ -106,6 +112,11 @@ export default function ARScreen({ navigation, route }) {
   const [arrived, setArrived] = useState(false);
   const [userLatLng, setUserLatLng] = useState(null);
 
+  // Floor-change tracking state
+  const [completedFloorTransitions, setCompletedFloorTransitions] = useState(0);
+  const [totalFloorTransitions] = useState(routeData?.totalFloorTransitions || 0);
+  const [currentFloor, setCurrentFloor] = useState(routeData?.path?.[0]?.floorId || null);
+
   const chevronAnim = useRef(new Animated.Value(0)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const pulseAnim = useRef(new Animated.Value(0.4)).current;
@@ -115,10 +126,12 @@ export default function ARScreen({ navigation, route }) {
   const currentStepRef = useRef(currentStep);
   const routeDataRef = useRef(routeData);
   const arrivedRef = useRef(arrived);
+  const completedFloorTransRef = useRef(completedFloorTransitions);
 
   useEffect(() => { currentStepRef.current = currentStep; }, [currentStep]);
   useEffect(() => { routeDataRef.current = routeData; }, [routeData]);
   useEffect(() => { arrivedRef.current = arrived; }, [arrived]);
+  useEffect(() => { completedFloorTransRef.current = completedFloorTransitions; }, [completedFloorTransitions]);
 
   // Magnetometer + animations setup
   useEffect(() => {
@@ -201,12 +214,41 @@ export default function ARScreen({ navigation, route }) {
     return () => { if (locationWatcher) locationWatcher.remove(); };
   }, []);
 
-  // Voice announcement when step changes
+  // Voice announcement when step changes — floor-change aware
   useEffect(() => {
     if (currentStep !== lastSpokenStep && routeData?.directions?.[currentStep]) {
       const dir = routeData.directions[currentStep];
-      Speech.speak(dir.instruction, { language: "en-US", rate: 0.9 });
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+      if (dir.isFloorChange) {
+        // Only announce floor change if we haven't completed all required transitions
+        if (completedFloorTransitions < totalFloorTransitions) {
+          const transNum = dir.floorTransitionNumber || (completedFloorTransitions + 1);
+          const totalTrans = dir.totalFloorTransitions || totalFloorTransitions;
+          let floorMsg = dir.instruction;
+
+          if (totalTrans > 1) {
+            floorMsg += `. Floor change ${transNum} of ${totalTrans}`;
+          }
+
+          Speech.speak(floorMsg, { language: "en-US", rate: 0.9 });
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+
+          // Track floor transition completion
+          setCompletedFloorTransitions(prev => prev + 1);
+          if (dir.to?.floorId) {
+            setCurrentFloor(dir.to.floorId);
+          }
+        } else {
+          // All transitions done — give a simple continue message
+          Speech.speak(`Continue. ${Math.round(dir.distance)} meters.`, { language: "en-US", rate: 0.9 });
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        }
+      } else {
+        // Normal (non-floor-change) step announcement
+        Speech.speak(dir.instruction, { language: "en-US", rate: 0.9 });
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      }
+
       setLastSpokenStep(currentStep);
     }
   }, [currentStep]);

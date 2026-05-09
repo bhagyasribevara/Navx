@@ -9,7 +9,7 @@ if (Constants?.expoConfig?.hostUri) {
   devHost = Constants.expoConfig.hostUri.split(':')[0];
 }
 
-const API_BASE = process.env.EXPO_PUBLIC_API_BASE_URL || `http://${devHost}:5000/api`;
+const API_BASE = process.env.EXPO_PUBLIC_API_BASE_URL || `http://${devHost}:5001/api`;
 
 const api = axios.create({
   baseURL: API_BASE,

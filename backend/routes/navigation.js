@@ -2,6 +2,7 @@ const router = require('express').Router();
 const NavNode = require('../models/NavNode');
 const NavPath = require('../models/NavPath');
 const Room = require('../models/Room');
+const Floor = require('../models/Floor');
 const {
   buildGraph, autoConnectGraph, astar,
   findNearestNode, findNearestReachableNode,
@@ -49,15 +50,22 @@ router.post('/route-to-room', async (req, res) => {
   try {
     const { startNodeId, startX, startY, roomId, campusId, accessible = false } = req.body;
     
-    const nodes = await NavNode.find({ campusId, isActive: true });
-    const paths = await NavPath.find({ campusId, isActive: true });
+    const [nodes, paths, floors] = await Promise.all([
+      NavNode.find({ campusId, isActive: true }),
+      NavPath.find({ campusId, isActive: true }),
+      Floor.find({ campusId, isActive: true }),
+    ]);
 
     if (nodes.length === 0) {
       return res.status(400).json({ error: 'No navigation nodes have been placed on this campus yet.' });
     }
 
+    // Build floorId → level lookup for floor-aware directions
+    const floorMap = {};
+    floors.forEach(f => { floorMap[f._id.toString()] = f.level; });
+
     // Build graph and auto-connect disconnected components
-    let graph = buildGraph(nodes, paths);
+    let graph = buildGraph(nodes, paths, floorMap);
     graph = autoConnectGraph(graph);
 
     // --- Resolve start node from GPS coordinates if provided ---
@@ -194,12 +202,16 @@ router.post('/route-to-room', async (req, res) => {
       }
     }
 
+    // Count floor transitions for client-side floor tracking
+    const totalFloorTransitions = directions.filter(d => d.isFloorChange).length;
+
     res.json({
       ...result,
       distance: summary.totalDistance,
       directions,
       eta: summary.totalEta,
       totalSteps: summary.totalSteps,
+      totalFloorTransitions,
       roomId,
       algorithm: 'astar',
       routeType,

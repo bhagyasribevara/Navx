@@ -16,7 +16,6 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-<<<<<<< HEAD
 // MongoDB Connection with Auto-Reconnect
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/navx';
 const MAX_RETRIES = 10;
@@ -36,6 +35,12 @@ const connectWithRetry = async () => {
     retryCount++;
     const delay = Math.min(5000 * retryCount, 30000); // Exponential backoff, max 30s
     console.error(`❌ MongoDB connection attempt ${retryCount}/${MAX_RETRIES} failed:`, err.message);
+    const isIPError = err.message?.includes('IP') || err.message?.includes('whitelist') || err.message?.includes('Could not connect');
+    if (isIPError) {
+      console.error('\n❌ MongoDB Atlas IP Whitelist Error!');
+      console.error('👉 Fix: Go to https://cloud.mongodb.com → Security → Network Access');
+      console.error('👉 Click "+ ADD IP ADDRESS" → "ADD CURRENT IP ADDRESS" → Confirm\n');
+    }
     if (retryCount < MAX_RETRIES) {
       console.log(`🔄 Retrying in ${delay / 1000}s...`);
       setTimeout(connectWithRetry, delay);
@@ -76,41 +81,6 @@ process.on('SIGTERM', async () => {
 });
 
 // Start the initial connection
-=======
-// MongoDB Connection with retry logic
-const MONGO_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/navx';
-const MAX_RETRIES = 5;
-let retryCount = 0;
-
-const connectWithRetry = () => {
-  mongoose.connect(MONGO_URI, {
-    serverSelectionTimeoutMS: 10000, // 10s timeout per attempt
-  })
-    .then(() => {
-      retryCount = 0;
-      console.log('✅ MongoDB connected successfully');
-    })
-    .catch(err => {
-      retryCount++;
-      const isIPError = err.message?.includes('IP') || err.message?.includes('whitelist') || err.message?.includes('Could not connect');
-      if (isIPError) {
-        console.error('\n❌ MongoDB Atlas IP Whitelist Error!');
-        console.error('👉 Fix: Go to https://cloud.mongodb.com → Security → Network Access');
-        console.error('👉 Click "+ ADD IP ADDRESS" → "ADD CURRENT IP ADDRESS" → Confirm\n');
-      } else {
-        console.error(`❌ MongoDB connection failed (attempt ${retryCount}/${MAX_RETRIES}):`, err.message);
-      }
-      if (retryCount < MAX_RETRIES) {
-        const delay = Math.min(5000 * retryCount, 30000); // exponential backoff, max 30s
-        console.log(`🔄 Retrying in ${delay / 1000}s...`);
-        setTimeout(connectWithRetry, delay);
-      } else {
-        console.error('🛑 Max retries reached. Server will continue without DB — check your Atlas IP whitelist.');
-      }
-    });
-};
-
->>>>>>> b25aeea38750dadf424ff4d796c8dee45adeb5e2
 connectWithRetry();
 
 // Routes

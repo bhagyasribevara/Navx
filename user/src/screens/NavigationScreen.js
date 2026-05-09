@@ -109,6 +109,11 @@ export default function NavigationScreen({ navigation, route }) {
   const [locationPerm, setLocationPerm] = useState(null);
   const [gpsLoading, setGpsLoading] = useState(false);
 
+  // Floor-change tracking state
+  const [currentFloor, setCurrentFloor] = useState(null);
+  const [completedFloorTransitions, setCompletedFloorTransitions] = useState(0);
+  const [totalFloorTransitions, setTotalFloorTransitions] = useState(0);
+
   const webViewRef = useRef(null);
   const posEngine = useRef(new PositionEngine()).current;
   const stepDetector = useRef(null);
@@ -271,6 +276,14 @@ export default function NavigationScreen({ navigation, route }) {
       setRouteData(result);
       setLiveDistance(Math.round(result.distance));
       setLiveStepDist(Math.round(result.directions?.[0]?.distance || 0));
+
+      // Initialize floor tracking from backend response
+      setTotalFloorTransitions(result.totalFloorTransitions || 0);
+      setCompletedFloorTransitions(0);
+      if (result.path?.[0]?.floorId) {
+        setCurrentFloor(result.path[0].floorId);
+      }
+
       if (result.routeType === 'nearest_reachable' && result.message) {
         setRouteInfo(result.message);
       }
@@ -386,12 +399,45 @@ export default function NavigationScreen({ navigation, route }) {
         if (distInMeters < threshold) {
           if (currentStep < (routeData.directions?.length || 1) - 1) {
             const nextStep = currentStep + 1;
+            const nextDir = routeData.directions[nextStep];
             setCurrentStep(nextStep);
-            setLiveStepDist(Math.round(routeData.directions[nextStep]?.distance || 0));
+            setLiveStepDist(Math.round(nextDir?.distance || 0));
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            if (voiceEnabled && routeData.directions[nextStep]) {
-              const d = routeData.directions[nextStep];
-              Speech.speak(`${d.instruction}. ${Math.round(d.distance)} meters.`, { language: "en-US" });
+
+            if (voiceEnabled && nextDir) {
+              // Floor-change aware voice guidance
+              if (nextDir.isFloorChange) {
+                // Only announce floor change if we haven't completed all required transitions
+                if (completedFloorTransitions < totalFloorTransitions) {
+                  const transNum = nextDir.floorTransitionNumber || (completedFloorTransitions + 1);
+                  const totalTrans = nextDir.totalFloorTransitions || totalFloorTransitions;
+                  let floorMsg = nextDir.instruction;
+
+                  if (totalTrans > 1) {
+                    floorMsg += `. Floor change ${transNum} of ${totalTrans}`;
+                  }
+                  floorMsg += '.';
+
+                  Speech.speak(floorMsg, { language: "en-US" });
+                  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+
+                  // Track floor transition completion
+                  setCompletedFloorTransitions(prev => prev + 1);
+                  if (nextDir.toFloorId) {
+                    setCurrentFloor(nextDir.toFloorId);
+                  } else if (nextDir.to?.floorId) {
+                    setCurrentFloor(nextDir.to.floorId);
+                  }
+                }
+                // If all floor transitions already completed, skip floor-change announcement
+                // and just give a regular distance announcement
+                else {
+                  Speech.speak(`Continue. ${Math.round(nextDir.distance)} meters.`, { language: "en-US" });
+                }
+              } else {
+                // Normal (non-floor-change) step announcement
+                Speech.speak(`${nextDir.instruction}. ${Math.round(nextDir.distance)} meters.`, { language: "en-US" });
+              }
             }
           } else {
             setArrived(true);
@@ -421,12 +467,24 @@ export default function NavigationScreen({ navigation, route }) {
       if (routeData) {
         setCurrentStep(0);
         setIsNavigating(true);
+        // Reset floor tracking for fresh navigation
+        setCompletedFloorTransitions(0);
+        if (routeData.path?.[0]?.floorId) {
+          setCurrentFloor(routeData.path[0].floorId);
+        }
+
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         if (voiceEnabled) {
           const prefix = routeData.routeType === 'nearest_reachable'
             ? `No direct path found. Navigating to the nearest accessible point near ${room.name}. `
             : `Starting navigation to ${room.name}. `;
-          Speech.speak(prefix + (routeData.directions?.[0]?.instruction || "Follow the route."));
+          
+          // Inform user about floor changes ahead
+          const floorChangeNote = (routeData.totalFloorTransitions || 0) > 0
+            ? `This route includes ${routeData.totalFloorTransitions} floor ${routeData.totalFloorTransitions === 1 ? 'change' : 'changes'}. `
+            : '';
+
+          Speech.speak(prefix + floorChangeNote + (routeData.directions?.[0]?.instruction || "Follow the route."));
         }
         Animated.spring(dirCardAnim, { toValue: 1, tension: 80, friction: 10, useNativeDriver: true }).start();
       }
@@ -441,10 +499,15 @@ export default function NavigationScreen({ navigation, route }) {
   const getDirIcon = () => {
     if (!currentDir) return "arrow-up";
     if (arrived) return "checkmark-circle";
-    if (currentDir.instruction.includes("left")) return "arrow-back";
-    if (currentDir.instruction.includes("right")) return "arrow-forward";
-    if (currentDir.instruction.includes("stairs")) return "trending-up";
-    if (currentDir.instruction.includes("elevator")) return "git-merge";
+    const instr = currentDir.instruction.toLowerCase();
+    if (instr.includes("go to the") && instr.includes("floor")) return "swap-vertical";
+    if (instr.includes("change floor")) return "swap-vertical";
+    if (instr.includes("proceed to the stairs") || instr.includes("head to the stairs")) return "trending-up";
+    if (instr.includes("proceed to the elevator") || instr.includes("head to the elevator")) return "git-merge";
+    if (instr.includes("left")) return "arrow-back";
+    if (instr.includes("right")) return "arrow-forward";
+    if (instr.includes("stairs")) return "trending-up";
+    if (instr.includes("elevator")) return "git-merge";
     return "arrow-up";
   };
 
