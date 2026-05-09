@@ -120,7 +120,7 @@ export default function HomeScreen({ navigation }) {
   const s = StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.bg },
     header: {
-      paddingTop: Platform.OS === "ios" ? 56 : (StatusBar.currentHeight || 24) + 12,
+      paddingTop: 16,
       paddingHorizontal: 20, paddingBottom: 24,
       backgroundColor: isDark ? "#0d1526" : "#eef2ff",
       borderBottomLeftRadius: 28, borderBottomRightRadius: 28,

@@ -365,14 +365,18 @@ export default function GuidedMapBuilder() {
     loadMainPathway();
   }, [campusId]);
 
+  const [allNodes, setAllNodes] = useState([]);
+
   const loadMainPathway = async () => {
     try {
-      const [n, p] = await Promise.all([
+      const [n, p, all] = await Promise.all([
         getAllCampusNodes(campusId),
-        getAllCampusPaths(campusId)
+        getAllCampusPaths(campusId),
+        import('../api').then(m => m.default.get(`/nodes?campusId=${campusId}`))
       ]);
       setMainNodes(n.data);
       setMainPaths(p.data);
+      setAllNodes(all.data || []);
     } catch(e) { console.warn('Failed to load main pathway', e); }
   };
 
@@ -949,8 +953,8 @@ export default function GuidedMapBuilder() {
             />
           ))}
           {showMainPathway && mainPaths.map(p => {
-            const a = mainNodes.find(n => n._id === p.nodeA);
-            const b = mainNodes.find(n => n._id === p.nodeB);
+            const a = allNodes.find(n => n._id === p.nodeA);
+            const b = allNodes.find(n => n._id === p.nodeB);
             if (!a || !b) return null;
             return <EditablePath key={p._id} p={p} a={a} b={b} stepMode={step} 
               onUpdate={async (id, data) => { await updatePath(id, data); loadMainPathway(); }}
@@ -987,8 +991,8 @@ export default function GuidedMapBuilder() {
             />
           ))}
           {step === 4 && paths.map(p => {
-            const a=nodes.find(n=>n._id===p.nodeA) || mainNodes.find(n=>n._id===p.nodeA);
-            const b=nodes.find(n=>n._id===p.nodeB) || mainNodes.find(n=>n._id===p.nodeB);
+            const a=allNodes.find(n=>n._id===p.nodeA);
+            const b=allNodes.find(n=>n._id===p.nodeB);
             if(!a || !b) return null;
             return <EditablePath key={p._id} p={p} a={a} b={b} stepMode={step} 
               onUpdate={async (id, data) => { await updatePath(id, data); loadFloorData(activeFloor._id); }}

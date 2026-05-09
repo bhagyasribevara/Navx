@@ -21,7 +21,7 @@ export default function SettingsScreen({ navigation }) {
   const s = StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.bg },
     header: {
-      paddingTop: Platform.OS === "ios" ? 56 : 16,
+      paddingTop: 16,
       paddingHorizontal: 20, paddingBottom: 16,
       backgroundColor: colors.card,
       borderBottomWidth: 1, borderBottomColor: colors.border,

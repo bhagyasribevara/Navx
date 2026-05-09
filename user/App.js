@@ -6,6 +6,7 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { StatusBar } from "expo-status-bar";
 import { Ionicons } from "@expo/vector-icons";
+import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { ThemeContext } from "./src/context/ThemeContext";
 
 import HomeScreen from "./src/screens/HomeScreen";
@@ -138,34 +139,38 @@ export default function App() {
   }
 
   return (
-    <ThemeContext.Provider value={{ colors, isDark, setIsDark, language, setLanguage }}>
-      <NavigationContainer theme={navTheme}>
-        <StatusBar style={isDark ? "light" : "dark"} />
-        <Stack.Navigator screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="MainTabs" component={MainTabs} />
-          <Stack.Screen
-            name="Navigation"
-            component={NavigationScreen}
-            options={{ animation: "slide_from_bottom", gestureEnabled: true }}
-          />
-          <Stack.Screen
-            name="AR"
-            component={ARScreen}
-            options={{ animation: "slide_from_bottom", gestureEnabled: true }}
-          />
-          <Stack.Screen
-            name="QRScan"
-            component={QRScanScreen}
-            options={{ animation: "slide_from_bottom", gestureEnabled: true }}
-          />
-          <Stack.Screen
-            name="OfflineMaps"
-            component={OfflineMapsScreen}
-            options={{ animation: "slide_from_bottom", gestureEnabled: true }}
-          />
-        </Stack.Navigator>
-        <EmergencyOverlay />
-      </NavigationContainer>
-    </ThemeContext.Provider>
+    <SafeAreaProvider>
+      <ThemeContext.Provider value={{ colors, isDark, setIsDark, language, setLanguage }}>
+        <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }} edges={['top']}>
+          <NavigationContainer theme={navTheme}>
+            <StatusBar style={isDark ? "light" : "dark"} />
+            <Stack.Navigator screenOptions={{ headerShown: false }}>
+              <Stack.Screen name="MainTabs" component={MainTabs} />
+              <Stack.Screen
+                name="Navigation"
+                component={NavigationScreen}
+                options={{ animation: "slide_from_bottom", gestureEnabled: true }}
+              />
+              <Stack.Screen
+                name="AR"
+                component={ARScreen}
+                options={{ animation: "slide_from_bottom", gestureEnabled: true }}
+              />
+              <Stack.Screen
+                name="QRScan"
+                component={QRScanScreen}
+                options={{ animation: "slide_from_bottom", gestureEnabled: true }}
+              />
+              <Stack.Screen
+                name="OfflineMaps"
+                component={OfflineMapsScreen}
+                options={{ animation: "slide_from_bottom", gestureEnabled: true }}
+              />
+            </Stack.Navigator>
+            <EmergencyOverlay />
+          </NavigationContainer>
+        </SafeAreaView>
+      </ThemeContext.Provider>
+    </SafeAreaProvider>
   );
 }

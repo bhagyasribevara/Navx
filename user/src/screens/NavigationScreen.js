@@ -469,7 +469,7 @@ export default function NavigationScreen({ navigation, route }) {
     header: {
       flexDirection: "row", alignItems: "center",
       paddingHorizontal: 16, paddingBottom: 14,
-      paddingTop: Platform.OS === "ios" ? 54 : 16,
+      paddingTop: 16,
       backgroundColor: colors.card,
       borderBottomWidth: 1, borderBottomColor: colors.border,
     },
