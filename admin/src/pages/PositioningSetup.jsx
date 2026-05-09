@@ -149,7 +149,7 @@ export default function PositioningSetup() {
                     <td>
                       {qrImages[qr._id] ? <img src={qrImages[qr._id]} style={{ width: 80 }} alt="QR" /> : <button className="btn btn-secondary btn-sm" onClick={() => showQRImage(qr)}>Generate</button>}
                     </td>
-                    <td><button className="btn btn-danger btn-sm" onClick={() => deleteQR(qr._id)}><FiTrash2 /></button></td>
+                    <td><button type="button" className="btn btn-danger btn-sm" onClick={(e) => { e.preventDefault(); e.stopPropagation(); deleteQR(qr._id); }}><FiTrash2 /></button></td>
                   </tr>
                 ))}
                 {qrcodes.length === 0 && <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No QR codes yet</td></tr>}
@@ -176,7 +176,7 @@ export default function PositioningSetup() {
                     <td>{b.label}</td>
                     <td>({b.position.x}, {b.position.y})</td>
                     <td>{b.txPower} dBm</td>
-                    <td><button className="btn btn-danger btn-sm" onClick={() => deleteBeaconItem(b._id)}><FiTrash2 /></button></td>
+                    <td><button type="button" className="btn btn-danger btn-sm" onClick={(e) => { e.preventDefault(); e.stopPropagation(); deleteBeaconItem(b._id); }}><FiTrash2 /></button></td>
                   </tr>
                 ))}
                 {beacons.length === 0 && <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No beacons configured</td></tr>}

@@ -61,35 +61,53 @@ export const LIGHT = {
 };
 
 export const ROOM_COLORS = {
-  classroom: "#3b82f6",
-  office: "#8b5cf6",
-  lab: "#22c55e",
-  restroom: "#f59e0b",
-  cafeteria: "#ef4444",
-  library: "#06b6d4",
-  auditorium: "#ec4899",
-  elevator: "#6366f1",
-  stairs: "#f97316",
-  corridor: "#64748b80",
-  entrance: "#10b981",
-  exit: "#ef4444",
-  other: "#94a3b8",
+  // Campus
+  classroom: "#3b82f6", office: "#8b5cf6", lab: "#22c55e", restroom: "#f59e0b",
+  cafeteria: "#ef4444", library: "#06b6d4", auditorium: "#ec4899",
+  elevator: "#6366f1", stairs: "#f97316", corridor: "#64748b80",
+  entrance: "#10b981", exit: "#ef4444", other: "#94a3b8",
+  // Hospital
+  ward: "#3b82f6", icu: "#ef4444", ot: "#dc2626", pharmacy: "#22c55e",
+  reception: "#8b5cf6", emergency: "#ef4444", radiology: "#f59e0b",
+  pathology: "#06b6d4", blood_bank: "#dc2626", consultation: "#6366f1",
+  waiting_area: "#94a3b8", nursing_station: "#ec4899",
+  // Airport
+  gate: "#3b82f6", terminal: "#6366f1", check_in: "#22c55e",
+  security: "#ef4444", lounge: "#8b5cf6", baggage_claim: "#f59e0b",
+  immigration: "#f97316", duty_free: "#ec4899", boarding: "#06b6d4", customs: "#64748b",
+  // Mall
+  store: "#3b82f6", food_court: "#ef4444", anchor_store: "#6366f1",
+  kiosk: "#f59e0b", parking: "#64748b", entertainment: "#ec4899",
+  atm: "#22c55e", customer_service: "#8b5cf6", fitting_room: "#94a3b8",
+  // Building
+  conference: "#3b82f6", server_room: "#ef4444", lobby: "#6366f1",
+  mail_room: "#f59e0b", gym: "#22c55e", rooftop: "#06b6d4",
+  storage: "#64748b", utility: "#94a3b8", break_room: "#ec4899", reception_desk: "#8b5cf6",
 };
 
 export const ROOM_ICONS = {
-  classroom: "school",
-  office: "business",
-  lab: "flask",
-  restroom: "water",
-  cafeteria: "restaurant",
-  library: "library",
-  auditorium: "megaphone",
-  elevator: "arrow-up",
-  stairs: "trending-up",
-  corridor: "walk",
-  entrance: "enter",
-  exit: "exit",
-  other: "location",
+  // Campus
+  classroom: "school", office: "business", lab: "flask", restroom: "water",
+  cafeteria: "restaurant", library: "library", auditorium: "megaphone",
+  elevator: "arrow-up", stairs: "trending-up", corridor: "walk",
+  entrance: "enter", exit: "exit", other: "location",
+  // Hospital
+  ward: "bed", icu: "pulse", ot: "medkit", pharmacy: "medkit",
+  reception: "information-circle", emergency: "alert-circle", radiology: "scan",
+  pathology: "analytics", blood_bank: "water", consultation: "chatbubbles",
+  waiting_area: "time", nursing_station: "people",
+  // Airport
+  gate: "airplane", terminal: "business", check_in: "checkmark-circle",
+  security: "shield-checkmark", lounge: "cafe", baggage_claim: "briefcase",
+  immigration: "document-text", duty_free: "bag-handle", boarding: "log-in", customs: "shield",
+  // Mall
+  store: "storefront", food_court: "fast-food", anchor_store: "pricetag",
+  kiosk: "newspaper", parking: "car", entertainment: "game-controller",
+  atm: "card", customer_service: "headset", fitting_room: "shirt",
+  // Building
+  conference: "people", server_room: "server", lobby: "home",
+  mail_room: "mail", gym: "fitness", rooftop: "sunny",
+  storage: "cube", utility: "construct", break_room: "cafe", reception_desk: "desktop",
 };
 
 export const SHADOWS = {

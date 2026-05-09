@@ -21,6 +21,7 @@ export const getCampus = (id) => api.get(`/campus/${id}`);
 export const createCampus = (data) => api.post("/campus", data);
 export const updateCampus = (id, data) => api.put(`/campus/${id}`, data);
 export const deleteCampus = (id) => api.delete(`/campus/${id}`);
+export const triggerEmergency = (id, data) => api.post(`/campus/${id}/emergency`, data);
 
 // Blocks
 export const getBlocks = (campusId) => api.get(`/blocks?campusId=${campusId}`);

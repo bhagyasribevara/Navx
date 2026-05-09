@@ -18,6 +18,7 @@ import SettingsScreen from "./src/screens/SettingsScreen";
 import FavoritesScreen from "./src/screens/FavoritesScreen";
 import SplashScreen from "./src/screens/SplashScreen";
 import OfflineMapsScreen from "./src/screens/OfflineMapsScreen";
+import EmergencyOverlay from "./src/components/EmergencyOverlay";
 
 const DARK = {
   bg: "#070B14",
@@ -163,6 +164,7 @@ export default function App() {
             options={{ animation: "slide_from_bottom", gestureEnabled: true }}
           />
         </Stack.Navigator>
+        <EmergencyOverlay />
       </NavigationContainer>
     </ThemeContext.Provider>
   );

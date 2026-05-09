@@ -7,6 +7,17 @@ import 'leaflet/dist/leaflet.css';
 import { QRCodeSVG } from 'qrcode.react';
 import { getCampuses, createCampus, updateCampus, deleteCampus } from '../api';
 
+const VENUE_TYPES = [
+  { value: 'campus', label: '🎓 Campus', color: '#6366f1' },
+  { value: 'hospital', label: '🏥 Hospital', color: '#ef4444' },
+  { value: 'airport', label: '✈️ Airport', color: '#3b82f6' },
+  { value: 'mall', label: '🛍️ Mall', color: '#f59e0b' },
+  { value: 'building', label: '🏢 Building', color: '#22c55e' },
+  { value: 'other', label: '📍 Other', color: '#94a3b8' },
+];
+
+const VENUE_ICONS = { campus: '🎓', hospital: '🏥', airport: '✈️', mall: '🛍️', building: '🏢', other: '📍' };
+
 function MapUpdater({ center }) {
   const map = useMap();
   useEffect(() => {
@@ -33,7 +44,7 @@ export default function CampusManager({ admin }) {
   const [showQRModal, setShowQRModal] = useState(false);
   const [selectedQR, setSelectedQR] = useState(null);
   const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState({ name: '', description: '', address: '' });
+  const [form, setForm] = useState({ name: '', description: '', address: '', venueType: 'campus' });
   const [mapCenter, setMapCenter] = useState([18.4665, 83.6629]);
   const [markerPos, setMarkerPos] = useState(null);
   const navigate = useNavigate();
@@ -106,7 +117,7 @@ export default function CampusManager({ admin }) {
   const load = () => {
     getCampuses().then(r => {
       let campusList = r.data;
-      if (admin && admin.role === 'CampusAdmin' && admin.campusId) {
+      if (admin && (admin.role === 'CampusAdmin' || admin.role === 'VenueAdmin') && admin.campusId) {
         const cId = admin.campusId._id || admin.campusId;
         campusList = campusList.filter(c => c._id === cId);
       }
@@ -126,14 +137,14 @@ export default function CampusManager({ admin }) {
 
       if (editing) {
         await updateCampus(editing._id, dataToSubmit);
-        toast.success('Campus updated');
+        toast.success('Venue updated');
       } else {
         await createCampus(dataToSubmit);
-        toast.success('Campus created');
+        toast.success('Venue created');
       }
       setShowModal(false);
       setEditing(null);
-      setForm({ name: '', description: '', address: '' });
+      setForm({ name: '', description: '', address: '', venueType: 'campus' });
       load();
     } catch (err) { toast.error(err.response?.data?.error || 'Error'); }
   };
@@ -146,7 +157,7 @@ export default function CampusManager({ admin }) {
 
   const openEdit = (c) => {
     setEditing(c);
-    setForm({ name: c.name, description: c.description, address: c.address });
+    setForm({ name: c.name, description: c.description, address: c.address, venueType: c.venueType || 'campus' });
     if (c.location && c.location.lat) {
       setMapCenter([c.location.lat, c.location.lng]);
       setMarkerPos([c.location.lat, c.location.lng]);
@@ -160,44 +171,48 @@ export default function CampusManager({ admin }) {
     <div className="page-content">
       <div className="page-header">
         <div>
-          <h1 className="page-title">Campus Management</h1>
-          <p className="page-subtitle">Create and manage campus structures</p>
+          <h1 className="page-title">Venue Management</h1>
+          <p className="page-subtitle">Create and manage campuses, hospitals, airports, malls & buildings</p>
         </div>
         {(!admin || admin.role === 'SuperAdmin') && (
-          <button className="btn btn-primary" onClick={() => { setEditing(null); setForm({ name: '', description: '', address: '' }); setMarkerPos(null); setShowModal(true); }}>
-            <FiPlus /> New Campus
+          <button className="btn btn-primary" onClick={() => { setEditing(null); setForm({ name: '', description: '', address: '', venueType: 'campus' }); setMarkerPos(null); setShowModal(true); }}>
+            <FiPlus /> New Venue
           </button>
         )}
       </div>
 
       {campuses.length === 0 ? (
         <div className="empty-state">
-          <h3>No campuses yet</h3>
-          <p>Get started by creating your first campus</p>
+          <h3>No venues yet</h3>
+          <p>Get started by creating your first venue</p>
         </div>
       ) : (
         <div className="card-grid">
           {campuses.map(c => (
             <div className="card" key={c._id}>
-              <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>{c.name}</h3>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                <span style={{ fontSize: 20 }}>{VENUE_ICONS[c.venueType] || '📍'}</span>
+                <h3 style={{ fontSize: 16, fontWeight: 600, margin: 0 }}>{c.name}</h3>
+                <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: (VENUE_TYPES.find(v=>v.value===c.venueType)?.color || '#94a3b8') + '20', color: VENUE_TYPES.find(v=>v.value===c.venueType)?.color || '#94a3b8' }}>
+                  {(c.venueType || 'campus').toUpperCase()}
+                </span>
+              </div>
               <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>{c.description || 'No description'}</p>
               <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>📍 {c.address || 'No address'}</p>
-              <div style={{ marginTop: 16, display: 'flex', gap: 8 }}>
-                <button className="btn btn-primary btn-sm" onClick={() => navigate(`/editor/${c._id}`)}>
+              <div style={{ marginTop: 16, display: 'flex', flexWrap: 'wrap', gap: 8, position: 'relative', zIndex: 10 }}>
+                <button type="button" className="btn btn-primary btn-sm" onClick={(e) => { e.stopPropagation(); navigate(`/editor/${c._id}`); }}>
                   <FiMap /> Open Editor
                 </button>
-                <button className="btn btn-secondary btn-sm" onClick={() => { setSelectedQR(c); setShowQRModal(true); }}>
+                <button type="button" className="btn btn-secondary btn-sm" onClick={(e) => { e.stopPropagation(); setSelectedQR(c); setShowQRModal(true); }}>
                   QR Code
                 </button>
-                {(!admin || admin.role === 'SuperAdmin') && (
-                  <>
-                    <button className="btn btn-secondary btn-sm" onClick={() => openEdit(c)}>
-                      <FiEdit2 /> Edit
+                    <button type="button" className="btn btn-secondary btn-sm" onClick={(e) => { e.stopPropagation(); openEdit(c); }}>
+                      <FiEdit2 /> Edit Details & Location
                     </button>
-                    <button className="btn btn-danger btn-sm" onClick={() => handleDelete(c._id)}>
+                {(!admin || admin.role === 'SuperAdmin') && (
+                    <button type="button" className="btn btn-danger btn-sm" style={{ backgroundColor: '#ef4444', color: '#fff' }} onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleDelete(c._id); }}>
                       <FiTrash2 />
                     </button>
-                  </>
                 )}
               </div>
             </div>
@@ -234,13 +249,24 @@ export default function CampusManager({ admin }) {
         <div className="modal-overlay" onClick={() => setShowModal(false)}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <h2 className="modal-title">{editing ? 'Edit Campus' : 'New Campus'}</h2>
+              <h2 className="modal-title">{editing ? 'Edit Venue' : 'New Venue'}</h2>
               <button className="btn-icon" onClick={() => setShowModal(false)}>✕</button>
             </div>
             <form onSubmit={handleSubmit}>
+                <div className="input-group">
+                <label>Venue Name</label>
+                <input className="input" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required placeholder="e.g., City General Hospital" />
+              </div>
               <div className="input-group">
-                <label>Campus Name</label>
-                <input className="input" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required placeholder="e.g., Main Campus" />
+                <label>Venue Type</label>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {VENUE_TYPES.map(v => (
+                    <button type="button" key={v.value} onClick={() => setForm({...form, venueType: v.value})}
+                      style={{ padding: '6px 12px', borderRadius: 20, border: form.venueType === v.value ? `2px solid ${v.color}` : '1px solid var(--border)', background: form.venueType === v.value ? v.color + '18' : 'transparent', color: form.venueType === v.value ? v.color : 'var(--text-muted)', cursor: 'pointer', fontWeight: 600, fontSize: 12 }}>
+                      {v.label}
+                    </button>
+                  ))}
+                </div>
               </div>
               <div className="input-group">
                 <label>Description</label>

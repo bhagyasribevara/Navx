@@ -10,8 +10,93 @@ import { FiArrowLeft, FiPlus, FiTrash2, FiMap, FiLayers, FiSquare, FiNavigation,
 import { getBlocks, createBlock, updateBlock, deleteBlock, getFloors, createFloor, deleteFloor, getRooms, createRoom, updateRoom, deleteRoom, getNodes, createNode, getPaths, createPath, deletePath, updatePath, getCampus, getAllCampusNodes, getAllCampusPaths } from '../api';
 
 const GMRIT = [18.4665, 83.6629];
-const RC = { classroom:'#3b82f6', office:'#8b5cf6', lab:'#22c55e', restroom:'#f59e0b', cafeteria:'#ef4444', library:'#06b6d4', auditorium:'#ec4899', elevator:'#6366f1', stairs:'#f97316', corridor:'#64748b', entrance:'#10b981', exit:'#ef4444', other:'#94a3b8' };
+const RC = { 
+  // Campus
+  classroom:'#3b82f6', office:'#8b5cf6', lab:'#22c55e', restroom:'#f59e0b', cafeteria:'#ef4444', library:'#06b6d4', auditorium:'#ec4899', elevator:'#6366f1', stairs:'#f97316', corridor:'#64748b', entrance:'#10b981', exit:'#ef4444', other:'#94a3b8',
+  // Hospital
+  ward:'#3b82f6', icu:'#ef4444', ot:'#dc2626', pharmacy:'#22c55e', reception:'#8b5cf6', emergency:'#ef4444', radiology:'#f59e0b', pathology:'#06b6d4', blood_bank:'#dc2626', consultation:'#6366f1', waiting_area:'#94a3b8', nursing_station:'#ec4899',
+  // Airport
+  gate:'#3b82f6', terminal:'#6366f1', check_in:'#22c55e', security:'#ef4444', lounge:'#8b5cf6', baggage_claim:'#f59e0b', immigration:'#f97316', duty_free:'#ec4899', boarding:'#06b6d4', customs:'#64748b',
+  // Mall
+  store:'#3b82f6', food_court:'#ef4444', anchor_store:'#6366f1', kiosk:'#f59e0b', parking:'#64748b', entertainment:'#ec4899', atm:'#22c55e', customer_service:'#8b5cf6', fitting_room:'#94a3b8',
+  // Building
+  conference:'#3b82f6', server_room:'#ef4444', lobby:'#6366f1', mail_room:'#f59e0b', gym:'#22c55e', rooftop:'#06b6d4', storage:'#64748b', utility:'#94a3b8', break_room:'#ec4899', reception_desk:'#8b5cf6'
+};
 const NC = { waypoint:'#94a3b8', entrance:'#10b981', exit:'#ef4444', elevator:'#6366f1', stairs:'#f97316', room_entry:'#3b82f6', intersection:'#f59e0b', connector:'#8b5cf6' };
+
+// Venue-specific room types
+const VENUE_ROOM_TYPES = {
+  campus: ['classroom', 'office', 'lab', 'restroom', 'cafeteria', 'library', 'auditorium', 'elevator', 'stairs', 'corridor', 'entrance', 'exit', 'other'],
+  hospital: ['ward', 'icu', 'ot', 'pharmacy', 'reception', 'emergency', 'radiology', 'pathology', 'blood_bank', 'consultation', 'waiting_area', 'nursing_station', 'elevator', 'stairs', 'restroom', 'cafeteria', 'entrance', 'exit', 'corridor', 'other'],
+  airport: ['gate', 'terminal', 'check_in', 'security', 'lounge', 'baggage_claim', 'immigration', 'duty_free', 'boarding', 'customs', 'restroom', 'cafeteria', 'elevator', 'stairs', 'entrance', 'exit', 'corridor', 'other'],
+  mall: ['store', 'food_court', 'anchor_store', 'kiosk', 'parking', 'entertainment', 'atm', 'customer_service', 'fitting_room', 'restroom', 'elevator', 'stairs', 'entrance', 'exit', 'corridor', 'other'],
+  building: ['office', 'conference', 'server_room', 'lobby', 'mail_room', 'gym', 'rooftop', 'storage', 'utility', 'break_room', 'reception_desk', 'restroom', 'cafeteria', 'elevator', 'stairs', 'entrance', 'exit', 'corridor', 'other'],
+  other: Object.keys(RC)
+};
+
+// Venue-specific block domain categories (comprehensive real-world sections)
+const VENUE_DOMAINS = {
+  campus: [
+    'Academic Blocks', 'Administrative Block', 'Boys Hostels', 'Girls Hostels', 
+    'Faculty Quarters', 'Main Gates', 'Libraries', 'Cafeteria & Dining', 
+    'Sports & Recreation', 'Auditorium & Convention', 'Workshop & Labs', 
+    'Research Center', 'Placement Cell', 'Health Center', 'Bank & ATM', 
+    'Transport Hub', 'Parking Area', 'Gardens & Open Areas', 'Other Facilities'
+  ],
+  hospital: [
+    'Main Building', 'OPD Block (Out-Patient)', 'IPD Block (In-Patient)', 
+    'Emergency & Trauma Wing', 'ICU & Critical Care', 'Surgical Block (OT)', 
+    'Maternity & Gynecology Wing', 'Pediatrics Wing', 'Orthopedic Wing', 
+    'Cardiology Wing', 'Neurology Wing', 'Oncology Wing', 'ENT Department', 
+    'Eye (Ophthalmology) Dept', 'Dental Wing', 'Dermatology Wing',
+    'Radiology & Imaging Center', 'Pathology & Lab Block', 'Blood Bank', 
+    'Pharmacy Block', 'Physiotherapy & Rehab', 'Dialysis Center',
+    'Mortuary & Forensic', 'Administrative Block', 'Billing & Insurance', 
+    'Canteen & Cafeteria', 'Ambulance Bay', 'Medical Store', 
+    'Staff Quarters', 'Visitors Lounge', 'Parking Area', 
+    'Waste Management', 'Power & Utilities', 'Other'
+  ],
+  airport: [
+    'Domestic Terminal', 'International Terminal', 'Terminal 1', 'Terminal 2', 
+    'Terminal 3', 'VIP Terminal', 'Cargo Terminal', 'General Aviation Terminal',
+    'Departure Hall', 'Arrival Hall', 'Transit Area', 
+    'Check-in Zone', 'Security & Screening', 'Immigration & Passport Control', 
+    'Customs Area', 'Baggage Handling Area', 'Duty Free Zone', 
+    'Food Court & Restaurants', 'Airline Lounges', 'Business Center',
+    'Control Tower (ATC)', 'Hangar Area', 'Runway & Taxiway', 
+    'Fuel Farm', 'Maintenance & Engineering', 'Fire Station',
+    'Multi-Level Parking', 'Bus & Taxi Stand', 'Metro / Rail Link', 
+    'Airport Hotel', 'Medical Center', 'Prayer Room & Chapel',
+    'Administrative Block', 'Police & Security Office', 'Lost & Found', 'Other'
+  ],
+  mall: [
+    'Anchor Store Zone', 'Fashion & Apparel Wing', 'Electronics & Gadgets Wing',
+    'Jewelry & Accessories Wing', 'Home & Living Wing', 'Beauty & Cosmetics',
+    'Kids & Toys Zone', 'Supermarket / Hypermarket', 'Food Court', 
+    'Fine Dining Floor', 'Café & Bakery Zone', 'Entertainment Zone', 
+    'Multiplex / Cinema', 'Gaming Arcade', 'Bowling & Sports', 
+    'Fitness & Gym', 'Spa & Salon', 'Event Plaza / Atrium',
+    'Admin & Management Office', 'Customer Service Center', 'ATM & Banking',
+    'Basement Parking 1', 'Basement Parking 2', 'Rooftop Parking',
+    'Loading & Service Area', 'Housekeeping & Utility', 'Security Office', 'Other'
+  ],
+  building: [
+    'Main Lobby & Reception', 'East Wing', 'West Wing', 'North Wing', 'South Wing',
+    'Executive Floor', 'Conference & Meeting Zone', 'Co-Working Space',
+    'IT & Server Room', 'Finance Department', 'HR Department', 
+    'Marketing Department', 'Sales Department', 'Legal Department',
+    'R&D / Innovation Lab', 'Training Center', 'Board Room Floor',
+    'Cafeteria & Break Room', 'Gym & Wellness', 'Rooftop / Terrace',
+    'Parking Level B1', 'Parking Level B2', 'Parking Level B3',
+    'Mail Room & Dispatch', 'Storage & Archives', 'Maintenance & Utility',
+    'Security & Reception', 'Visitor Lounge', 'Medical Room', 'Other'
+  ],
+  other: [
+    'Section A', 'Section B', 'Section C', 'Section D', 
+    'Main Building', 'Annex Building', 'Parking Area', 
+    'Administrative Zone', 'Public Area', 'Restricted Zone', 'Other'
+  ]
+};
 
 const STEPS = [
   { id: 0, title: 'Main Pathway', desc: 'Campus Roads & Walkways', icon: <FiNavigation/> },
@@ -23,26 +108,32 @@ const STEPS = [
 
 function GeomanController({ onShapeDraw, activeMode, mapReady }) {
   const map = useMap();
+  const onShapeDrawRef = useRef(onShapeDraw);
+  useEffect(() => {
+    onShapeDrawRef.current = onShapeDraw;
+  }, [onShapeDraw]);
+
   useEffect(() => {
     if (!mapReady) return;
     map.pm.addControls({ drawMarker:false, drawCircleMarker:false, drawPolyline:false, drawRectangle:false, drawPolygon:false, drawCircle:false, editMode:false, dragMode:false, cutPolygon:false, removalMode:false, position:'bottomleft' });
     
     map.on('pm:create', (e) => {
-      onShapeDraw(e.layer, e.shape);
+      onShapeDrawRef.current(e.layer, e.shape);
       map.removeLayer(e.layer);
     });
     return () => { map.pm.removeControls(); map.off('pm:create'); };
-  }, [map, onShapeDraw, mapReady]);
+  }, [map, mapReady]);
 
   useEffect(() => {
     if (!mapReady) return;
     map.pm.disableDraw();
+
     if (activeMode === 'rotate') map.pm.enableGlobalRotateMode();
     else map.pm.disableGlobalRotateMode();
     
     if (activeMode === 'drag') map.pm.enableGlobalDragMode();
     else map.pm.disableGlobalDragMode();
-    
+
     if (activeMode === 'drawBlockRect') map.pm.enableDraw('Rectangle', { snappable: true, snapDistance: 20 });
     if (activeMode === 'drawBlockPoly') map.pm.enableDraw('Polygon', { snappable: true, snapDistance: 20 });
     if (activeMode === 'drawRoomRect') map.pm.enableDraw('Rectangle', { snappable: true, snapDistance: 15 });
@@ -61,19 +152,27 @@ function MapUpdater({ center }) {
   return null;
 }
 
-const EditablePolygon = ({ r, isSelected, isLocked, onUpdate, onClick, drawMode }) => {
+const EditablePolygon = ({ r, isSelected, isLocked, onUpdate, onClick }) => {
   const polyRef = useRef(null);
+  const onUpdateRef = useRef(onUpdate);
   const s = r.shape;
   const c = RC[r.type] || (r.isBlock ? '#64748b' : '#94a3b8');
   
-  const bounds = s.points && s.points.length > 0
-    ? s.points.map(p => [p.x, p.y])
-    : [
-      [s.x, s.y], 
-      [s.x, s.y + (s.width || 0.00015)], 
-      [s.x + (s.height || 0.0001), s.y + (s.width || 0.00015)], 
-      [s.x + (s.height || 0.0001), s.y]
-    ];
+  // NEVER update positions after initial mount. Let Geoman handle visual updates.
+  const initialBounds = useRef(
+    s.points && s.points.length > 0
+      ? s.points.map(p => [p.x, p.y])
+      : [
+          [s.x, s.y], 
+          [s.x, s.y + (s.width || 0.00015)], 
+          [s.x + (s.height || 0.0001), s.y + (s.width || 0.00015)], 
+          [s.x + (s.height || 0.0001), s.y]
+        ]
+  );
+
+  useEffect(() => {
+    onUpdateRef.current = onUpdate;
+  }, [onUpdate]);
 
   useEffect(() => {
     const layer = polyRef.current;
@@ -85,54 +184,32 @@ const EditablePolygon = ({ r, isSelected, isLocked, onUpdate, onClick, drawMode 
         const ll = layer.getLatLngs();
         const arr = Array.isArray(ll[0]) ? (Array.isArray(ll[0][0]) ? ll[0][0] : ll[0]) : ll;
         pts = arr.map(l => ({ x: l.lat, y: l.lng }));
-      } else {
-        const b = layer.getBounds();
-        pts = [
-          { x: b.getSouth(), y: b.getWest() },
-          { x: b.getNorth(), y: b.getWest() },
-          { x: b.getNorth(), y: b.getEast() },
-          { x: b.getSouth(), y: b.getEast() },
-        ];
       }
-      onUpdate(r._id || 'temp', { points: pts, type: r.shape?.type || 'polygon' });
+      onUpdateRef.current(r._id || 'temp', { points: pts, type: r.shape?.type || 'polygon' });
     };
 
-    const handleDrag = () => {
-      if (layer.getTooltip()) {
-        layer.getTooltip().setLatLng(layer.getBounds().getCenter());
-      }
-    };
-
-    layer.on('pm:edit', handleEdit);
+    layer.on('pm:markerdragend', handleEdit);
     layer.on('pm:dragend', handleEdit);
     layer.on('pm:rotateend', handleEdit);
-    layer.on('pm:drag', handleDrag);
-    layer.on('pm:markerdrag', handleDrag);
+    layer.on('pm:cut', handleEdit);
 
     if (isSelected && !isLocked) {
-      if (drawMode === 'rotate') {
-        layer.pm.disable();
-      } else if (drawMode === 'drag') {
-        layer.pm.disable();
-      } else {
-        layer.pm.enable({ allowSelfIntersection: false, preventMarkerRemoval: true, snappable: true, draggable: true });
-      }
+      layer.pm.enable({ allowSelfIntersection: false, preventMarkerRemoval: true, snappable: true, draggable: true });
     } else {
       layer.pm.disable();
     }
     
     return () => { 
-      layer.off('pm:edit', handleEdit); 
+      layer.off('pm:markerdragend', handleEdit); 
       layer.off('pm:dragend', handleEdit); 
       layer.off('pm:rotateend', handleEdit); 
-      layer.off('pm:drag', handleDrag);
-      layer.off('pm:markerdrag', handleDrag);
+      layer.off('pm:cut', handleEdit);
       layer.pm.disable(); 
     };
-  }, [isSelected, isLocked, drawMode, r._id, onUpdate]);
+  }, [isSelected, isLocked, r._id]);
 
   return (
-    <Polygon ref={polyRef} positions={bounds} 
+    <Polygon ref={polyRef} positions={initialBounds.current} 
       pathOptions={{ 
         color: isSelected ? '#fff' : c, 
         fillColor: c, 
@@ -142,7 +219,7 @@ const EditablePolygon = ({ r, isSelected, isLocked, onUpdate, onClick, drawMode 
       }} 
       eventHandlers={{ click: (e) => { if(!isLocked) { L.DomEvent.stopPropagation(e); onClick(r); } } }}>
       {!r.isBlock && (
-        <Tooltip key={bounds[0]?.[0] + '-' + bounds[0]?.[1]} permanent direction="center" className="room-label">
+        <Tooltip permanent direction="center" className="room-label">
           <span style={{fontSize:10,fontWeight:700,color:'#fff',textShadow:'0 1px 2px rgba(0,0,0,0.8)'}}>{r.name}</span>
         </Tooltip>
       )}
@@ -152,16 +229,36 @@ const EditablePolygon = ({ r, isSelected, isLocked, onUpdate, onClick, drawMode 
 
 const EditableNode = ({ n, stepMode, onUpdate, onDelete, isMain }) => {
   const ref = useRef(null);
+  const onUpdateRef = useRef(onUpdate);
+  const onDeleteRef = useRef(onDelete);
+
   useEffect(() => {
-    if (!ref.current) return;
+    onUpdateRef.current = onUpdate;
+    onDeleteRef.current = onDelete;
+  }, [onUpdate, onDelete]);
+
+  useEffect(() => {
     const layer = ref.current;
+    if (!layer) return;
+
     const handleDragEnd = () => {
       const ll = layer.getLatLng();
-      onUpdate(n._id, { x: ll.lat, y: ll.lng });
+      onUpdateRef.current(n._id, { x: ll.lat, y: ll.lng });
     };
+
     layer.on('pm:dragend', handleDragEnd);
-    return () => layer.off('pm:dragend', handleDragEnd);
-  }, [n._id, onUpdate]);
+
+    if (stepMode === 0 || stepMode === 4) {
+      layer.pm.enable();
+    } else {
+      layer.pm.disable();
+    }
+
+    return () => {
+      layer.off('pm:dragend', handleDragEnd);
+      layer.pm.disable();
+    };
+  }, [n._id, stepMode]);
 
   return (
     <Circle ref={ref} center={[n.x, n.y]} radius={stepMode === 0 ? 2 : 1}
@@ -172,10 +269,10 @@ const EditableNode = ({ n, stepMode, onUpdate, onDelete, isMain }) => {
           L.DomEvent.stopPropagation(e); 
           const act = window.prompt(`Node options:\n1 = Delete Node\n2 = Change Type (Current: ${n.type || 'waypoint'})`, '1');
           if (act === '1') {
-            if(window.confirm('Delete this node?')) onDelete(n._id);
+            if(window.confirm('Delete this node?')) onDeleteRef.current(n._id);
           } else if (act === '2') {
             const newType = window.prompt(`Enter new type (waypoint, entrance, exit, elevator, stairs, room_entry, intersection, connector):`, n.type || 'waypoint');
-            if(newType) onUpdate(n._id, { type: newType });
+            if(newType) onUpdateRef.current(n._id, { type: newType });
           }
         } 
       }} 
@@ -253,7 +350,8 @@ export default function GuidedMapBuilder() {
 
   // Step 1 State: Temporary Block before DB save
   const [tempBlockShape, setTempBlockShape] = useState(null);
-  const [blockForm, setBlockForm] = useState({ name: '', domain: 'Academic Blocks', id: '' });
+  const venueType = campus?.venueType || 'campus';
+  const [blockForm, setBlockForm] = useState({ name: '', domain: (VENUE_DOMAINS[venueType] || VENUE_DOMAINS.campus)[0], id: '' });
   
   // Clipboard for copy/paste
   const [clipboard, setClipboard] = useState(null);
@@ -734,6 +832,11 @@ export default function GuidedMapBuilder() {
     floorTabRow: { display: 'flex', gap: 8, padding: '12px 20px', background: '#161e31', borderBottom: '1px solid #1e2d40', overflowX: 'auto' },
     floorTab: (active) => ({ padding: '6px 16px', borderRadius: 20, background: active ? '#22c55e' : '#1a2235', color: active ? '#fff' : '#94a3b8', border: '1px solid', borderColor: active ? '#22c55e' : '#1e2d40', cursor: 'pointer', fontWeight: 600, fontSize: 12, whiteSpace: 'nowrap' })
   };
+  const handleModeChange = (mode) => {
+    setDrawMode(mode);
+    if (mode === 'drag') toast.info('Drag Mode: Map panning is disabled. Drag the shapes to move them.');
+    if (mode === 'rotate') toast.info('Rotate Mode: Drag the shape edges to rotate. Map panning is disabled.');
+  };
 
   return (
     <div style={S.layout}>
@@ -794,18 +897,18 @@ export default function GuidedMapBuilder() {
           )}
           {step === 1 && (
             <>
-              <button style={S.toolBtn(drawMode === 'select')} onClick={() => setDrawMode('select')}><FiMousePointer/> Select</button>
-              <button style={S.toolBtn(drawMode === 'drag')} onClick={() => setDrawMode('drag')}><FiMove/> Drag</button>
-              <button style={S.toolBtn(drawMode === 'rotate')} onClick={() => setDrawMode('rotate')}><FiRefreshCw/> Rotate</button>
-              <button style={S.toolBtn(drawMode === 'drawBlockRect')} onClick={() => setDrawMode('drawBlockRect')}><FiSquare/> Draw Outer Block</button>
+              <button style={S.toolBtn(drawMode === 'select')} onClick={() => handleModeChange('select')}><FiMousePointer/> Select</button>
+              <button style={S.toolBtn(drawMode === 'drag')} onClick={() => handleModeChange('drag')}><FiMove/> Drag</button>
+              <button style={S.toolBtn(drawMode === 'rotate')} onClick={() => handleModeChange('rotate')}><FiRefreshCw/> Rotate</button>
+              <button style={S.toolBtn(drawMode === 'drawBlockRect')} onClick={() => handleModeChange('drawBlockRect')}><FiSquare/> Draw Outer Block</button>
             </>
           )}
           {step === 3 && (
             <>
-              <button style={S.toolBtn(drawMode === 'select')} onClick={() => setDrawMode('select')}><FiMousePointer/> Select Room</button>
-              <button style={S.toolBtn(drawMode === 'drag')} onClick={() => setDrawMode('drag')}><FiMove/> Drag Room</button>
-              <button style={S.toolBtn(drawMode === 'rotate')} onClick={() => setDrawMode('rotate')}><FiRefreshCw/> Rotate</button>
-              <button style={S.toolBtn(drawMode === 'drawRoomRect')} onClick={() => setDrawMode('drawRoomRect')}><FiSquare/> Draw Room</button>
+              <button style={S.toolBtn(drawMode === 'select')} onClick={() => handleModeChange('select')}><FiMousePointer/> Select Room</button>
+              <button style={S.toolBtn(drawMode === 'drag')} onClick={() => handleModeChange('drag')}><FiMove/> Drag Room</button>
+              <button style={S.toolBtn(drawMode === 'rotate')} onClick={() => handleModeChange('rotate')}><FiRefreshCw/> Rotate</button>
+              <button style={S.toolBtn(drawMode === 'drawRoomRect')} onClick={() => handleModeChange('drawRoomRect')}><FiSquare/> Draw Room</button>
             </>
           )}
           {step === 4 && (
@@ -858,10 +961,10 @@ export default function GuidedMapBuilder() {
 
           {/* Render Active Block Outline */}
           {activeBlock?.shape && (
-            <EditablePolygon r={{ ...activeBlock, isBlock: true }} isSelected={step === 1} isLocked={step > 1} onUpdate={(id, s) => setActiveBlock(p => ({...p, shape: s}))} onClick={()=>{}} drawMode={drawMode} />
+            <EditablePolygon key={`block-${activeBlock._id}`} r={{ ...activeBlock, isBlock: true }} isSelected={step === 1} isLocked={step > 1} onUpdate={(id, s) => setActiveBlock(p => ({...p, shape: s}))} onClick={()=>{}} />
           )}
           {step === 1 && !activeBlock && tempBlockShape && (
-            <EditablePolygon r={{ _id: 'temp', shape: tempBlockShape, type: 'other', name: 'New Block' }} isSelected={true} isLocked={false} onUpdate={(_, s) => setTempBlockShape(s)} onClick={()=>{}} drawMode={drawMode} />
+            <EditablePolygon key="temp-block" r={{ _id: 'temp', shape: tempBlockShape, type: 'other', name: 'New Block' }} isSelected={true} isLocked={false} onUpdate={(_, s) => setTempBlockShape(s)} onClick={()=>{}} />
           )}
 
           {/* Render Rooms (Step 3 & 4) */}
@@ -873,7 +976,7 @@ export default function GuidedMapBuilder() {
                 setActiveRoom(p => p?._id === id ? { ...p, shape: s } : { ...r, shape: s });
               }} 
               onClick={(roomData) => { if (step===3) setActiveRoom(p => p?._id === roomData._id ? p : roomData); }} 
-              drawMode={drawMode} />;
+               />;
           })}
 
           {/* Render Interior Nodes & Paths (Step 4) */}
@@ -970,7 +1073,7 @@ export default function GuidedMapBuilder() {
                         <div style={{ fontWeight: 600, color: '#fff' }}>{b.name}</div>
                         <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>{b.domain || 'Academic Blocks'}</div>
                       </div>
-                      <button onClick={(e) => { e.stopPropagation(); removeBlock(b._id); }} style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer' }}><FiTrash2/></button>
+                      <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); removeBlock(b._id); }} style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer' }}><FiTrash2/></button>
                     </div>
                   ))}
                   <button style={{...S.primaryBtn, background: '#1a2235', border: '1px solid #1e2d40'}} onClick={() => { setActiveBlock(null); setTempBlockShape(null); setBlockForm({name:'', domain: 'Academic Blocks', id:''}); }}>+ Draw New Block</button>
@@ -986,14 +1089,9 @@ export default function GuidedMapBuilder() {
                   <div style={S.formGroup}>
                     <label style={S.label}>Domain / Category</label>
                     <select style={S.input} value={blockForm.domain} onChange={e => setBlockForm({ ...blockForm, domain: e.target.value })}>
-                      <option value="Academic Blocks">Academic Blocks</option>
-                      <option value="Boys Hostels">Boys Hostels</option>
-                      <option value="Girls Hostels">Girls Hostels</option>
-                      <option value="Main Gates">Main Gates</option>
-                      <option value="Libraries">Libraries</option>
-                      <option value="Cafeteria & Dining">Cafeteria & Dining</option>
-                      <option value="Sports & Recreation">Sports & Recreation</option>
-                      <option value="Other Facilities">Other Facilities</option>
+                      {(VENUE_DOMAINS[venueType] || VENUE_DOMAINS.campus).map(d => (
+                        <option key={d} value={d}>{d}</option>
+                      ))}
                     </select>
                   </div>
                   <button style={S.successBtn} onClick={saveBlock} disabled={saving}>{saving ? 'Saving...' : 'Confirm & Lock Block Shape'}</button>
@@ -1008,18 +1106,13 @@ export default function GuidedMapBuilder() {
                   <div style={S.formGroup}>
                     <label style={S.label}>Domain / Category</label>
                     <select style={S.input} value={blockForm.domain} onChange={e => setBlockForm({ ...blockForm, domain: e.target.value })}>
-                      <option value="Academic Blocks">Academic Blocks</option>
-                      <option value="Boys Hostels">Boys Hostels</option>
-                      <option value="Girls Hostels">Girls Hostels</option>
-                      <option value="Main Gates">Main Gates</option>
-                      <option value="Libraries">Libraries</option>
-                      <option value="Cafeteria & Dining">Cafeteria & Dining</option>
-                      <option value="Sports & Recreation">Sports & Recreation</option>
-                      <option value="Other Facilities">Other Facilities</option>
+                      {(VENUE_DOMAINS[venueType] || VENUE_DOMAINS.campus).map(d => (
+                        <option key={d} value={d}>{d}</option>
+                      ))}
                     </select>
                   </div>
                   <div style={{ display: 'flex', gap: 10 }}>
-                    <button style={{ ...S.primaryBtn, flex: 1, background: '#1a2235', color: '#ef4444', border: '1px solid #ef444450' }} onClick={() => removeBlock(activeBlock._id)}>Delete</button>
+                    <button style={{ ...S.primaryBtn, flex: 1, background: '#1a2235', color: '#ef4444', border: '1px solid #ef444450' }} onClick={(e) => { e.preventDefault(); removeBlock(activeBlock._id); }}>Delete</button>
                     <button style={{ ...S.successBtn, flex: 2 }} onClick={saveBlock} disabled={saving}>Save Shape</button>
                   </div>
                   <button style={{ ...S.primaryBtn, marginTop: 16 }} onClick={() => setStep(2)}>Proceed to Floors</button>
@@ -1046,7 +1139,7 @@ export default function GuidedMapBuilder() {
                           const newName = window.prompt('Rename Floor:', f.name);
                           if(newName) { import('../api').then(m => m.updateFloor(f._id, {name: newName}).then(() => loadFloors(activeBlock._id))); }
                         }} style={{ background: 'transparent', border: 'none', color: '#6366f1', cursor: 'pointer', marginRight: 8 }}><FiSettings/></button>
-                        <button onClick={() => removeFloor(f._id)} style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer' }}><FiTrash2/></button>
+                        <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); removeFloor(f._id); }} style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer' }}><FiTrash2/></button>
                       </div>
                     </div>
                   ))}
@@ -1080,12 +1173,12 @@ export default function GuidedMapBuilder() {
                   </div>
                   <div style={S.formGroup}>
                     <label style={S.label}>Type</label>
-                    <select style={S.input} value={activeRoom.type || 'classroom'} onChange={e => handlePropChange('type', e.target.value)}>
-                      {Object.keys(RC).map(t => <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
+                    <select style={S.input} value={activeRoom.type || 'other'} onChange={e => handlePropChange('type', e.target.value)}>
+                      {(VENUE_ROOM_TYPES[venueType] || VENUE_ROOM_TYPES.campus).map(t => <option key={t} value={t}>{t.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}</option>)}
                     </select>
                   </div>
                   <div style={{ display: 'flex', gap: 10, marginTop: 24 }}>
-                    <button style={{ ...S.primaryBtn, marginTop: 0, flex: 1, background: '#1a2235', color: '#ef4444', border: '1px solid #ef444450' }} onClick={() => { if(window.confirm('Delete?')) deleteRoom(activeRoom._id).then(()=>{setActiveRoom(null);loadFloorData(activeFloor._id);}); }}>Delete</button>
+                    <button style={{ ...S.primaryBtn, marginTop: 0, flex: 1, background: '#1a2235', color: '#ef4444', border: '1px solid #ef444450' }} onClick={(e) => { e.preventDefault(); if(window.confirm('Delete?')) deleteRoom(activeRoom._id).then(()=>{setActiveRoom(null);loadFloorData(activeFloor._id);}); }}>Delete</button>
                     <button style={{ ...S.successBtn, marginTop: 0, flex: 2 }} onClick={updateRoomProps} disabled={saving}>{saving ? 'Saving...' : 'Save Room'}</button>
                   </div>
                 </>

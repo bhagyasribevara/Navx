@@ -15,14 +15,50 @@ const { width: SW } = Dimensions.get("window");
 const HOUR = new Date().getHours();
 const GREETING = HOUR < 12 ? "Good Morning" : HOUR < 17 ? "Good Afternoon" : "Good Evening";
 
-const CATS = [
-  { label: "Labs", icon: "flask", color: "#22c55e", filter: "lab" },
-  { label: "Classes", icon: "school", color: "#3b82f6", filter: "classroom" },
-  { label: "Offices", icon: "business", color: "#8b5cf6", filter: "office" },
-  { label: "Cafeteria", icon: "restaurant", color: "#ef4444", filter: "cafeteria" },
-  { label: "Library", icon: "library", color: "#06b6d4", filter: "library" },
-  { label: "Restrooms", icon: "water", color: "#f59e0b", filter: "restroom" },
-];
+const VENUE_CATS = {
+  campus: [
+    { label: "Labs", icon: "flask", color: "#22c55e", filter: "lab" },
+    { label: "Classes", icon: "school", color: "#3b82f6", filter: "classroom" },
+    { label: "Offices", icon: "business", color: "#8b5cf6", filter: "office" },
+    { label: "Cafeteria", icon: "restaurant", color: "#ef4444", filter: "cafeteria" },
+    { label: "Library", icon: "library", color: "#06b6d4", filter: "library" },
+    { label: "Restrooms", icon: "water", color: "#f59e0b", filter: "restroom" },
+  ],
+  hospital: [
+    { label: "Wards", icon: "bed", color: "#3b82f6", filter: "ward" },
+    { label: "ICU", icon: "pulse", color: "#ef4444", filter: "icu" },
+    { label: "Emergency", icon: "alert-circle", color: "#dc2626", filter: "emergency" },
+    { label: "Pharmacy", icon: "medkit", color: "#22c55e", filter: "pharmacy" },
+    { label: "Reception", icon: "information-circle", color: "#8b5cf6", filter: "reception" },
+    { label: "Radiology", icon: "scan", color: "#f59e0b", filter: "radiology" },
+  ],
+  airport: [
+    { label: "Gates", icon: "airplane", color: "#3b82f6", filter: "gate" },
+    { label: "Check-in", icon: "checkmark-circle", color: "#22c55e", filter: "check_in" },
+    { label: "Lounge", icon: "cafe", color: "#8b5cf6", filter: "lounge" },
+    { label: "Baggage", icon: "briefcase", color: "#f59e0b", filter: "baggage_claim" },
+    { label: "Security", icon: "shield-checkmark", color: "#ef4444", filter: "security" },
+    { label: "Duty Free", icon: "bag-handle", color: "#ec4899", filter: "duty_free" },
+  ],
+  mall: [
+    { label: "Stores", icon: "storefront", color: "#3b82f6", filter: "store" },
+    { label: "Food Court", icon: "fast-food", color: "#ef4444", filter: "food_court" },
+    { label: "Entertain", icon: "game-controller", color: "#ec4899", filter: "entertainment" },
+    { label: "ATM", icon: "card", color: "#22c55e", filter: "atm" },
+    { label: "Parking", icon: "car", color: "#64748b", filter: "parking" },
+    { label: "Restrooms", icon: "water", color: "#f59e0b", filter: "restroom" },
+  ],
+  building: [
+    { label: "Offices", icon: "business", color: "#8b5cf6", filter: "office" },
+    { label: "Conference", icon: "people", color: "#3b82f6", filter: "conference" },
+    { label: "Lobby", icon: "home", color: "#6366f1", filter: "lobby" },
+    { label: "Gym", icon: "fitness", color: "#22c55e", filter: "gym" },
+    { label: "Cafeteria", icon: "restaurant", color: "#ef4444", filter: "cafeteria" },
+    { label: "Restrooms", icon: "water", color: "#f59e0b", filter: "restroom" },
+  ],
+};
+
+const VENUE_ICONS_MAP = { campus: 'school', hospital: 'medkit', airport: 'airplane', mall: 'cart', building: 'business' };
 
 export default function HomeScreen({ navigation }) {
   const { colors, isDark } = useContext(ThemeContext);
@@ -302,7 +338,7 @@ export default function HomeScreen({ navigation }) {
           <Text style={s.secTitle}>Browse by Category</Text>
         </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20 }}>
-          {CATS.map((c, i) => (
+          {(VENUE_CATS[campuses.find(c => c._id === activeCampusId)?.venueType] || VENUE_CATS.campus).map((c, i) => (
             <TouchableOpacity key={i} style={s.catChip} onPress={() => navigation.navigate("Search", { filter: c.filter })} activeOpacity={0.78}>
               <Ionicons name={c.icon} size={16} color={c.color} />
               <Text style={s.catLabel}>{c.label}</Text>
@@ -343,16 +379,16 @@ export default function HomeScreen({ navigation }) {
       {/* Campuses */}
       <View style={s.section}>
         <View style={s.secRow}>
-          <Text style={s.secTitle}>{activeCampusId ? "Your Campus" : "Unlock Your Campus"}</Text>
-          <Ionicons name="business-outline" size={18} color={colors.textMuted} />
+          <Text style={s.secTitle}>{activeCampusId ? "Your Venue" : "Unlock Your Venue"}</Text>
+          <Ionicons name={VENUE_ICONS_MAP[campuses.find(c => c._id === activeCampusId)?.venueType] || "business-outline"} size={18} color={colors.textMuted} />
         </View>
         {(!activeCampusId || !campuses.find(c => c._id === activeCampusId)) ? (
           <View style={s.empty}>
             <View style={s.emptyIcon}>
               <Ionicons name="qr-code-outline" size={30} color={colors.textMuted} />
             </View>
-            <Text style={s.emptyTitle}>No Campus Unlocked</Text>
-            <Text style={s.emptyText}>Scan the campus QR code at the entrance{"\n"}to load the map and navigation.</Text>
+            <Text style={s.emptyTitle}>No Venue Unlocked</Text>
+            <Text style={s.emptyText}>Scan the venue QR code at the entrance{"\n"}to load the map and navigation.</Text>
             <TouchableOpacity 
               style={{ marginTop: 16, backgroundColor: colors.primary, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8 }}
               onPress={() => navigation.navigate("QRScan")}

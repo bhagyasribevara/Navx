@@ -11,7 +11,7 @@ import * as Speech from "expo-speech";
 import * as Haptics from "expo-haptics";
 import { ThemeContext } from "../context/ThemeContext";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { findRouteToRoom } from "../api";
+import { findRouteToRoom, findRouteToExit } from "../api";
 import { PositionEngine, StepDetector } from "../positioning";
 import { SHADOWS, RADIUS, ROOM_COLORS } from "../theme/designSystem";
 
@@ -79,9 +79,10 @@ window.updateUserPos = function(lat, lng) {
 
 export default function NavigationScreen({ navigation, route }) {
   const { colors, language } = useContext(ThemeContext);
-  const { room, campusId: initialCampusId, mapData: initialMapData } = route.params || {};
+  const { room: initialRoom, campusId: initialCampusId, mapData: initialMapData } = route.params || {};
+  const [targetRoom, setTargetRoom] = useState(initialRoom);
   const [mapData, setMapData] = useState(initialMapData);
-  const [campusId, setCampusId] = useState(initialCampusId || room?.campusId);
+  const [campusId, setCampusId] = useState(initialCampusId || initialRoom?.campusId);
   const [routeData, setRouteData] = useState(null);
   const [currentStep, setCurrentStep] = useState(0);
   const [userPos, setUserPos] = useState(null);
@@ -109,9 +110,9 @@ export default function NavigationScreen({ navigation, route }) {
   // Memoize the HTML so it DOES NOT regenerate on every GPS tick
   const initialUserPosRef = useRef(userPos);
   const mapHtml = React.useMemo(() => {
-    const floorRooms = mapData?.rooms?.filter(r => r.floorId === room?.floorId) || [];
-    return buildNavMapHTML(floorRooms, routeData?.path, initialUserPosRef.current, room);
-  }, [mapData, routeData, room]);
+    const floorRooms = mapData?.rooms?.filter(r => r.floorId === targetRoom?.floorId) || [];
+    return buildNavMapHTML(floorRooms, routeData?.path, initialUserPosRef.current, targetRoom);
+  }, [mapData, routeData, targetRoom]);
 
   // Push user location updates directly into the WebView via JS
   useEffect(() => {
@@ -140,21 +141,21 @@ export default function NavigationScreen({ navigation, route }) {
     }
   }, [campusId, mapData]);
 
-  // Preview route automatically when mapData and room are available
+  // Preview route automatically when mapData and room (or emergencyMode) are available
   useEffect(() => {
-    if (mapData && room && locationPerm !== null && !routeData) {
+    if (mapData && (targetRoom || route.params?.emergencyMode) && locationPerm !== null && !routeData) {
       previewRoute();
     }
-  }, [mapData, room, locationPerm]);
+  }, [mapData, targetRoom, route.params?.emergencyMode, locationPerm]);
 
   const previewRoute = async () => {
     try {
       // Save to recent (fire-and-forget)
-      if (room) {
+      if (targetRoom) {
         AsyncStorage.getItem("navx_recent").then(stored => {
           let recent = stored ? JSON.parse(stored) : [];
-          recent = recent.filter(r => r._id !== room._id);
-          recent.unshift(room);
+          recent = recent.filter(r => r._id !== targetRoom._id);
+          recent.unshift(targetRoom);
           if (recent.length > 5) recent = recent.slice(0, 5);
           AsyncStorage.setItem("navx_recent", JSON.stringify(recent));
         }).catch(() => {});
@@ -219,17 +220,30 @@ export default function NavigationScreen({ navigation, route }) {
       }
 
       if (usedQR) {
-        posEngine.setPositionFromQR(uLat, uLng, room?.floorId);
+        posEngine.setPositionFromQR(uLat, uLng, targetRoom?.floorId);
       }
-      setUserPos({ x: uLat, y: uLng, floor: room?.floorId });
+      setUserPos({ x: uLat, y: uLng, floor: targetRoom?.floorId });
 
       // Step 3: Send raw GPS/QR coords to the backend
-      const result = await findRouteToRoom({
-        startX: uLat,
-        startY: uLng,
-        roomId: String(room._id),
-        campusId: String(campusId),
-      });
+      let result;
+      if (route.params?.emergencyMode) {
+        result = await findRouteToExit({
+          startX: uLat,
+          startY: uLng,
+          campusId: String(campusId),
+        });
+        if (result.targetExit) {
+          // Mock the 'room' object so the UI says "Exit"
+          setTargetRoom({ name: result.targetExit.label || result.targetExit.name || "Emergency Exit", _id: result.targetExit._id, floorId: result.targetExit.floorId });
+        }
+      } else {
+        result = await findRouteToRoom({
+          startX: uLat,
+          startY: uLng,
+          roomId: String(targetRoom?._id),
+          campusId: String(campusId),
+        });
+      }
 
       // Step 4: Prepend user's exact GPS position to the path for visual line
       if (result.path && result.path.length > 0) {
@@ -239,7 +253,7 @@ export default function NavigationScreen({ navigation, route }) {
         const distToFirst = Math.sqrt(dx * dx + dy * dy);
 
         if (distToFirst > 3) {
-          result.path.unshift({ nodeId: 'user_start', x: uLat, y: uLng, floorId: room.floorId || null, type: 'user' });
+          result.path.unshift({ nodeId: 'user_start', x: uLat, y: uLng, floorId: targetRoom?.floorId || null, type: 'user' });
           result.distance += distToFirst;
           if (result.directions?.length > 0) {
             result.directions.unshift({
@@ -258,6 +272,8 @@ export default function NavigationScreen({ navigation, route }) {
       setLiveStepDist(Math.round(result.directions?.[0]?.distance || 0));
       if (result.routeType === 'nearest_reachable' && result.message) {
         setRouteInfo(result.message);
+      } else if (result.routeType === 'emergency_exit') {
+        setRouteInfo("Routing to the nearest emergency exit. Proceed with caution.");
       }
     } catch (err) {
       console.warn("Route error:", err);
@@ -308,7 +324,7 @@ export default function NavigationScreen({ navigation, route }) {
             const lng = loc.coords.longitude;
             // Only use raw GPS if we haven't calibrated with a highly accurate QR code recently
             if (!posEngine.isCalibrated) {
-              setUserPos({ x: lat, y: lng, floor: room?.floorId });
+              setUserPos({ x: lat, y: lng, floor: targetRoom?.floorId });
             }
             
             const rData = routeDataRef.current;
@@ -351,7 +367,7 @@ export default function NavigationScreen({ navigation, route }) {
         if (locationWatcher) locationWatcher.remove();
       };
     }
-  }, [isNavigating, locationPerm, room]);
+  }, [isNavigating, locationPerm, targetRoom]);
 
   useEffect(() => {
     if (routeData) {
@@ -383,7 +399,7 @@ export default function NavigationScreen({ navigation, route }) {
             setLiveDistance(0);
             setLiveStepDist(0);
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            if (voiceEnabled) Speech.speak("You have arrived at " + (room?.name || "your destination"), { language: "en-US" });
+            if (voiceEnabled) Speech.speak("You have arrived at " + (targetRoom?.name || "your destination"), { language: "en-US" });
             Animated.spring(arrivedAnim, { toValue: 1, friction: 8, tension: 40, useNativeDriver: true }).start();
           }
         }
@@ -392,7 +408,7 @@ export default function NavigationScreen({ navigation, route }) {
   }, [userPos, isNavigating, arrived]);
 
   const startNavigation = async () => {
-    if (!mapData || !room) return;
+    if (!mapData || (!targetRoom && !route.params?.emergencyMode)) return;
     try {
       setError(null);
       setArrived(false);
@@ -408,8 +424,8 @@ export default function NavigationScreen({ navigation, route }) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         if (voiceEnabled) {
           const prefix = routeData.routeType === 'nearest_reachable'
-            ? `No direct path found. Navigating to the nearest accessible point near ${room.name}. `
-            : `Starting navigation to ${room.name}. `;
+            ? `No direct path found. Navigating to the nearest accessible point near ${targetRoom?.name}. `
+            : `Starting navigation to ${targetRoom?.name || "Exit"}. `;
           Speech.speak(prefix + (routeData.directions?.[0]?.instruction || "Follow the route."));
         }
         Animated.spring(dirCardAnim, { toValue: 1, tension: 80, friction: 10, useNativeDriver: true }).start();
@@ -420,7 +436,7 @@ export default function NavigationScreen({ navigation, route }) {
   };
 
   const currentDir = routeData?.directions?.[currentStep];
-  const floorRooms = mapData?.rooms?.filter(r => r.floorId === room?.floorId) || [];
+  const floorRooms = mapData?.rooms?.filter(r => r.floorId === targetRoom?.floorId) || [];
 
   const getDirIcon = () => {
     if (!currentDir) return "arrow-up";
@@ -527,7 +543,7 @@ export default function NavigationScreen({ navigation, route }) {
           <Ionicons name="arrow-back" size={22} color={colors.text} />
         </TouchableOpacity>
         <Text style={s.headerTitle} numberOfLines={1}>
-          {room?.name || "Navigation"}
+          {targetRoom?.name || "Navigation"}
         </Text>
         <TouchableOpacity style={s.voiceBtn} onPress={() => setVoiceEnabled(!voiceEnabled)}>
           <Ionicons name={voiceEnabled ? "volume-high" : "volume-mute"} size={20} color={voiceEnabled ? colors.accent : colors.textMuted} />
@@ -579,7 +595,7 @@ export default function NavigationScreen({ navigation, route }) {
           <Animated.View style={[s.arrivedOverlay, { transform: [{ scale: arrivedAnim }], opacity: arrivedAnim }]}>
             <Ionicons name="checkmark-circle" size={40} color="#fff" />
             <Text style={{ color: "#fff", fontSize: 18, fontWeight: "800", marginTop: 8 }}>You've Arrived!</Text>
-            <Text style={{ color: "rgba(255,255,255,0.85)", fontSize: 13, marginTop: 4 }}>{room?.name}</Text>
+            <Text style={{ color: "rgba(255,255,255,0.85)", fontSize: 13, marginTop: 4 }}>{targetRoom?.name}</Text>
           </Animated.View>
         )}
       </View>
@@ -620,7 +636,7 @@ export default function NavigationScreen({ navigation, route }) {
             <Text style={s.btnText}>Stop Navigation</Text>
           </TouchableOpacity>
         )}
-        <TouchableOpacity style={s.arToggle} onPress={() => navigation.navigate("AR", { routeData, room, heading })}>
+        <TouchableOpacity style={s.arToggle} onPress={() => navigation.navigate("AR", { routeData, room: targetRoom, heading })}>
           <Ionicons name="camera" size={18} color={colors.primary} />
           <Text style={{ color: colors.primary, fontWeight: "700", fontSize: 14, marginLeft: 8 }}>Switch to AR View</Text>
         </TouchableOpacity>
