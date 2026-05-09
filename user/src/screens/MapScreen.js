@@ -86,7 +86,7 @@ export default function MapScreen({ navigation, route }) {
       
       return rooms.map(room => (
         <TouchableOpacity key={room._id} style={s.card} activeOpacity={0.7} 
-          onPress={() => navigation.navigate("Navigation", { room, campusId, mapData, userPosition: route.params?.userPosition })}>
+          onPress={() => navigation.navigate("Navigation", { room, campusId, mapData })}>
           <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
             <View style={[s.cardIcon, { backgroundColor: (ROOM_COLORS[room.type] || colors.primary) + "20" }]}>
               <Ionicons name="location" size={20} color={ROOM_COLORS[room.type] || colors.primary} />

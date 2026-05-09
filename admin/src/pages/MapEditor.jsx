@@ -305,6 +305,7 @@ export default function GuidedMapBuilder() {
     setRedoStack([]);
   };
 
+  // handleUndo / handleRedo kept for button clicks (toolbar)
   const handleUndo = async () => {
     if (undoStack.length === 0) return;
     const action = undoStack[undoStack.length - 1];
@@ -348,41 +349,117 @@ export default function GuidedMapBuilder() {
     } catch(err) { toast.error('Redo failed'); }
   };
 
-  // Keyboard Shortcuts for Copy, Paste, Duplicate, Undo, Redo
+  // ── Keyboard Shortcuts ──────────────────────────────────────────────────
+  // IMPORTANT: undo/redo logic is inlined here (not calling handleUndo/handleRedo)
+  // because those functions close over stale state when captured inside a useEffect.
+  // Inlining them lets the closure directly read the current undoStack/redoStack values.
   useEffect(() => {
     const handleKeyDown = async (e) => {
       // Don't trigger if user is typing in an input field
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return;
 
       const isCtrl = e.ctrlKey || e.metaKey;
-      
-      if (isCtrl && e.key.toLowerCase() === 'z') {
-        e.preventDefault();
-        handleUndo();
+      const key = e.key.toLowerCase();
+
+      // ── Escape: cancel active draw mode ──────────────────────────────
+      if (e.key === 'Escape') {
+        setDrawMode('select');
+        setMainPathStart(null);
+        setPathStart(null);
+        setPendingPath(null);
+        return;
       }
 
-      if (isCtrl && e.key.toLowerCase() === 'y') {
-        e.preventDefault();
-        handleRedo();
+      // ── Delete / Backspace: remove selected item ──────────────────────
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (step === 1 && activeBlock) {
+          if (window.confirm(`Delete block "${activeBlock.name}"?`)) {
+            await deleteBlock(activeBlock._id);
+            toast.success('Block deleted');
+            setActiveBlock(null);
+            await loadBlocks();
+          }
+        } else if (step === 3 && activeRoom) {
+          if (window.confirm(`Delete room "${activeRoom.name}"?`)) {
+            await deleteRoom(activeRoom._id);
+            toast.success('Room deleted');
+            setActiveRoom(null);
+            if (activeFloor) await loadFloorData(activeFloor._id);
+          }
+        }
+        return;
       }
 
-      if (isCtrl && e.key.toLowerCase() === 'c') {
+      if (!isCtrl) return;
+
+      // ── Ctrl+Z: Undo (inline — reads fresh undoStack) ────────────────
+      if (key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        if (undoStack.length === 0) { toast.warn('Nothing to undo'); return; }
+        const action = undoStack[undoStack.length - 1];
+        setUndoStack(prev => prev.slice(0, -1));
+        setRedoStack(prev => [...prev, action]);
+        try {
+          if (action.type === 'PASTE_BLOCK' || action.type === 'DUPLICATE_BLOCK') {
+            await deleteBlock(action.id);
+            if (activeBlock?._id === action.id) setActiveBlock(null);
+            await loadBlocks();
+            toast.info('Undo: Removed Block');
+          } else if (action.type === 'PASTE_ROOM' || action.type === 'DUPLICATE_ROOM') {
+            await deleteRoom(action.id);
+            if (activeRoom?._id === action.id) setActiveRoom(null);
+            if (activeFloor) await loadFloorData(activeFloor._id);
+            toast.info('Undo: Removed Room');
+          }
+        } catch(err) { toast.error('Undo failed'); }
+        return;
+      }
+
+      // ── Ctrl+Y or Ctrl+Shift+Z: Redo (inline — reads fresh redoStack) ─
+      if (key === 'y' || (key === 'z' && e.shiftKey)) {
+        e.preventDefault();
+        if (redoStack.length === 0) { toast.warn('Nothing to redo'); return; }
+        const action = redoStack[redoStack.length - 1];
+        setRedoStack(prev => prev.slice(0, -1));
+        setUndoStack(prev => [...prev, action]);
+        try {
+          if (action.type === 'PASTE_BLOCK' || action.type === 'DUPLICATE_BLOCK') {
+            const res = await createBlock(action.blockData);
+            await updateBlock(res.data._id, { shape: action.blockData.shape });
+            action.id = res.data._id;
+            await loadBlocks();
+            toast.info('Redo: Restored Block');
+          } else if (action.type === 'PASTE_ROOM' || action.type === 'DUPLICATE_ROOM') {
+            const res = await createRoom(action.roomData);
+            action.id = res.data._id;
+            if (activeFloor) await loadFloorData(activeFloor._id);
+            toast.info('Redo: Restored Room');
+          }
+        } catch(err) { toast.error('Redo failed'); }
+        return;
+      }
+
+      // ── Ctrl+C: Copy ──────────────────────────────────────────────────
+      if (key === 'c') {
         e.preventDefault();
         if (step === 1 && activeBlock) {
           setClipboard({ type: 'block', data: activeBlock });
-          toast.info('Block copied to clipboard');
+          toast.info('📋 Block copied');
         } else if (step === 3 && activeRoom) {
           setClipboard({ type: 'room', data: activeRoom });
-          toast.info('Room copied to clipboard');
+          toast.info('📋 Room copied');
+        } else {
+          toast.warn('Select a block (Step 1) or room (Step 3) first');
         }
+        return;
       }
 
-      if (isCtrl && e.key.toLowerCase() === 'v') {
+      // ── Ctrl+V: Paste ─────────────────────────────────────────────────
+      if (key === 'v') {
         e.preventDefault();
-        if (!clipboard) return;
-        
+        if (!clipboard) { toast.warn('Nothing in clipboard — use Ctrl+C first'); return; }
+
         if (step === 1 && clipboard.type === 'block') {
-          // Paste Block
           const offset = 0.0001;
           const newShape = { ...clipboard.data.shape };
           if (newShape.points) {
@@ -400,7 +477,6 @@ export default function GuidedMapBuilder() {
           } catch(err) { toast.error('Failed to paste block'); }
           setSaving(false);
         } else if (step === 3 && clipboard.type === 'room' && activeFloor) {
-          // Paste Room
           const offset = 0.00005;
           const newShape = { ...clipboard.data.shape };
           if (newShape.points) {
@@ -416,13 +492,16 @@ export default function GuidedMapBuilder() {
             setActiveRoom(res.data);
           } catch(err) { toast.error('Failed to paste room'); }
           setSaving(false);
+        } else {
+          toast.warn('Wrong step or clipboard type mismatch');
         }
+        return;
       }
 
-      if (isCtrl && e.key.toLowerCase() === 'd') {
+      // ── Ctrl+Shift+D: Duplicate (Ctrl+D is reserved by browser for bookmarks) ──
+      if (key === 'd' && e.shiftKey) {
         e.preventDefault();
         if (step === 1 && activeBlock) {
-          // Duplicate Block
           const offset = 0.0001;
           const newShape = { ...activeBlock.shape };
           if (newShape.points) {
@@ -440,7 +519,6 @@ export default function GuidedMapBuilder() {
           } catch(err) { toast.error('Failed to duplicate block'); }
           setSaving(false);
         } else if (step === 3 && activeRoom && activeFloor) {
-          // Duplicate Room
           const offset = 0.00005;
           const newShape = { ...activeRoom.shape };
           if (newShape.points) {
@@ -456,7 +534,10 @@ export default function GuidedMapBuilder() {
             setActiveRoom(res.data);
           } catch(err) { toast.error('Failed to duplicate room'); }
           setSaving(false);
+        } else {
+          toast.warn('Select a block (Step 1) or room (Step 3) to duplicate');
         }
+        return;
       }
     };
 
@@ -677,16 +758,20 @@ export default function GuidedMapBuilder() {
           <div style={{ marginTop: 30, padding: 16, borderRadius: 12, backgroundColor: '#1a2235', border: '1px solid #1e2d40' }}>
             <h4 style={{ margin: '0 0 10px', fontSize: 13, color: '#f1f5f9', display: 'flex', alignItems: 'center', gap: 6 }}><FiInfo size={14} color="#6366f1"/> Shortcuts</h4>
             <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '8px 12px', fontSize: 12, color: '#94a3b8' }}>
-              <span style={{ color: '#fff', fontWeight: 600, background: '#111827', padding: '2px 6px', borderRadius: 4, border: '1px solid #2a3352', textAlign: 'center' }}>Ctrl + C</span>
+              <span style={{ color: '#fff', fontWeight: 600, background: '#111827', padding: '2px 6px', borderRadius: 4, border: '1px solid #2a3352', textAlign: 'center' }}>Ctrl+C</span>
               <span style={{ alignSelf: 'center' }}>Copy Selected</span>
-              <span style={{ color: '#fff', fontWeight: 600, background: '#111827', padding: '2px 6px', borderRadius: 4, border: '1px solid #2a3352', textAlign: 'center' }}>Ctrl + V</span>
+              <span style={{ color: '#fff', fontWeight: 600, background: '#111827', padding: '2px 6px', borderRadius: 4, border: '1px solid #2a3352', textAlign: 'center' }}>Ctrl+V</span>
               <span style={{ alignSelf: 'center' }}>Paste Shape</span>
-              <span style={{ color: '#fff', fontWeight: 600, background: '#111827', padding: '2px 6px', borderRadius: 4, border: '1px solid #2a3352', textAlign: 'center' }}>Ctrl + D</span>
+              <span style={{ color: '#fff', fontWeight: 600, background: '#111827', padding: '2px 6px', borderRadius: 4, border: '1px solid #2a3352', textAlign: 'center' }}>Ctrl+⇧+D</span>
               <span style={{ alignSelf: 'center' }}>Duplicate</span>
-              <span style={{ color: '#fff', fontWeight: 600, background: '#111827', padding: '2px 6px', borderRadius: 4, border: '1px solid #2a3352', textAlign: 'center' }}>Ctrl + Z</span>
+              <span style={{ color: '#fff', fontWeight: 600, background: '#111827', padding: '2px 6px', borderRadius: 4, border: '1px solid #2a3352', textAlign: 'center' }}>Ctrl+Z</span>
               <span style={{ alignSelf: 'center' }}>Undo</span>
-              <span style={{ color: '#fff', fontWeight: 600, background: '#111827', padding: '2px 6px', borderRadius: 4, border: '1px solid #2a3352', textAlign: 'center' }}>Ctrl + Y</span>
+              <span style={{ color: '#fff', fontWeight: 600, background: '#111827', padding: '2px 6px', borderRadius: 4, border: '1px solid #2a3352', textAlign: 'center' }}>Ctrl+Y</span>
               <span style={{ alignSelf: 'center' }}>Redo</span>
+              <span style={{ color: '#fff', fontWeight: 600, background: '#111827', padding: '2px 6px', borderRadius: 4, border: '1px solid #2a3352', textAlign: 'center' }}>Del</span>
+              <span style={{ alignSelf: 'center' }}>Delete Selected</span>
+              <span style={{ color: '#fff', fontWeight: 600, background: '#111827', padding: '2px 6px', borderRadius: 4, border: '1px solid #2a3352', textAlign: 'center' }}>Esc</span>
+              <span style={{ alignSelf: 'center' }}>Cancel / Select Mode</span>
             </div>
           </div>
         </div>
