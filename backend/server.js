@@ -33,22 +33,14 @@ const connectWithRetry = async () => {
     console.log('✅ MongoDB connected successfully');
   } catch (err) {
     retryCount++;
-<<<<<<< HEAD
     const delay = Math.min(5000 * retryCount, 30000); // Exponential backoff, max 30s
-    console.error(`❌ MongoDB connection attempt ${retryCount}/${MAX_RETRIES} failed:`, err.message);
-=======
-    const delay = Math.min(5000 * retryCount, 30000);
->>>>>>> 451abd41ec2c55bc04e555df68cfc1c0b0b64112
     const isIPError = err.message?.includes('IP') || err.message?.includes('whitelist') || err.message?.includes('Could not connect');
     if (isIPError) {
       console.error('\n❌ MongoDB Atlas IP Whitelist Error!');
       console.error('👉 Fix: Go to https://cloud.mongodb.com → Security → Network Access');
       console.error('👉 Click "+ ADD IP ADDRESS" → "ADD CURRENT IP ADDRESS" → Confirm\n');
-<<<<<<< HEAD
-=======
     } else {
       console.error(`❌ MongoDB connection attempt ${retryCount}/${MAX_RETRIES} failed:`, err.message);
->>>>>>> 451abd41ec2c55bc04e555df68cfc1c0b0b64112
     }
     if (retryCount < MAX_RETRIES) {
       console.log(`🔄 Retrying in ${delay / 1000}s...`);

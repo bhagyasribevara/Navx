@@ -492,9 +492,8 @@ export default function NavigationScreen({ navigation, route }) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         if (voiceEnabled) {
           const prefix = routeData.routeType === 'nearest_reachable'
-<<<<<<< HEAD
-            ? `No direct path found. Navigating to the nearest accessible point near ${room.name}. `
-            : `Starting navigation to ${room.name}. `;
+            ? `No direct path found. Navigating to the nearest accessible point near ${targetRoom?.name}. `
+            : `Starting navigation to ${targetRoom?.name || "Exit"}. `;
           
           // Inform user about floor changes ahead
           const floorChangeNote = (routeData.totalFloorTransitions || 0) > 0
@@ -502,11 +501,6 @@ export default function NavigationScreen({ navigation, route }) {
             : '';
 
           Speech.speak(prefix + floorChangeNote + (routeData.directions?.[0]?.instruction || "Follow the route."));
-=======
-            ? `No direct path found. Navigating to the nearest accessible point near ${targetRoom?.name}. `
-            : `Starting navigation to ${targetRoom?.name || "Exit"}. `;
-          Speech.speak(prefix + (routeData.directions?.[0]?.instruction || "Follow the route."));
->>>>>>> 451abd41ec2c55bc04e555df68cfc1c0b0b64112
         }
         Animated.spring(dirCardAnim, { toValue: 1, tension: 80, friction: 10, useNativeDriver: true }).start();
       }
