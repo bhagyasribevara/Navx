@@ -17,6 +17,17 @@ import { SHADOWS, RADIUS, ROOM_COLORS } from "../theme/designSystem";
 
 const { width: SW, height: SH } = Dimensions.get("window");
 
+// ── Haversine helper (matches backend formula) ──
+const EARTH_R = 6_371_000;
+const toRad = d => d * Math.PI / 180;
+function haversine(lat1, lon1, lat2, lon2) {
+  const dLat = toRad(lat2 - lat1), dLon = toRad(lon2 - lon1);
+  const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
+  return EARTH_R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+const AVG_STRIDE = 0.72;   // meters per step
+const WALK_SPEED = 1.2;    // m/s fallback
+
 const DIR_ICONS = {
   left: "arrow-back",
   right: "arrow-forward",
@@ -234,21 +245,25 @@ export default function NavigationScreen({ navigation, route }) {
       // Step 4: Prepend user's exact GPS position to the path for visual line
       if (result.path && result.path.length > 0) {
         const firstNode = result.path[0];
-        const dx = (uLat - firstNode.x) * 111320;
-        const dy = (uLng - firstNode.y) * 111320 * Math.cos(uLat * Math.PI / 180);
-        const distToFirst = Math.sqrt(dx * dx + dy * dy);
+        const distToFirst = haversine(uLat, uLng, firstNode.x, firstNode.y);
 
         if (distToFirst > 3) {
           result.path.unshift({ nodeId: 'user_start', x: uLat, y: uLng, floorId: room.floorId || null, type: 'user' });
           result.distance += distToFirst;
+          const segSteps = Math.max(1, Math.round(distToFirst / AVG_STRIDE));
+          const segEta = Math.round(distToFirst / WALK_SPEED);
           if (result.directions?.length > 0) {
             result.directions.unshift({
               step: 0,
               instruction: "Walk towards the nearest path",
-              distance: Math.round(distToFirst),
-              angle: 0,
-              eta: Math.round(distToFirst / 1.2)
+              distance: Math.round(distToFirst * 10) / 10,
+              bearing: 0,
+              eta: segEta,
+              steps: segSteps,
+              pathType: 'hallway',
             });
+            result.totalSteps = (result.totalSteps || 0) + segSteps;
+            result.eta = (result.eta || 0) + segEta;
           }
         }
       }
@@ -322,16 +337,14 @@ export default function NavigationScreen({ navigation, route }) {
             if (rData && rData.path && !isArrived) {
               const targetNode = rData.path[cStep + 1] || rData.path[cStep];
               if (targetNode) {
-                // Approximate distance to the END of the current segment
-                const dx = (activeLat - targetNode.x) * 111320;
-                const dy = (activeLng - targetNode.y) * 111320 * Math.cos(activeLat * Math.PI / 180);
-                const distToNextNodeMeters = Math.sqrt(dx*dx + dy*dy);
-                setLiveStepDist(Math.round(distToNextNodeMeters));
+                // Haversine distance to end of current segment
+                const distToNextNodeMeters = haversine(activeLat, activeLng, targetNode.x, targetNode.y);
+                setLiveStepDist(Math.round(distToNextNodeMeters * 10) / 10);
                 
                 // Sum distances of all SUBSEQUENT segments
                 const remainingPathMeters = rData.directions?.slice(cStep + 1).reduce((s,d)=>s+(d.distance||0), 0) || 0;
                 
-                setLiveDistance(Math.max(0, Math.round(distToNextNodeMeters + remainingPathMeters)));
+                setLiveDistance(Math.max(0, Math.round((distToNextNodeMeters + remainingPathMeters) * 10) / 10));
               }
             }
           }
@@ -364,18 +377,21 @@ export default function NavigationScreen({ navigation, route }) {
     if (routeData && userPos && isNavigating && !arrived) {
       const targetNode = routeData.path[currentStep + 1] || routeData.path[currentStep];
       if (targetNode) {
-        const dx = (userPos.x - targetNode.x) * 111320;
-        const dy = (userPos.y - targetNode.y) * 111320 * Math.cos(userPos.x * Math.PI / 180);
-        const distInMeters = Math.sqrt(dx*dx + dy*dy);
+        const distInMeters = haversine(userPos.x, userPos.y, targetNode.x, targetNode.y);
         
-        // Threshold to advance to next step (e.g. 10 meters)
-        if (distInMeters < 10) {
+        // Dynamic threshold: 8m for short segments, 12m for long ones
+        const segLen = routeData.directions?.[currentStep]?.distance || 20;
+        const threshold = Math.min(12, Math.max(8, segLen * 0.4));
+        
+        if (distInMeters < threshold) {
           if (currentStep < (routeData.directions?.length || 1) - 1) {
-            setCurrentStep(s => s + 1);
-            setLiveStepDist(Math.round(routeData.directions[currentStep + 1]?.distance || 0));
+            const nextStep = currentStep + 1;
+            setCurrentStep(nextStep);
+            setLiveStepDist(Math.round(routeData.directions[nextStep]?.distance || 0));
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            if (voiceEnabled && routeData.directions[currentStep + 1]) {
-              Speech.speak(routeData.directions[currentStep + 1].instruction, { language: "en-US" });
+            if (voiceEnabled && routeData.directions[nextStep]) {
+              const d = routeData.directions[nextStep];
+              Speech.speak(`${d.instruction}. ${Math.round(d.distance)} meters.`, { language: "en-US" });
             }
           } else {
             setArrived(true);
@@ -590,15 +606,23 @@ export default function NavigationScreen({ navigation, route }) {
           <View style={{ marginBottom: 16 }}>
             <View style={s.metricsRow}>
               <View style={s.metric}>
-                <Text style={s.metricValue}>{isNavigating ? liveDistance : Math.round(routeData.distance)}m</Text>
+                <Text style={s.metricValue}>{isNavigating ? Math.round(liveDistance) : Math.round(routeData.distance)}m</Text>
                 <Text style={s.metricLabel}>{isNavigating ? "Distance Left" : "Total Distance"}</Text>
               </View>
               <View style={s.metric}>
-                <Text style={s.metricValue}>{Math.max(1, Math.ceil((isNavigating ? liveDistance : routeData.distance) / 1.2 / 60))}'</Text>
+                <Text style={s.metricValue}>{(() => {
+                  const secs = isNavigating
+                    ? (routeData.directions?.slice(currentStep).reduce((s,d) => s + (d.eta||0), 0) || Math.round(liveDistance / WALK_SPEED))
+                    : (routeData.eta || Math.round(routeData.distance / WALK_SPEED));
+                  return secs >= 60 ? Math.ceil(secs / 60) + "'" : secs + "s";
+                })()}</Text>
                 <Text style={s.metricLabel}>{isNavigating ? "Live ETA" : "Est. Time"}</Text>
               </View>
               <View style={s.metric}>
-                <Text style={s.metricValue}>{Math.round((isNavigating ? liveDistance : routeData.distance) / 0.76)}</Text>
+                <Text style={s.metricValue}>{isNavigating
+                  ? (routeData.directions?.slice(currentStep).reduce((s,d) => s + (d.steps || Math.round((d.distance||0)/AVG_STRIDE)), 0) || Math.round(liveDistance / AVG_STRIDE))
+                  : (routeData.totalSteps || Math.round(routeData.distance / AVG_STRIDE))
+                }</Text>
                 <Text style={s.metricLabel}>Steps Count</Text>
               </View>
             </View>
