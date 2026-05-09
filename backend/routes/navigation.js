@@ -3,9 +3,10 @@ const NavNode = require('../models/NavNode');
 const NavPath = require('../models/NavPath');
 const Room = require('../models/Room');
 const {
-  buildGraph, autoConnectGraph, astar, dijkstra,
+  buildGraph, autoConnectGraph, astar,
   findNearestNode, findNearestReachableNode,
-  generateDirections, geoDistMeters
+  generateDirections, computeRouteSummary,
+  haversineDistMeters
 } = require('../utils/pathfinding');
 
 // POST find route to nearest exit
@@ -54,7 +55,7 @@ router.post('/route-to-exit', async (req, res) => {
 // POST find route between two points
 router.post('/route', async (req, res) => {
   try {
-    const { startNodeId, endNodeId, campusId, algorithm = 'astar', accessible = false } = req.body;
+    const { startNodeId, endNodeId, campusId, accessible = false } = req.body;
     
     const nodes = await NavNode.find({ campusId, isActive: true });
     const paths = await NavPath.find({ campusId, isActive: true });
@@ -77,10 +78,16 @@ router.post('/route', async (req, res) => {
     if (!result.found) return res.status(404).json({ error: 'No route found' });
     
     const directions = generateDirections(result.path);
-    const walkingSpeed = 1.2;
-    const eta = Math.round(result.distance / walkingSpeed);
+    const summary = computeRouteSummary(directions);
     
-    res.json({ ...result, directions, eta, algorithm });
+    res.json({
+      ...result,
+      distance: summary.totalDistance,
+      directions,
+      eta: summary.totalEta,
+      totalSteps: summary.totalSteps,
+      algorithm: 'astar',
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -89,7 +96,7 @@ router.post('/route', async (req, res) => {
 // POST find route to a room — with multi-level fallback
 router.post('/route-to-room', async (req, res) => {
   try {
-    const { startNodeId, startX, startY, roomId, campusId, algorithm = 'astar', accessible = false } = req.body;
+    const { startNodeId, startX, startY, roomId, campusId, accessible = false } = req.body;
     
     const nodes = await NavNode.find({ campusId, isActive: true });
     const paths = await NavPath.find({ campusId, isActive: true });
@@ -110,7 +117,7 @@ router.post('/route-to-room', async (req, res) => {
         return res.status(400).json({ error: 'No navigation node found near your location.' });
       }
       startId = nearestStart.id;
-      console.log(`[Navigation] GPS start (${startX.toFixed(6)}, ${startY.toFixed(6)}) → nearest node ${startId} (${geoDistMeters(startX, startY, nearestStart.x, nearestStart.y).toFixed(1)}m away)`);
+      console.log(`[Navigation] GPS start (${startX.toFixed(6)}, ${startY.toFixed(6)}) → nearest node ${startId} (${haversineDistMeters(startX, startY, nearestStart.x, nearestStart.y).toFixed(1)}m away)`);
     } else if (startNodeId) {
       startId = startNodeId.toString();
     } else {
@@ -171,7 +178,7 @@ router.post('/route-to-room', async (req, res) => {
     }
 
     // --- Step 2: Try direct route ---
-    const pathfinder = algorithm === 'dijkstra' ? dijkstra : astar;
+    const pathfinder = astar;
     let result = pathfinder(graph, startId, endNodeId, { requireAccessible: accessible });
     
     // Fallback to Dijkstra
@@ -212,22 +219,27 @@ router.post('/route-to-room', async (req, res) => {
     }
 
     const directions = generateDirections(result.path);
-    const eta = Math.round(result.distance / 1.2);
-    
+    const summary = computeRouteSummary(directions);
+
     // Add final "walk to destination" step if route ends at nearby node, not the actual room
     if (routeType === 'nearest_reachable' && destX !== null && destY !== null) {
       const lastNode = result.path[result.path.length - 1];
-      const walkDist = Math.round(geoDistMeters(lastNode.x, lastNode.y, destX, destY));
-      
+      const walkDist = haversineDistMeters(lastNode.x, lastNode.y, destX, destY);
+
       if (walkDist > 5) {
+        const walkSteps = Math.max(1, Math.round(walkDist / 0.72));
+        const walkEta   = Math.round(walkDist / 1.2);
+
         directions.push({
           step: directions.length + 1,
-          instruction: `Walk ${walkDist}m to reach your destination`,
+          instruction: `Walk ${Math.round(walkDist)}m to reach your destination`,
           from: { x: lastNode.x, y: lastNode.y, floorId: lastNode.floorId },
           to: { x: destX, y: destY, floorId: destFloorId },
-          distance: walkDist,
-          angle: 0,
-          eta: Math.round(walkDist / 1.2)
+          distance: Math.round(walkDist * 10) / 10,
+          bearing: 0,
+          eta: walkEta,
+          steps: walkSteps,
+          pathType: 'hallway',
         });
 
         // Also append a virtual path point at the actual destination for map rendering
@@ -239,16 +251,20 @@ router.post('/route-to-room', async (req, res) => {
           type: 'destination'
         });
 
-        result.distance += walkDist;
+        summary.totalDistance += Math.round(walkDist * 10) / 10;
+        summary.totalEta     += walkEta;
+        summary.totalSteps   += walkSteps;
       }
     }
 
     res.json({
       ...result,
+      distance: summary.totalDistance,
       directions,
-      eta: Math.round(result.distance / 1.2),
+      eta: summary.totalEta,
+      totalSteps: summary.totalSteps,
       roomId,
-      algorithm,
+      algorithm: 'astar',
       routeType,
       message: routeType === 'nearest_reachable'
         ? 'Navigating to the nearest accessible path point near your destination.'

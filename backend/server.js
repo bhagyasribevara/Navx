@@ -1,3 +1,7 @@
+// Force Google DNS for MongoDB Atlas SRV resolution
+const dns = require('dns');
+dns.setServers(['8.8.8.8', '8.8.4.4', '1.1.1.1']);
+
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -12,6 +16,67 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
+<<<<<<< HEAD
+// MongoDB Connection with Auto-Reconnect
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/navx';
+const MAX_RETRIES = 10;
+let retryCount = 0;
+
+const connectWithRetry = async () => {
+  try {
+    await mongoose.connect(MONGODB_URI, {
+      serverSelectionTimeoutMS: 10000,   // Timeout after 10s instead of 30s default
+      heartbeatFrequencyMS: 5000,        // Check server health every 5s
+      retryWrites: true,
+      retryReads: true,
+    });
+    retryCount = 0; // Reset on successful connection
+    console.log('✅ MongoDB connected successfully');
+  } catch (err) {
+    retryCount++;
+    const delay = Math.min(5000 * retryCount, 30000); // Exponential backoff, max 30s
+    console.error(`❌ MongoDB connection attempt ${retryCount}/${MAX_RETRIES} failed:`, err.message);
+    if (retryCount < MAX_RETRIES) {
+      console.log(`🔄 Retrying in ${delay / 1000}s...`);
+      setTimeout(connectWithRetry, delay);
+    } else {
+      console.error('💀 Max retries reached. Please check your MongoDB Atlas IP whitelist and connection string.');
+    }
+  }
+};
+
+// Connection event listeners for monitoring
+mongoose.connection.on('connected', () => {
+  console.log('📡 Mongoose connected to MongoDB Atlas');
+});
+
+mongoose.connection.on('disconnected', () => {
+  console.warn('⚠️ Mongoose disconnected from MongoDB. Attempting reconnect...');
+  if (retryCount < MAX_RETRIES) {
+    retryCount = 0; // Reset retry count for reconnection attempts
+    setTimeout(connectWithRetry, 3000);
+  }
+});
+
+mongoose.connection.on('error', (err) => {
+  console.error('❌ Mongoose connection error:', err.message);
+});
+
+// Graceful shutdown — close DB connection when server stops
+process.on('SIGINT', async () => {
+  await mongoose.connection.close();
+  console.log('🛑 MongoDB connection closed (app shutdown)');
+  process.exit(0);
+});
+
+process.on('SIGTERM', async () => {
+  await mongoose.connection.close();
+  console.log('🛑 MongoDB connection closed (app terminated)');
+  process.exit(0);
+});
+
+// Start the initial connection
+=======
 // MongoDB Connection with retry logic
 const MONGO_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/navx';
 const MAX_RETRIES = 5;
@@ -45,6 +110,7 @@ const connectWithRetry = () => {
     });
 };
 
+>>>>>>> b25aeea38750dadf424ff4d796c8dee45adeb5e2
 connectWithRetry();
 
 // Routes
@@ -61,9 +127,14 @@ app.use('/api/analytics', require('./routes/analytics'));
 app.use('/api/ai', require('./routes/ai'));
 app.use('/api/admin', require('./routes/admin'));
 
-// Health check
+// Health check (includes MongoDB status)
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  const dbStates = ['disconnected', 'connected', 'connecting', 'disconnecting'];
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    database: dbStates[mongoose.connection.readyState] || 'unknown',
+  });
 });
 
 // Error handler
