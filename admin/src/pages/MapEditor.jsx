@@ -7,7 +7,7 @@ import 'leaflet/dist/leaflet.css';
 import '@geoman-io/leaflet-geoman-free';
 import '@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css';
 import { FiArrowLeft, FiPlus, FiTrash2, FiMap, FiLayers, FiSquare, FiNavigation, FiCheck, FiSettings, FiMove, FiInfo, FiCopy, FiRefreshCw, FiArrowRight, FiArrowLeftCircle, FiRepeat, FiMousePointer } from 'react-icons/fi';
-import { getBlocks, createBlock, updateBlock, deleteBlock, getFloors, createFloor, deleteFloor, getRooms, createRoom, updateRoom, deleteRoom, getNodes, createNode, getPaths, createPath, deletePath, updatePath, getCampus, getAllCampusNodes, getAllCampusPaths } from '../api';
+import { getBlocks, createBlock, updateBlock, deleteBlock, getFloors, createFloor, deleteFloor, getRooms, createRoom, updateRoom, deleteRoom, deleteStairsFromFloor, restoreStairsToFloor, getExcludedFloors, getNodes, createNode, getPaths, createPath, deletePath, updatePath, getCampus, getAllCampusNodes, getAllCampusPaths } from '../api';
 
 const GMRIT = [18.4665, 83.6629];
 const RC = { 
@@ -358,6 +358,11 @@ export default function GuidedMapBuilder() {
   
   // Step 2 State
   const [floorCount, setFloorCount] = useState(1);
+
+  // Per-floor stairs management state
+  const [stairsFloorPanel, setStairsFloorPanel] = useState(false);
+  const [excludedFloorsMap, setExcludedFloorsMap] = useState({});
+  const [stairsLoading, setStairsLoading] = useState(false);
 
   useEffect(() => { 
     getCampus(campusId).then(r => setCampus(r.data)).catch(() => {}); 
@@ -813,6 +818,42 @@ export default function GuidedMapBuilder() {
   
   const handlePropChange = (key, val) => setActiveRoom(p => ({ ...p, [key]: val }));
 
+  // Load excluded floors when a stairs/elevator room is selected
+  const loadExcludedFloors = async (roomId) => {
+    try {
+      const res = await getExcludedFloors(roomId);
+      const excIds = (res.data.excludedFloors || []).map(f => f._id || f);
+      setExcludedFloorsMap(prev => ({ ...prev, [roomId]: excIds }));
+    } catch(e) { console.warn('Failed to load excluded floors', e); }
+  };
+
+  // Handle per-floor stairs delete/restore
+  const handleStairsFloorToggle = async (roomId, floorId, isCurrentlyExcluded) => {
+    setStairsLoading(true);
+    try {
+      if (isCurrentlyExcluded) {
+        await restoreStairsToFloor(roomId, floorId);
+        toast.success('Stairs restored to this floor');
+      } else {
+        await deleteStairsFromFloor(roomId, floorId);
+        toast.success('Stairs removed from this floor');
+      }
+      await loadExcludedFloors(roomId);
+      if (activeFloor) await loadFloorData(activeFloor._id);
+    } catch(e) { toast.error('Failed to update stairs visibility'); }
+    setStairsLoading(false);
+  };
+
+  // Auto-load excluded floors when a stairs/elevator room is selected
+  useEffect(() => {
+    if (activeRoom && ['stairs', 'elevator'].includes(activeRoom.type)) {
+      loadExcludedFloors(activeRoom._id);
+      setStairsFloorPanel(true);
+    } else {
+      setStairsFloorPanel(false);
+    }
+  }, [activeRoom?._id, activeRoom?.type]);
+
   // Dynamic Styles
   const S = {
     layout: { display: 'flex', height: '100vh', backgroundColor: '#0a0e1a', color: '#f1f5f9', fontFamily: "'Inter', sans-serif", overflow: 'hidden' },
@@ -1182,9 +1223,113 @@ export default function GuidedMapBuilder() {
                     </select>
                   </div>
                   <div style={{ display: 'flex', gap: 10, marginTop: 24 }}>
-                    <button style={{ ...S.primaryBtn, marginTop: 0, flex: 1, background: '#1a2235', color: '#ef4444', border: '1px solid #ef444450' }} onClick={(e) => { e.preventDefault(); if(window.confirm('Delete?')) deleteRoom(activeRoom._id).then(()=>{setActiveRoom(null);loadFloorData(activeFloor._id);}); }}>Delete</button>
+                    <button style={{ ...S.primaryBtn, marginTop: 0, flex: 1, background: '#1a2235', color: '#ef4444', border: '1px solid #ef444450' }} onClick={(e) => { e.preventDefault(); if(window.confirm('Delete from all floors?')) deleteRoom(activeRoom._id).then(()=>{setActiveRoom(null);loadFloorData(activeFloor._id);}); }}>Delete All</button>
                     <button style={{ ...S.successBtn, marginTop: 0, flex: 2 }} onClick={updateRoomProps} disabled={saving}>{saving ? 'Saving...' : 'Save Room'}</button>
                   </div>
+
+                  {/* Per-Floor Stairs Management Panel */}
+                  {['stairs', 'elevator'].includes(activeRoom.type) && stairsFloorPanel && floors.length > 0 && (
+                    <div style={{ marginTop: 24, background: '#0a0e1a', borderRadius: 14, border: '1px solid #f9731640', overflow: 'hidden' }}>
+                      <div 
+                        onClick={() => setStairsFloorPanel(prev => !prev)}
+                        style={{ 
+                          padding: '14px 16px', 
+                          background: 'linear-gradient(135deg, #f9731615, #f9731608)', 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          justifyContent: 'space-between',
+                          cursor: 'pointer',
+                          borderBottom: '1px solid #f9731620'
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <div style={{ width: 32, height: 32, borderRadius: 8, background: '#f9731620', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <FiLayers size={16} color="#f97316" />
+                          </div>
+                          <div>
+                            <div style={{ fontWeight: 700, fontSize: 13, color: '#f97316' }}>Per-Floor Control</div>
+                            <div style={{ fontSize: 11, color: '#64748b', marginTop: 1 }}>
+                              Remove {activeRoom.type} from specific floors
+                            </div>
+                          </div>
+                        </div>
+                        <span style={{ fontSize: 12, color: '#64748b', transform: stairsFloorPanel ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.3s' }}>▼</span>
+                      </div>
+
+                      <div style={{ padding: '12px 14px' }}>
+                        <p style={{ margin: '0 0 12px', fontSize: 11, color: '#94a3b8', lineHeight: 1.5 }}>
+                          Toggle visibility of this <strong style={{ color: '#f97316' }}>{activeRoom.type}</strong> on each floor. 
+                          Disabled floors will not show this {activeRoom.type} in the interior map.
+                        </p>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          {floors.map(f => {
+                            const excList = excludedFloorsMap[activeRoom._id] || [];
+                            const isExcluded = excList.some(excId => excId === f._id || excId.toString() === f._id);
+                            const isOwnerFloor = activeRoom.floorId === f._id || activeRoom.floorId?._id === f._id;
+                            const isCurrentFloor = activeFloor?._id === f._id;
+
+                            return (
+                              <div key={f._id} style={{ 
+                                display: 'flex', 
+                                alignItems: 'center', 
+                                justifyContent: 'space-between', 
+                                padding: '10px 12px', 
+                                borderRadius: 10, 
+                                background: isCurrentFloor ? '#22c55e08' : '#1a2235',
+                                border: `1px solid ${isCurrentFloor ? '#22c55e30' : '#1e2d40'}`,
+                                transition: 'all 0.2s'
+                              }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                  <div style={{ 
+                                    width: 8, height: 8, borderRadius: 4, 
+                                    background: isExcluded ? '#ef4444' : '#22c55e',
+                                    boxShadow: isExcluded ? '0 0 6px #ef444460' : '0 0 6px #22c55e60'
+                                  }} />
+                                  <div>
+                                    <span style={{ fontWeight: 600, fontSize: 13, color: '#f1f5f9' }}>{f.name}</span>
+                                    {isOwnerFloor && (
+                                      <span style={{ fontSize: 10, color: '#6366f1', marginLeft: 6, fontWeight: 700 }}>ORIGIN</span>
+                                    )}
+                                    {isCurrentFloor && (
+                                      <span style={{ fontSize: 10, color: '#22c55e', marginLeft: 6, fontWeight: 700 }}>ACTIVE</span>
+                                    )}
+                                  </div>
+                                </div>
+
+                                <button 
+                                  onClick={() => handleStairsFloorToggle(activeRoom._id, f._id, isExcluded)}
+                                  disabled={stairsLoading}
+                                  style={{ 
+                                    padding: '6px 14px', 
+                                    borderRadius: 8, 
+                                    border: 'none', 
+                                    cursor: stairsLoading ? 'wait' : 'pointer',
+                                    fontWeight: 700, 
+                                    fontSize: 11,
+                                    background: isExcluded ? '#22c55e20' : '#ef444420',
+                                    color: isExcluded ? '#22c55e' : '#ef4444',
+                                    transition: 'all 0.2s',
+                                    opacity: stairsLoading ? 0.5 : 1
+                                  }}
+                                >
+                                  {isExcluded ? '↩ Restore' : '✕ Remove'}
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {/* Summary */}
+                        <div style={{ marginTop: 12, padding: '8px 10px', borderRadius: 8, background: '#111827', fontSize: 11, color: '#64748b', display: 'flex', justifyContent: 'space-between' }}>
+                          <span>Visible on:</span>
+                          <span style={{ color: '#22c55e', fontWeight: 700 }}>
+                            {floors.length - (excludedFloorsMap[activeRoom._id] || []).length} / {floors.length} floors
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
               {rooms.length > 0 && (

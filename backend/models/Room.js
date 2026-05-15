@@ -45,6 +45,7 @@ const roomSchema = new mongoose.Schema({
   capacity: { type: Number, default: 0 },
   amenities: [String],
   accessible: { type: Boolean, default: true },
+  excludedFloors: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Floor' }],
   isActive: { type: Boolean, default: true }
 }, { timestamps: true });
 

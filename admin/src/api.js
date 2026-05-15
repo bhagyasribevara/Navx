@@ -40,6 +40,9 @@ export const getRooms = (floorId, blockId) => api.get(`/rooms?floorId=${floorId}
 export const createRoom = (data) => api.post("/rooms", data);
 export const updateRoom = (id, data) => api.put(`/rooms/${id}`, data);
 export const deleteRoom = (id) => api.delete(`/rooms/${id}`);
+export const deleteStairsFromFloor = (roomId, floorId) => api.delete(`/rooms/${roomId}/floor/${floorId}`);
+export const restoreStairsToFloor = (roomId, floorId) => api.put(`/rooms/${roomId}/floor/${floorId}/restore`);
+export const getExcludedFloors = (roomId) => api.get(`/rooms/${roomId}/excluded-floors`);
 
 // Nav Nodes
 export const getNodes = (floorId, blockId) => api.get(`/nodes?floorId=${floorId}${blockId ? `&blockId=${blockId}` : ''}`);
