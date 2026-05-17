@@ -10,6 +10,7 @@ import { ThemeContext } from "../context/ThemeContext";
 import { getCampuses, cachedGet, downloadCampusOffline } from "../api";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SHADOWS, RADIUS, QUICK_ACTIONS, ROOM_COLORS } from "../theme/designSystem";
+import WeatherWidget from "../components/WeatherWidget";
 
 const { width: SW } = Dimensions.get("window");
 const HOUR = new Date().getHours();
@@ -262,7 +263,8 @@ export default function HomeScreen({ navigation }) {
             <Text style={s.greetingText}>{GREETING} 👋</Text>
             <Text style={s.appName}>Nav<Text style={s.appAccent}>X</Text></Text>
           </View>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+            <WeatherWidget />
             <TouchableOpacity style={[s.avatar, { width: 42, height: 42 }]} onPress={() => setShowNotifs(true)}>
               <Ionicons name="notifications" size={20} color={colors.primary} />
               <View style={s.notifDot} />

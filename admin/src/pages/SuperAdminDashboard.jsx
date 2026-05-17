@@ -44,7 +44,7 @@ export default function SuperAdminDashboard({ admin, onLogout }) {
   const [existingCampuses, setExistingCampuses] = useState([]);
   const [selectedCampusId, setSelectedCampusId] = useState('new');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  
+
   // Inline Edit State
   const [editingAdminId, setEditingAdminId] = useState(null);
   const [editUsername, setEditUsername] = useState('');
@@ -59,11 +59,11 @@ export default function SuperAdminDashboard({ admin, onLogout }) {
     try {
       const { getCampuses } = await import('../api');
       const { data } = await getCampuses();
-      
+
       // Filter out duplicate campus names to prevent confusion
       const uniqueCampuses = [];
       const seenNames = new Set();
-      
+
       for (const campus of data) {
         const normalizedName = campus.name.trim().toLowerCase();
         if (!seenNames.has(normalizedName)) {
@@ -71,7 +71,7 @@ export default function SuperAdminDashboard({ admin, onLogout }) {
           uniqueCampuses.push(campus);
         }
       }
-      
+
       setExistingCampuses(uniqueCampuses);
     } catch (err) {
       console.error('Failed to fetch campuses', err);
@@ -95,11 +95,11 @@ export default function SuperAdminDashboard({ admin, onLogout }) {
       toast.error('Please fill all required fields');
       return;
     }
-    
+
     let finalCampusName = campusName;
     let finalCampusAddress = campusAddress;
     let finalVenueType = venueType;
-    
+
     if (selectedCampusId !== 'new') {
       const selected = existingCampuses.find(c => c._id === selectedCampusId);
       if (selected) {
@@ -140,7 +140,7 @@ export default function SuperAdminDashboard({ admin, onLogout }) {
 
   const handleDeleteAdmin = async (adminId) => {
     if (!window.confirm('Are you sure you want to delete this admin? They will lose access immediately.')) return;
-    
+
     try {
       await deleteCampusAdmin(admin._id, adminId);
       toast.success('Admin deleted successfully');
@@ -269,8 +269,8 @@ export default function SuperAdminDashboard({ admin, onLogout }) {
 
                 <div className="form-group">
                   <label>Assign to Venue *</label>
-                  <select 
-                    value={selectedCampusId} 
+                  <select
+                    value={selectedCampusId}
                     onChange={e => setSelectedCampusId(e.target.value)}
                     className="input"
                     style={{ marginBottom: '10px' }}
@@ -283,17 +283,17 @@ export default function SuperAdminDashboard({ admin, onLogout }) {
                     ))}
                   </select>
                 </div>
-                
+
                 {selectedCampusId === 'new' && (
                   <>
                     <div className="form-group">
                       <label>New Venue Name *</label>
                       <input type="text" value={campusName} onChange={e => setCampusName(e.target.value)} placeholder={
                         venueType === 'hospital' ? 'e.g. City General Hospital' :
-                        venueType === 'airport' ? 'e.g. Rajam International Airport' :
-                        venueType === 'mall' ? 'e.g. Phoenix MarketCity' :
-                        venueType === 'building' ? 'e.g. Tech Park Tower A' :
-                        'e.g. GMRIT'
+                          venueType === 'airport' ? 'e.g. Rajam International Airport' :
+                            venueType === 'mall' ? 'e.g. Phoenix MarketCity' :
+                              venueType === 'building' ? 'e.g. Tech Park Tower A' :
+                                'e.g. GMRIT'
                       } />
                     </div>
                     <div className="form-group">
@@ -321,90 +321,90 @@ export default function SuperAdminDashboard({ admin, onLogout }) {
                       const vType = a.managedVenueType || a.campusId?.venueType || 'campus';
                       const badgeColor = VENUE_BADGE_COLORS[vType] || '#94a3b8';
                       return (
-                      <div key={a._id} className="admin-item" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '12px' }}>
-                        
-                        {editingAdminId === a._id ? (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '100%' }}>
-                            <div style={{ display: 'flex', gap: '10px' }}>
-                              <input 
-                                className="input" 
-                                value={editUsername} 
-                                onChange={e => setEditUsername(e.target.value)} 
-                                placeholder="Username" 
-                                style={{ flex: 1 }}
-                              />
-                              <input 
-                                className="input" 
-                                value={editPassword} 
-                                onChange={e => setEditPassword(e.target.value)} 
-                                placeholder="Password" 
-                                style={{ flex: 1 }}
-                              />
-                            </div>
-                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-                              <button className="btn btn-secondary btn-sm" onClick={cancelEditing}>
-                                <FiX /> Cancel
-                              </button>
-                              <button className="btn btn-primary btn-sm" onClick={() => handleUpdateAdmin(a._id)}>
-                                <FiSave /> Save
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', width: '100%' }}>
-                            <div className="admin-info" style={{ flex: 1 }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <strong>{a.username}</strong>
-                                <span className="badge" style={{ background: badgeColor + '20', color: badgeColor, border: `1px solid ${badgeColor}40` }}>
-                                  {VENUE_ICONS[vType]} {vType.charAt(0).toUpperCase() + vType.slice(1)} Admin
-                                </span>
+                        <div key={a._id} className="admin-item" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '12px' }}>
+
+                          {editingAdminId === a._id ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '100%' }}>
+                              <div style={{ display: 'flex', gap: '10px' }}>
+                                <input
+                                  className="input"
+                                  value={editUsername}
+                                  onChange={e => setEditUsername(e.target.value)}
+                                  placeholder="Username"
+                                  style={{ flex: 1 }}
+                                />
+                                <input
+                                  className="input"
+                                  value={editPassword}
+                                  onChange={e => setEditPassword(e.target.value)}
+                                  placeholder="Password"
+                                  style={{ flex: 1 }}
+                                />
                               </div>
-                              <div style={{ fontSize: '13px', color: 'var(--text-muted)', fontFamily: 'monospace', marginTop: '4px' }}>
-                                Pass: {a.password}
-                              </div>
-                              <div className="admin-campus" style={{ marginTop: '12px', textAlign: 'left' }}>
-                                {a.campusId ? (
-                                  <>
-                                    <div style={{ fontWeight: 500 }}>{VENUE_ICONS[a.campusId.venueType || vType]} {a.campusId.name}</div>
-                                    <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{a.campusId.address}</div>
-                                  </>
-                                ) : (
-                                  <span style={{ color: 'var(--danger-color)', fontWeight: 500 }}>No Venue Assigned</span>
-                                )}
+                              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                                <button className="btn btn-secondary btn-sm" onClick={cancelEditing}>
+                                  <FiX /> Cancel
+                                </button>
+                                <button className="btn btn-primary btn-sm" onClick={() => handleUpdateAdmin(a._id)}>
+                                  <FiSave /> Save
+                                </button>
                               </div>
                             </div>
-                            
-                            <div style={{ display: 'flex', gap: '8px', position: 'relative', zIndex: 10 }}>
-                              <button 
-                                type="button"
-                                className="btn btn-secondary btn-sm" 
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  startEditing(a);
-                                }}
-                                title="Edit Credentials"
-                              >
-                                <FiEdit2 />
-                              </button>
-                              <button 
-                                type="button"
-                                className="btn btn-danger btn-sm" 
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  handleDeleteAdmin(a._id);
-                                }}
-                                title="Delete Admin"
-                                style={{ backgroundColor: '#ef4444', color: '#fff' }}
-                              >
-                                <FiTrash2 />
-                              </button>
+                          ) : (
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', width: '100%' }}>
+                              <div className="admin-info" style={{ flex: 1 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  <strong>{a.username}</strong>
+                                  <span className="badge" style={{ background: badgeColor + '20', color: badgeColor, border: `1px solid ${badgeColor}40` }}>
+                                    {VENUE_ICONS[vType]} {vType.charAt(0).toUpperCase() + vType.slice(1)} Admin
+                                  </span>
+                                </div>
+                                <div style={{ fontSize: '13px', color: 'var(--text-muted)', fontFamily: 'monospace', marginTop: '4px' }}>
+                                  Pass: {a.password}
+                                </div>
+                                <div className="admin-campus" style={{ marginTop: '12px', textAlign: 'left' }}>
+                                  {a.campusId ? (
+                                    <>
+                                      <div style={{ fontWeight: 500 }}>{VENUE_ICONS[a.campusId.venueType || vType]} {a.campusId.name}</div>
+                                      <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{a.campusId.address}</div>
+                                    </>
+                                  ) : (
+                                    <span style={{ color: 'var(--danger-color)', fontWeight: 500 }}>No Venue Assigned</span>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div style={{ display: 'flex', gap: '8px', position: 'relative', zIndex: 10 }}>
+                                <button
+                                  type="button"
+                                  className="btn btn-secondary btn-sm"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    startEditing(a);
+                                  }}
+                                  title="Edit Credentials"
+                                >
+                                  <FiEdit2 />
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn btn-danger btn-sm"
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    handleDeleteAdmin(a._id);
+                                  }}
+                                  title="Delete Admin"
+                                  style={{ backgroundColor: '#ef4444', color: '#fff' }}
+                                >
+                                  <FiTrash2 />
+                                </button>
+                              </div>
                             </div>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })
+                          )}
+                        </div>
+                      );
+                    })
                   )}
                 </div>
               )}

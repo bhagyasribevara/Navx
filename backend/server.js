@@ -97,6 +97,7 @@ app.use('/api/navigation', require('./routes/navigation'));
 app.use('/api/analytics', require('./routes/analytics'));
 app.use('/api/ai', require('./routes/ai'));
 app.use('/api/admin', require('./routes/admin'));
+app.use('/api/weather', require('./routes/weather'));
 
 // Health check (includes MongoDB status)
 app.get('/api/health', (req, res) => {
