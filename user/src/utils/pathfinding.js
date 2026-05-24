@@ -1,106 +1,184 @@
-/**
- * NavX Pathfinding Engine
- * Implements Dijkstra and A* algorithms for indoor navigation
- * With auto-connect, fallback routing, and disconnected-graph handling
- */
+// NavX Pathfinding Engine (Client)
+// High-performance A-Star and Dijkstra for on-device indoor navigation.
+// Binary-heap PQ, Haversine distance, bearing-based turns, sampled auto-connect.
 
+// --- Constants ---
+const EARTH_RADIUS_M = 6371000;
+const DEG_TO_RAD = Math.PI / 180;
+const RAD_TO_DEG = 180 / Math.PI;
+const AVG_STRIDE_M = 0.72;
+
+const SPEED = {
+  hallway:   1.3,
+  outdoor:   1.4,
+  stairs:    0.6,
+  elevator:  0.8,
+  connector: 1.1,
+  default:   1.2,
+};
+
+// --- Binary-Heap Priority Queue ---
 class PriorityQueue {
   constructor() {
-    this.items = [];
+    this._heap = [];
+  }
+
+  get size() {
+    return this._heap.length;
   }
 
   enqueue(element, priority) {
-    const item = { element, priority };
-    let added = false;
-    for (let i = 0; i < this.items.length; i++) {
-      if (item.priority < this.items[i].priority) {
-        this.items.splice(i, 0, item);
-        added = true;
-        break;
-      }
-    }
-    if (!added) this.items.push(item);
+    this._heap.push({ element, priority });
+    this._bubbleUp(this._heap.length - 1);
   }
 
   dequeue() {
-    return this.items.shift();
+    const heap = this._heap;
+    const top = heap[0];
+    const last = heap.pop();
+    if (heap.length > 0 && last) {
+      heap[0] = last;
+      this._sinkDown(0);
+    }
+    return top;
   }
 
   isEmpty() {
-    return this.items.length === 0;
+    return this._heap.length === 0;
+  }
+
+  _bubbleUp(idx) {
+    const heap = this._heap;
+    while (idx > 0) {
+      const parent = (idx - 1) >> 1;
+      if (heap[idx].priority >= heap[parent].priority) break;
+      [heap[idx], heap[parent]] = [heap[parent], heap[idx]];
+      idx = parent;
+    }
+  }
+
+  _sinkDown(idx) {
+    const heap = this._heap;
+    const len = heap.length;
+    while (true) {
+      let smallest = idx;
+      const left = 2 * idx + 1;
+      const right = 2 * idx + 2;
+      if (left  < len && heap[left].priority  < heap[smallest].priority) smallest = left;
+      if (right < len && heap[right].priority < heap[smallest].priority) smallest = right;
+      if (smallest === idx) break;
+      [heap[idx], heap[smallest]] = [heap[smallest], heap[idx]];
+      idx = smallest;
+    }
   }
 }
 
-/**
- * Compute geo-distance in meters between two lat/lng-like coordinates
- */
-function geoDistMeters(x1, y1, x2, y2) {
-  const dx = (x1 - x2) * 111320;
-  const dy = (y1 - y2) * 111320 * Math.cos(x1 * Math.PI / 180);
-  return Math.sqrt(dx * dx + dy * dy);
+// --- Haversine Distance (meters) ---
+function geoDistMeters(lat1, lon1, lat2, lon2) {
+  const dLat = (lat2 - lat1) * DEG_TO_RAD;
+  const dLon = (lon2 - lon1) * DEG_TO_RAD;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * DEG_TO_RAD) * Math.cos(lat2 * DEG_TO_RAD) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  return EARTH_RADIUS_M * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-/**
- * Build adjacency list from nodes and paths
- */
-function buildGraph(nodes, paths) {
+// --- Bearing (forward azimuth) A to B in degrees [0, 360) ---
+function bearing(lat1, lon1, lat2, lon2) {
+  const phi1 = lat1 * DEG_TO_RAD;
+  const phi2 = lat2 * DEG_TO_RAD;
+  const dLon = (lon2 - lon1) * DEG_TO_RAD;
+  const y = Math.sin(dLon) * Math.cos(phi2);
+  const x = Math.cos(phi1) * Math.sin(phi2) -
+            Math.sin(phi1) * Math.cos(phi2) * Math.cos(dLon);
+  return ((Math.atan2(y, x) * RAD_TO_DEG) + 360) % 360;
+}
+
+// --- Signed angle difference (-180, 180] ---
+function angleDiff(fromDeg, toDeg) {
+  let d = toDeg - fromDeg;
+  while (d >  180) d -= 360;
+  while (d <= -180) d += 360;
+  return d;
+}
+
+// --- Compass label ---
+function compassLabel(deg) {
+  const dirs = ['north','north-east','east','south-east','south','south-west','west','north-west'];
+  return dirs[Math.round(deg / 45) % 8];
+}
+
+// --- Ordinal floor name ---
+function ordinalFloor(level) {
+  if (level === 0) return 'ground floor';
+  const abs = Math.abs(level);
+  const suffix =
+    abs % 100 >= 11 && abs % 100 <= 13 ? 'th'
+    : abs % 10 === 1 ? 'st'
+    : abs % 10 === 2 ? 'nd'
+    : abs % 10 === 3 ? 'rd'
+    : 'th';
+  if (level < 0) return `basement ${abs}`;
+  return `${level}${suffix} floor`;
+}
+
+// --- Build Graph ---
+function buildGraph(nodes, paths, floorMap = {}) {
   const graph = {};
 
-  // Initialize all nodes
-  nodes.forEach(node => {
+  for (const node of nodes) {
     const id = node._id.toString();
+    const floorId = node.floorId ? node.floorId.toString() : null;
     graph[id] = {
       id,
       x: node.x,
       y: node.y,
-      floorId: node.floorId ? node.floorId.toString() : null,
+      floorId,
+      floorLevel: floorId && floorMap[floorId] != null ? floorMap[floorId] : null,
       type: node.type,
-      neighbors: []
+      neighbors: [],
     };
-  });
+  }
 
-  // Add edges from paths
-  paths.forEach(path => {
+  for (const path of paths) {
     const a = path.nodeA.toString();
     const b = path.nodeB.toString();
-    
-    if (!graph[a] || !graph[b]) return;
-    
-    const effectiveWeight = path.distance * path.weight * (1 + path.congestionLevel * 0.1);
-    
-    graph[a].neighbors.push({ 
-      nodeId: b, 
-      distance: path.distance,
+    if (!graph[a] || !graph[b]) continue;
+
+    const trueDist = geoDistMeters(graph[a].x, graph[a].y, graph[b].x, graph[b].y);
+    const edgeDist = Math.max(path.distance, trueDist);
+    const effectiveWeight = edgeDist * path.weight * (1 + path.congestionLevel * 0.1);
+
+    graph[a].neighbors.push({
+      nodeId: b,
+      distance: edgeDist,
       weight: effectiveWeight,
       pathType: path.type,
-      accessible: path.accessible
+      accessible: path.accessible,
     });
-    
+
     if (path.bidirectional) {
-      graph[b].neighbors.push({ 
-        nodeId: a, 
-        distance: path.distance,
+      graph[b].neighbors.push({
+        nodeId: a,
+        distance: edgeDist,
         weight: effectiveWeight,
         pathType: path.type,
-        accessible: path.accessible
+        accessible: path.accessible,
       });
     }
-  });
+  }
 
   return graph;
 }
 
-/**
- * Auto-connect disconnected graph components.
- * Finds isolated subgraphs and bridges them by adding virtual edges
- * between the closest pair of nodes in different components.
- * This ensures ANY node can reach ANY other node.
- */
+// --- Auto-Connect Disconnected Components ---
+// Optimized: uses BFS for component detection and samples representative
+// nodes from each component to avoid O(n^2 * m^2) brute force.
 function autoConnectGraph(graph) {
   const nodeIds = Object.keys(graph);
   if (nodeIds.length === 0) return graph;
 
-  // BFS to find connected components
   const visited = new Set();
   const components = [];
 
@@ -123,13 +201,22 @@ function autoConnectGraph(graph) {
     components.push(component);
   }
 
-  // If only one component, graph is already fully connected
   if (components.length <= 1) return graph;
 
-  console.log(`[Pathfinding] Found ${components.length} disconnected components. Auto-connecting...`);
+  // Merge by connecting closest representative nodes between components.
+  // Sample up to 20 nodes per component to keep O(k^2) manageable.
+  const MAX_SAMPLES = 20;
 
-  // Merge components by connecting closest nodes between them
-  // Strategy: iteratively merge the two closest components
+  function sampleNodes(comp) {
+    if (comp.length <= MAX_SAMPLES) return comp;
+    const step = Math.floor(comp.length / MAX_SAMPLES);
+    const result = [];
+    for (let i = 0; i < comp.length && result.length < MAX_SAMPLES; i += step) {
+      result.push(comp[i]);
+    }
+    return result;
+  }
+
   while (components.length > 1) {
     let bestDist = Infinity;
     let bestA = null;
@@ -137,12 +224,13 @@ function autoConnectGraph(graph) {
     let bestI = -1;
     let bestJ = -1;
 
-    // Find the closest pair of nodes across different components
     for (let i = 0; i < components.length; i++) {
+      const samplesI = sampleNodes(components[i]);
       for (let j = i + 1; j < components.length; j++) {
-        for (const aId of components[i]) {
-          for (const bId of components[j]) {
-            const nodeA = graph[aId];
+        const samplesJ = sampleNodes(components[j]);
+        for (const aId of samplesI) {
+          const nodeA = graph[aId];
+          for (const bId of samplesJ) {
             const nodeB = graph[bId];
             const dist = geoDistMeters(nodeA.x, nodeA.y, nodeB.x, nodeB.y);
             if (dist < bestDist) {
@@ -158,28 +246,15 @@ function autoConnectGraph(graph) {
     }
 
     if (bestA && bestB) {
-      // Add bidirectional virtual edge
-      const virtualDistance = bestDist;
-      const virtualWeight = virtualDistance * 1.5; // Slightly penalize virtual edges
-      
+      const virtualWeight = bestDist * 1.5;
       graph[bestA].neighbors.push({
-        nodeId: bestB,
-        distance: virtualDistance,
-        weight: virtualWeight,
-        pathType: 'connector',
-        accessible: true
+        nodeId: bestB, distance: bestDist, weight: virtualWeight,
+        pathType: 'connector', accessible: true,
       });
       graph[bestB].neighbors.push({
-        nodeId: bestA,
-        distance: virtualDistance,
-        weight: virtualWeight,
-        pathType: 'connector',
-        accessible: true
+        nodeId: bestA, distance: bestDist, weight: virtualWeight,
+        pathType: 'connector', accessible: true,
       });
-
-      console.log(`[Pathfinding] Connected component ${bestI} <-> ${bestJ} via virtual edge (${Math.round(bestDist)}m)`);
-
-      // Merge the two components
       components[bestI] = components[bestI].concat(components[bestJ]);
       components.splice(bestJ, 1);
     } else {
@@ -190,106 +265,66 @@ function autoConnectGraph(graph) {
   return graph;
 }
 
-/**
- * Heuristic function for A* (geo-distance in meters)
- */
+// --- Heuristic for A-Star ---
 function heuristic(nodeA, nodeB) {
   if (!nodeA || !nodeB) return 0;
   return geoDistMeters(nodeA.x, nodeA.y, nodeB.x, nodeB.y);
 }
 
-/**
- * A* pathfinding algorithm
- */
-function astar(graph, startId, endId, options = {}) {
-  const { requireAccessible = false } = options;
-  
-  if (!graph[startId] || !graph[endId]) {
-    return { path: [], distance: 0, found: false };
-  }
-
-  const pq = new PriorityQueue();
-  const distances = {};
-  const previous = {};
-  const visited = new Set();
-
-  // Initialize
-  Object.keys(graph).forEach(nodeId => {
-    distances[nodeId] = Infinity;
-  });
-  distances[startId] = 0;
-  pq.enqueue(startId, 0);
-
-  while (!pq.isEmpty()) {
-    const { element: current } = pq.dequeue();
-
-    if (current === endId) break;
-    if (visited.has(current)) continue;
-    visited.add(current);
-
-    const node = graph[current];
-    if (!node) continue;
-
-    for (const neighbor of node.neighbors) {
-      if (requireAccessible && !neighbor.accessible) continue;
-      if (visited.has(neighbor.nodeId)) continue;
-
-      const newDist = distances[current] + neighbor.weight;
-      
-      if (newDist < distances[neighbor.nodeId]) {
-        distances[neighbor.nodeId] = newDist;
-        previous[neighbor.nodeId] = current;
-        
-        const h = heuristic(graph[neighbor.nodeId], graph[endId]);
-        pq.enqueue(neighbor.nodeId, newDist + h);
-      }
-    }
-  }
-
-  // Reconstruct path
-  const path = [];
-  let current = endId;
-  
+// --- Reconstruct path from predecessor map ---
+function reconstructPath(graph, previous, startId, endId, distances) {
   if (distances[endId] === Infinity) {
     return { path: [], distance: 0, found: false };
   }
 
+  const nodeIdList = [];
+  let current = endId;
   while (current) {
-    path.unshift(current);
+    nodeIdList.unshift(current);
     current = previous[current];
   }
 
-  // Build detailed path with coordinates
-  const detailedPath = path.map(nodeId => ({
-    nodeId,
-    x: graph[nodeId].x,
-    y: graph[nodeId].y,
-    floorId: graph[nodeId].floorId,
-    type: graph[nodeId].type
-  }));
-
-  // Calculate actual distance (sum of edge distances, not weights)
+  const detailedPath = [];
   let totalDistance = 0;
-  for (let i = 0; i < path.length - 1; i++) {
-    const node = graph[path[i]];
-    const neighbor = node.neighbors.find(n => n.nodeId === path[i + 1]);
-    if (neighbor) totalDistance += neighbor.distance;
+
+  for (let i = 0; i < nodeIdList.length; i++) {
+    const nid = nodeIdList[i];
+    const gNode = graph[nid];
+    const entry = {
+      nodeId: nid,
+      x: gNode.x,
+      y: gNode.y,
+      floorId: gNode.floorId,
+      floorLevel: gNode.floorLevel != null ? gNode.floorLevel : null,
+      type: gNode.type,
+    };
+
+    if (i > 0) {
+      const prevId = nodeIdList[i - 1];
+      const prevNode = graph[prevId];
+      const edgeInfo = prevNode.neighbors.find(n => n.nodeId === nid);
+      entry.segmentDistance = edgeInfo
+        ? edgeInfo.distance
+        : geoDistMeters(prevNode.x, prevNode.y, gNode.x, gNode.y);
+      entry.segmentType = edgeInfo ? edgeInfo.pathType : 'hallway';
+      totalDistance += entry.segmentDistance;
+    }
+
+    detailedPath.push(entry);
   }
 
   return {
     path: detailedPath,
     distance: totalDistance,
     found: true,
-    nodeCount: path.length
+    nodeCount: nodeIdList.length,
   };
 }
 
-/**
- * Dijkstra's algorithm (simpler, no heuristic)
- */
-function dijkstra(graph, startId, endId, options = {}) {
+// --- A-Star Algorithm ---
+function astar(graph, startId, endId, options = {}) {
   const { requireAccessible = false } = options;
-  
+
   if (!graph[startId] || !graph[endId]) {
     return { path: [], distance: 0, found: false };
   }
@@ -299,9 +334,11 @@ function dijkstra(graph, startId, endId, options = {}) {
   const previous = {};
   const visited = new Set();
 
-  Object.keys(graph).forEach(nodeId => {
-    distances[nodeId] = Infinity;
-  });
+  // Only initialize start - lazy init for the rest via Infinity default
+  const nodeIds = Object.keys(graph);
+  for (let i = 0; i < nodeIds.length; i++) {
+    distances[nodeIds[i]] = Infinity;
+  }
   distances[startId] = 0;
   pq.enqueue(startId, 0);
 
@@ -315,12 +352,65 @@ function dijkstra(graph, startId, endId, options = {}) {
     const node = graph[current];
     if (!node) continue;
 
-    for (const neighbor of node.neighbors) {
+    const neighbors = node.neighbors;
+    for (let i = 0; i < neighbors.length; i++) {
+      const neighbor = neighbors[i];
       if (requireAccessible && !neighbor.accessible) continue;
       if (visited.has(neighbor.nodeId)) continue;
 
       const newDist = distances[current] + neighbor.weight;
-      
+
+      if (newDist < distances[neighbor.nodeId]) {
+        distances[neighbor.nodeId] = newDist;
+        previous[neighbor.nodeId] = current;
+
+        const h = heuristic(graph[neighbor.nodeId], graph[endId]);
+        pq.enqueue(neighbor.nodeId, newDist + h);
+      }
+    }
+  }
+
+  return reconstructPath(graph, previous, startId, endId, distances);
+}
+
+// --- Dijkstra Algorithm ---
+function dijkstra(graph, startId, endId, options = {}) {
+  const { requireAccessible = false } = options;
+
+  if (!graph[startId] || !graph[endId]) {
+    return { path: [], distance: 0, found: false };
+  }
+
+  const pq = new PriorityQueue();
+  const distances = {};
+  const previous = {};
+  const visited = new Set();
+
+  const nodeIds = Object.keys(graph);
+  for (let i = 0; i < nodeIds.length; i++) {
+    distances[nodeIds[i]] = Infinity;
+  }
+  distances[startId] = 0;
+  pq.enqueue(startId, 0);
+
+  while (!pq.isEmpty()) {
+    const { element: current } = pq.dequeue();
+
+    if (current === endId) break;
+    if (visited.has(current)) continue;
+    visited.add(current);
+
+    const node = graph[current];
+    if (!node) continue;
+
+    const neighbors = node.neighbors;
+    for (let i = 0; i < neighbors.length; i++) {
+      const neighbor = neighbors[i];
+      if (requireAccessible && !neighbor.accessible) continue;
+      if (visited.has(neighbor.nodeId)) continue;
+
+      const newDist = distances[current] + neighbor.weight;
+
       if (newDist < distances[neighbor.nodeId]) {
         distances[neighbor.nodeId] = newDist;
         previous[neighbor.nodeId] = current;
@@ -329,65 +419,30 @@ function dijkstra(graph, startId, endId, options = {}) {
     }
   }
 
-  const path = [];
-  let current = endId;
-  
-  if (distances[endId] === Infinity) {
-    return { path: [], distance: 0, found: false };
-  }
-
-  while (current) {
-    path.unshift(current);
-    current = previous[current];
-  }
-
-  const detailedPath = path.map(nodeId => ({
-    nodeId,
-    x: graph[nodeId].x,
-    y: graph[nodeId].y,
-    floorId: graph[nodeId].floorId,
-    type: graph[nodeId].type
-  }));
-
-  let totalDistance = 0;
-  for (let i = 0; i < path.length - 1; i++) {
-    const node = graph[path[i]];
-    const neighbor = node.neighbors.find(n => n.nodeId === path[i + 1]);
-    if (neighbor) totalDistance += neighbor.distance;
-  }
-
-  return {
-    path: detailedPath,
-    distance: totalDistance,
-    found: true,
-    nodeCount: path.length
-  };
+  return reconstructPath(graph, previous, startId, endId, distances);
 }
 
-/**
- * Find nearest node to a given position
- */
+// --- Find Nearest Node ---
 function findNearestNode(graph, x, y, floorId = null) {
   let nearest = null;
   let minDist = Infinity;
 
-  Object.values(graph).forEach(node => {
-    if (floorId && node.floorId !== floorId) return;
-    
+  const nodes = Object.values(graph);
+  for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i];
+    if (floorId && node.floorId !== floorId) continue;
+
     const dist = geoDistMeters(node.x, node.y, x, y);
     if (dist < minDist) {
       minDist = dist;
       nearest = node;
     }
-  });
+  }
 
   return nearest;
 }
 
-/**
- * Find all nodes reachable from a given startId using BFS.
- * Returns a Set of reachable node IDs.
- */
+// --- Find All Reachable Nodes (BFS) ---
 function findReachableNodes(graph, startId) {
   const reachable = new Set();
   if (!graph[startId]) return reachable;
@@ -397,10 +452,12 @@ function findReachableNodes(graph, startId) {
 
   while (queue.length > 0) {
     const current = queue.shift();
-    for (const neighbor of graph[current].neighbors) {
-      if (!reachable.has(neighbor.nodeId) && graph[neighbor.nodeId]) {
-        reachable.add(neighbor.nodeId);
-        queue.push(neighbor.nodeId);
+    const neighbors = graph[current].neighbors;
+    for (let i = 0; i < neighbors.length; i++) {
+      const nid = neighbors[i].nodeId;
+      if (!reachable.has(nid) && graph[nid]) {
+        reachable.add(nid);
+        queue.push(nid);
       }
     }
   }
@@ -408,15 +465,10 @@ function findReachableNodes(graph, startId) {
   return reachable;
 }
 
-/**
- * Find the nearest REACHABLE node to a target (x, y).
- * Only considers nodes that are reachable from startId.
- * This is the core fallback: if the destination node can't be reached,
- * we find the closest node to the destination that CAN be reached.
- */
+// --- Find Nearest Reachable Node to Target ---
 function findNearestReachableNode(graph, startId, targetX, targetY, floorId = null) {
   const reachable = findReachableNodes(graph, startId);
-  
+
   let nearest = null;
   let minDist = Infinity;
 
@@ -432,7 +484,7 @@ function findNearestReachableNode(graph, startId, targetX, targetY, floorId = nu
     }
   }
 
-  // If floor-restricted search found nothing, try all floors
+  // Fallback to any floor if floor-restricted search found nothing
   if (!nearest && floorId) {
     for (const nodeId of reachable) {
       const node = graph[nodeId];
@@ -448,62 +500,143 @@ function findNearestReachableNode(graph, startId, targetX, targetY, floorId = nu
   return { node: nearest, distanceToTarget: minDist };
 }
 
-/**
- * Generate turn-by-turn directions from a path
- */
+// --- Generate Turn-by-Turn Directions ---
 function generateDirections(detailedPath) {
   if (detailedPath.length < 2) return [];
 
   const directions = [];
-  const WALKING_SPEED = 1.2; // m/s average walking speed
+
+  // Pre-scan floor transitions
+  const floorTransitions = [];
+  for (let i = 0; i < detailedPath.length - 1; i++) {
+    const current = detailedPath[i];
+    const next = detailedPath[i + 1];
+    if (current.floorId !== next.floorId) {
+      let changeType = 'floor_change';
+      if (next.type === 'elevator' || current.type === 'elevator') changeType = 'elevator';
+      else if (next.type === 'stairs' || current.type === 'stairs') changeType = 'stairs';
+      floorTransitions.push({ segmentIndex: i, changeType });
+    }
+  }
+
+  const totalFloorTransitions = floorTransitions.length;
+  let floorTransitionCounter = 0;
 
   for (let i = 0; i < detailedPath.length - 1; i++) {
     const current = detailedPath[i];
     const next = detailedPath[i + 1];
-    
-    const distMeters = geoDistMeters(current.x, current.y, next.x, next.y);
-    const dx = next.x - current.x;
-    const dy = next.y - current.y;
-    const angle = Math.atan2(dy, dx) * (180 / Math.PI);
 
-    let direction = 'Continue straight';
-    
+    const segDist = next.segmentDistance != null
+      ? next.segmentDistance
+      : geoDistMeters(current.x, current.y, next.x, next.y);
+
+    const fwdBearing = bearing(current.x, current.y, next.x, next.y);
+
+    // Determine instruction
+    let instruction = 'Continue straight';
+
     if (i > 0) {
       const prev = detailedPath[i - 1];
-      const prevDx = current.x - prev.x;
-      const prevDy = current.y - prev.y;
-      const prevAngle = Math.atan2(prevDy, prevDx) * (180 / Math.PI);
-      
-      let turnAngle = angle - prevAngle;
-      if (turnAngle > 180) turnAngle -= 360;
-      if (turnAngle < -180) turnAngle += 360;
+      const prevBearing = bearing(prev.x, prev.y, current.x, current.y);
+      const turn = angleDiff(prevBearing, fwdBearing);
 
-      if (turnAngle > 30 && turnAngle <= 90) direction = 'Turn right';
-      else if (turnAngle > 90) direction = 'Turn sharp right';
-      else if (turnAngle < -30 && turnAngle >= -90) direction = 'Turn left';
-      else if (turnAngle < -90) direction = 'Turn sharp left';
-      else direction = 'Continue straight';
+      if      (turn >  135)                instruction = 'Make a U-turn right';
+      else if (turn < -135)                instruction = 'Make a U-turn left';
+      else if (turn >   60 && turn <=  135) instruction = 'Turn sharp right';
+      else if (turn <  -60 && turn >= -135) instruction = 'Turn sharp left';
+      else if (turn >   20 && turn <=   60) instruction = 'Turn right';
+      else if (turn <  -20 && turn >=  -60) instruction = 'Turn left';
+      else if (turn >    5)                 instruction = 'Bear right';
+      else if (turn <   -5)                 instruction = 'Bear left';
+    } else {
+      instruction = `Head ${compassLabel(fwdBearing)}`;
+    }
+
+    // Approach transition nodes
+    const nextIsTransitionNode = (next.type === 'stairs' || next.type === 'elevator');
+    if (nextIsTransitionNode && current.floorId === next.floorId) {
+      instruction = next.type === 'elevator' ? 'Proceed to the elevator' : 'Proceed to the stairs';
     }
 
     // Floor change
+    let isFloorChange = false;
+    let floorChangeData = null;
+
     if (current.floorId !== next.floorId) {
-      if (next.type === 'elevator') direction = 'Take elevator';
-      else if (next.type === 'stairs') direction = 'Take stairs';
-      else direction = 'Change floor';
+      isFloorChange = true;
+      floorTransitionCounter++;
+
+      let changeType = 'floor_change';
+      if (next.type === 'elevator' || current.type === 'elevator') changeType = 'elevator';
+      else if (next.type === 'stairs' || current.type === 'stairs') changeType = 'stairs';
+
+      const targetLevel = next.floorLevel != null ? next.floorLevel : null;
+      if (targetLevel != null) {
+        instruction = `Go to the ${ordinalFloor(targetLevel)}`;
+      } else if (changeType === 'elevator') {
+        instruction = 'Take the elevator to the next floor';
+      } else if (changeType === 'stairs') {
+        instruction = 'Take the stairs to the next floor';
+      } else {
+        instruction = 'Change floor';
+      }
+
+      floorChangeData = {
+        isFloorChange: true,
+        floorChangeType: changeType,
+        fromFloorId: current.floorId,
+        toFloorId: next.floorId,
+        fromFloorLevel: current.floorLevel != null ? current.floorLevel : null,
+        targetFloorLevel: targetLevel,
+        floorTransitionNumber: floorTransitionCounter,
+        totalFloorTransitions,
+      };
     }
 
-    directions.push({
+    const segType = next.segmentType || 'default';
+    const speed = SPEED[segType] || SPEED.default;
+    const segEta = Math.round(segDist / speed);
+    const segSteps = Math.max(1, Math.round(segDist / AVG_STRIDE_M));
+
+    const dirEntry = {
       step: i + 1,
-      instruction: direction,
+      instruction,
       from: { x: current.x, y: current.y, floorId: current.floorId },
-      to: { x: next.x, y: next.y, floorId: next.floorId },
-      distance: Math.round(distMeters),
-      angle: Math.round(angle),
-      eta: Math.round(distMeters / WALKING_SPEED)
-    });
+      to:   { x: next.x,    y: next.y,    floorId: next.floorId },
+      distance: Math.round(segDist * 10) / 10,
+      bearing: Math.round(fwdBearing),
+      eta: segEta,
+      steps: segSteps,
+      pathType: segType,
+    };
+
+    if (isFloorChange && floorChangeData) {
+      Object.assign(dirEntry, floorChangeData);
+    }
+
+    directions.push(dirEntry);
   }
 
   return directions;
+}
+
+// --- Compute Route Summary ---
+function computeRouteSummary(directions) {
+  let totalDistance = 0;
+  let totalEta = 0;
+  let totalSteps = 0;
+
+  for (const d of directions) {
+    totalDistance += d.distance;
+    totalEta += d.eta;
+    totalSteps += d.steps;
+  }
+
+  return {
+    totalDistance: Math.round(totalDistance * 10) / 10,
+    totalEta,
+    totalSteps,
+  };
 }
 
 export {
@@ -515,6 +648,8 @@ export {
   findNearestReachableNode,
   findReachableNodes,
   generateDirections,
+  computeRouteSummary,
   geoDistMeters,
-  PriorityQueue
+  bearing,
+  PriorityQueue,
 };

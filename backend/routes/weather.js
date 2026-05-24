@@ -179,4 +179,65 @@ router.get('/', async (req, res) => {
   }
 });
 
+// ─── GET /api/weather/forecast?lat={lat}&lon={lon} ────────────────────────
+router.get('/forecast', async (req, res) => {
+  try {
+    const { lat, lon } = req.query;
+    if (!lat || !lon) return res.status(400).json({ error: 'Missing parameters' });
+
+    const response = await axios.get('https://api.openweathermap.org/data/2.5/forecast', {
+      params: {
+        lat, lon, appid: OPENWEATHER_API_KEY, units: 'metric'
+      },
+      timeout: 8000,
+    });
+
+    const data = response.data;
+    
+    // Group forecast by day
+    const dailyForecasts = [];
+    const daysSeen = new Set();
+    
+    // The API returns 3-hour chunks. We can find the min/max temp for each day.
+    const groupedByDay = {};
+    
+    data.list.forEach(item => {
+      const dateStr = item.dt_txt.split(' ')[0];
+      if (!groupedByDay[dateStr]) {
+        groupedByDay[dateStr] = {
+          date: dateStr,
+          tempMin: item.main.temp_min,
+          tempMax: item.main.temp_max,
+          weatherType: mapWeatherCondition(item.weather[0].id, item.main.temp),
+          icon: item.weather[0].icon,
+          condition: item.weather[0].main,
+          readings: []
+        };
+      } else {
+        if (item.main.temp_min < groupedByDay[dateStr].tempMin) groupedByDay[dateStr].tempMin = item.main.temp_min;
+        if (item.main.temp_max > groupedByDay[dateStr].tempMax) groupedByDay[dateStr].tempMax = item.main.temp_max;
+      }
+      groupedByDay[dateStr].readings.push(item);
+    });
+
+    const forecast = Object.values(groupedByDay).slice(0, 5).map(day => {
+      const dateObj = new Date(day.date);
+      return {
+        id: day.date,
+        dayName: dateObj.toLocaleDateString('en-US', { weekday: 'short' }),
+        tempMin: Math.round(day.tempMin),
+        tempMax: Math.round(day.tempMax),
+        weatherType: day.weatherType,
+        icon: day.icon,
+        condition: day.condition
+      };
+    });
+
+    res.json({ forecast });
+  } catch (error) {
+    console.error('Forecast API Error:', error.message);
+    res.status(500).json({ error: 'Failed to fetch forecast' });
+  }
+});
+
 module.exports = router;

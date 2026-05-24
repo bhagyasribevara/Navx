@@ -168,6 +168,47 @@ export function WarmParticles({ count = 14 }) {
   );
 }
 
+// ─── Twinkling Stars (Night) ────────────────────────────────────────────
+export function TwinklingStars({ count = 35 }) {
+  const stars = useRef(
+    Array.from({ length: count }, () => ({
+      a: new Animated.Value(Math.random()),
+      x: Math.random() * SW,
+      y: Math.random() * (SH * 0.65), // Keep stars in upper 65% of screen
+      s: 1.5 + Math.random() * 2.5,
+      d: Math.random() * 2000,
+    }))
+  ).current;
+
+  useEffect(() => {
+    stars.forEach(s => {
+      const run = () => {
+        Animated.sequence([
+          Animated.timing(s.a, { toValue: 0.15 + Math.random() * 0.85, duration: 1200 + Math.random() * 1500, useNativeDriver: true }),
+          Animated.timing(s.a, { toValue: 0.1, duration: 1200 + Math.random() * 1500, useNativeDriver: true }),
+        ]).start(run);
+      };
+      run();
+    });
+  }, []);
+
+  return (
+    <View style={StyleSheet.absoluteFill} pointerEvents="none">
+      {stars.map((s, i) => (
+        <Animated.View key={i} style={{
+          position: 'absolute', left: s.x, top: s.y, width: s.s, height: s.s, borderRadius: s.s / 2,
+          backgroundColor: '#FFF',
+          opacity: s.a,
+          shadowColor: '#FFF',
+          shadowOffset: { width: 0, height: 0 },
+          shadowOpacity: 0.8,
+          shadowRadius: 2,
+        }} />
+      ))}
+    </View>
+  );
+}
+
 // ─── Ambient Pulse ──────────────────────────────────────────────────────
 export function AmbientPulse({ color }) {
   const a = useRef(new Animated.Value(0.1)).current;
@@ -179,3 +220,4 @@ export function AmbientPulse({ color }) {
   }, []);
   return <Animated.View style={{ ...StyleSheet.absoluteFillObject, backgroundColor: color, opacity: a }} pointerEvents="none" />;
 }
+

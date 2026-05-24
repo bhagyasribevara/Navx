@@ -37,6 +37,24 @@ const DIR_ICONS = {
   arrived: "checkmark-circle",
 };
 
+async function fetchStreetRoute(lat1, lon1, lat2, lon2) {
+  try {
+    const res = await fetch(`https://router.project-osrm.org/route/v1/foot/${lon1},${lat1};${lon2},${lat2}?overview=full&geometries=geojson`);
+    const data = await res.json();
+    if (data.routes && data.routes.length > 0) {
+      // OSRM returns coordinates as [longitude, latitude]
+      return data.routes[0].geometry.coordinates.map(c => ({
+        x: c[1],
+        y: c[0],
+        type: 'street'
+      }));
+    }
+  } catch (e) {
+    console.log("OSRM Error:", e);
+  }
+  return null;
+}
+
 function buildNavMapHTML(rooms, pathPoints, initialPos, targetRoom) {
   const center = initialPos ? [initialPos.x, initialPos.y] : (pathPoints?.length ? [pathPoints[0].x, pathPoints[0].y] : [18.4665, 83.6629]);
   
@@ -59,7 +77,10 @@ function buildNavMapHTML(rooms, pathPoints, initialPos, targetRoom) {
   const destDot = (destX && destY) ? `L.circleMarker([${destX},${destY}],{radius:9,color:'#fff',weight:2,fillColor:'#3b82f6',fillOpacity:1}).addTo(map);` : '';
 
   const pathStr = pathPoints ? pathPoints.map(p => `[${p.x},${p.y}]`).join(',') : '';
-  const routeLine = pathStr ? `L.polyline([${pathStr}],{color:'#4f46e5',weight:5,opacity:0.8,dashArray:'8,8'}).addTo(map);` : '';
+  const routeLine = pathStr ? `
+    L.polyline([${pathStr}],{color:'#c084fc',weight:18,opacity:0.25,lineCap:'round',lineJoin:'round'}).addTo(map);
+    L.polyline([${pathStr}],{color:'#8b5cf6',weight:6,opacity:1,lineCap:'round',lineJoin:'round'}).addTo(map);
+  ` : '';
   
   return `<!DOCTYPE html>
 <html><head>
@@ -75,14 +96,39 @@ ${roomGeoJSON}
 ${routeLine}
 ${destDot}
 
-window.userMarker = null;
-${initialPos ? `window.userMarker = L.circleMarker([${initialPos.x},${initialPos.y}],{radius:8,color:'#fff',weight:2,fillColor:'#22c55e',fillOpacity:1}).addTo(map);` : ''}
+const userIconHtml = \`
+  <style>
+    @keyframes pulseGlow {
+      0% { transform: scale(0.85); opacity: 0.8; }
+      50% { transform: scale(1.4); opacity: 0.3; }
+      100% { transform: scale(0.85); opacity: 0.8; }
+    }
+  </style>
+  <div style="position:relative; width:70px; height:70px; display:flex; align-items:center; justify-content:center;">
+    <div style="position:absolute; width:100%; height:100%; background:radial-gradient(circle, rgba(139, 92, 246, 0.45) 0%, rgba(139, 92, 246, 0) 65%); border-radius:50%; animation: pulseGlow 2.5s infinite;"></div>
+    <div id="user-puck-inner" style="position:relative; width:30px; height:30px; background:linear-gradient(135deg, #A855F7, #6D28D9); border-radius:50%; box-shadow: 0 6px 16px rgba(109, 40, 217, 0.6); display:flex; align-items:center; justify-content:center; border: 2px solid rgba(255,255,255,0.4); transition: transform 0.2s ease-out;">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="white" style="transform: translateY(-1px);">
+        <path d="M12 2L4 20l8-4 8 4z"/>
+      </svg>
+    </div>
+  </div>
+\`;
+const customUserIcon = L.divIcon({ className: '', html: userIconHtml, iconSize: [70, 70], iconAnchor: [35, 35] });
 
-window.updateUserPos = function(lat, lng) {
+window.userMarker = null;
+${initialPos ? `window.userMarker = L.marker([${initialPos.x},${initialPos.y}], {icon: customUserIcon, zIndexOffset: 1000}).addTo(map);` : ''}
+
+window.updateUserPos = function(lat, lng, heading) {
   if (!window.userMarker) {
-    window.userMarker = L.circleMarker([lat, lng], {radius:8,color:'#fff',weight:2,fillColor:'#22c55e',fillOpacity:1}).addTo(map);
+    window.userMarker = L.marker([lat, lng], {icon: customUserIcon, zIndexOffset: 1000}).addTo(map);
   } else {
     window.userMarker.setLatLng([lat, lng]);
+  }
+  if (heading !== undefined && heading !== null) {
+    const puck = document.getElementById('user-puck-inner');
+    if (puck) {
+      puck.style.transform = 'rotate(' + heading + 'deg)';
+    }
   }
 };
 </script></body></html>`;
@@ -135,12 +181,12 @@ export default function NavigationScreen({ navigation, route }) {
     if (userPos && webViewRef.current) {
       webViewRef.current.injectJavaScript(`
         if (typeof window.updateUserPos === 'function') {
-          window.updateUserPos(${userPos.x}, ${userPos.y});
+          window.updateUserPos(${userPos.x}, ${userPos.y}, ${heading});
         }
         true;
       `);
     }
-  }, [userPos]);
+  }, [userPos, heading]);
 
   useEffect(() => {
     (async () => {
@@ -266,24 +312,38 @@ export default function NavigationScreen({ navigation, route }) {
         const firstNode = result.path[0];
         const distToFirst = haversine(uLat, uLng, firstNode.x, firstNode.y);
 
-        if (distToFirst > 3) {
-          result.path.unshift({ nodeId: 'user_start', x: uLat, y: uLng, floorId: targetRoom?.floorId || null, type: 'user' });
+        if (distToFirst > 15) {
+          // If the user is far away (e.g. off-campus), try to snap to real streets using OSRM
+          const streetNodes = await fetchStreetRoute(uLat, uLng, firstNode.x, firstNode.y);
+          if (streetNodes && streetNodes.length > 0) {
+            // Remove the exact first node if it's very close to the end of the street route to avoid looping
+            streetNodes.forEach(sn => sn.floorId = targetRoom?.floorId || null);
+            result.path = [...streetNodes, ...result.path];
+          } else {
+            // Fallback to straight line
+            result.path.unshift({ nodeId: 'user_start', x: uLat, y: uLng, floorId: targetRoom?.floorId || null, type: 'user' });
+          }
+          
           result.distance += distToFirst;
           const segSteps = Math.max(1, Math.round(distToFirst / AVG_STRIDE));
           const segEta = Math.round(distToFirst / WALK_SPEED);
+          
           if (result.directions?.length > 0) {
             result.directions.unshift({
               step: 0,
-              instruction: "Walk towards the nearest path",
+              instruction: "Head towards the campus entrance",
               distance: Math.round(distToFirst * 10) / 10,
               bearing: 0,
               eta: segEta,
               steps: segSteps,
-              pathType: 'hallway',
+              pathType: 'street',
             });
             result.totalSteps = (result.totalSteps || 0) + segSteps;
             result.eta = (result.eta || 0) + segEta;
           }
+        } else if (distToFirst > 3) {
+          // If just a few meters away, straight line is fine
+          result.path.unshift({ nodeId: 'user_start', x: uLat, y: uLng, floorId: targetRoom?.floorId || null, type: 'user' });
         }
       }
 

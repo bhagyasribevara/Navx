@@ -422,29 +422,6 @@ export default function HomeScreen({ navigation }) {
                       <Ionicons name="search" size={16} color={colors.primary} />
                       <Text style={{ color: colors.primary, fontWeight: "700", fontSize: 13, marginLeft: 6 }}>Search</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity 
-                      style={[s.arBtn, downloadedStatus[campus._id] && { borderColor: "#22c55e", backgroundColor: "rgba(34,197,94,0.1)" }]} 
-                      onPress={async () => {
-                        if (downloadingCampus || downloadedStatus[campus._id]) return;
-                        setDownloadingCampus(true);
-                        const success = await downloadCampusOffline(campus._id);
-                        if (success) {
-                          setDownloadedStatus(prev => ({ ...prev, [campus._id]: true }));
-                        }
-                        setDownloadingCampus(false);
-                      }}
-                    >
-                      {downloadingCampus ? (
-                        <ActivityIndicator size="small" color={colors.primary} />
-                      ) : (
-                        <>
-                          <Ionicons name={downloadedStatus[campus._id] ? "cloud-done" : "cloud-download"} size={16} color={downloadedStatus[campus._id] ? "#22c55e" : colors.primary} />
-                          <Text style={{ color: downloadedStatus[campus._id] ? "#22c55e" : colors.primary, fontWeight: "700", fontSize: 13, marginLeft: 6 }}>
-                            {downloadedStatus[campus._id] ? "Downloaded" : "Download"}
-                          </Text>
-                        </>
-                      )}
-                    </TouchableOpacity>
                   </View>
                 </View>
               </TouchableOpacity>

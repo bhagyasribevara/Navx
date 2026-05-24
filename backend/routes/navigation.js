@@ -10,24 +10,72 @@ const {
   haversineDistMeters
 } = require('../utils/pathfinding');
 
+// ─── In-Memory Graph Cache ──────────────────────────────────────────────
+// Avoid rebuilding the graph from DB on every single route request.
+// Cache is keyed by campusId and auto-expires after 60 seconds.
+const graphCache = new Map();
+const GRAPH_CACHE_TTL = 60_000; // 60 seconds
+
+async function getCachedGraph(campusId) {
+  const key = campusId.toString();
+  const cached = graphCache.get(key);
+  if (cached && Date.now() - cached.timestamp < GRAPH_CACHE_TTL) {
+    return cached;
+  }
+
+  const [nodes, paths, floors] = await Promise.all([
+    NavNode.find({ campusId, isActive: true }).lean(),
+    NavPath.find({ campusId, isActive: true }).lean(),
+    Floor.find({ campusId, isActive: true }).lean(),
+  ]);
+
+  const floorMap = {};
+  floors.forEach(f => { floorMap[f._id.toString()] = f.level; });
+
+  let graph = buildGraph(nodes, paths, floorMap);
+  graph = autoConnectGraph(graph);
+
+  const entry = { graph, nodes, paths, floors, floorMap, timestamp: Date.now() };
+  graphCache.set(key, entry);
+
+  // Limit cache size
+  if (graphCache.size > 50) {
+    const oldest = graphCache.keys().next().value;
+    graphCache.delete(oldest);
+  }
+
+  return entry;
+}
+
+// Invalidate cache when admin updates navigation data
+function invalidateGraphCache(campusId) {
+  if (campusId) {
+    graphCache.delete(campusId.toString());
+  } else {
+    graphCache.clear();
+  }
+}
+
 // POST find route to nearest exit
 router.post('/route-to-exit', async (req, res) => {
   try {
     const { startX, startY, campusId } = req.body;
-    const nodes = await NavNode.find({ campusId, isActive: true });
-    const paths = await NavPath.find({ campusId, isActive: true });
-    if (nodes.length === 0) return res.status(400).json({ error: 'No nodes found' });
-    
+    const { graph, nodes } = await getCachedGraph(campusId);
+
+    if (Object.keys(graph).length === 0) {
+      return res.status(400).json({ error: 'No nodes found' });
+    }
+
     // Find all exits
-    const exits = nodes.filter(n => n.type === 'entrance' || n.type === 'exit' || (n.label && (n.label.toLowerCase().includes('exit') || n.label.toLowerCase().includes('entrance'))));
+    const exits = nodes.filter(n =>
+      n.type === 'entrance' || n.type === 'exit' ||
+      (n.label && (n.label.toLowerCase().includes('exit') || n.label.toLowerCase().includes('entrance')))
+    );
     if (exits.length === 0) return res.status(404).json({ error: 'No exit found on campus' });
-    
-    let graph = buildGraph(nodes, paths);
-    graph = autoConnectGraph(graph);
 
     let startNodeId = req.body.startNodeId;
     if (!startNodeId && startX && startY) {
-      const nearestStart = findNearestNode(nodes, startX, startY);
+      const nearestStart = findNearestNode(graph, startX, startY, null);
       if (nearestStart) startNodeId = nearestStart.id;
     }
     if (!startNodeId) return res.status(404).json({ error: 'Could not find starting point' });
@@ -47,8 +95,17 @@ router.post('/route-to-exit', async (req, res) => {
     if (!bestResult) return res.status(404).json({ error: 'No path to any exit found' });
 
     const directions = generateDirections(bestResult.path);
-    res.json({ ...bestResult, directions, routeType: 'emergency_exit' });
+    const summary = computeRouteSummary(directions);
+    res.json({
+      ...bestResult,
+      distance: summary.totalDistance,
+      directions,
+      eta: summary.totalEta,
+      totalSteps: summary.totalSteps,
+      routeType: 'emergency_exit',
+    });
   } catch (err) {
+    console.error('[Navigation Error]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -57,30 +114,20 @@ router.post('/route-to-exit', async (req, res) => {
 router.post('/route', async (req, res) => {
   try {
     const { startNodeId, endNodeId, campusId, accessible = false } = req.body;
-    
-    const nodes = await NavNode.find({ campusId, isActive: true });
-    const paths = await NavPath.find({ campusId, isActive: true });
-    
-    if (nodes.length === 0) return res.status(400).json({ error: 'No navigation nodes found' });
-    
-    // Build graph and auto-connect disconnected components
-    let graph = buildGraph(nodes, paths);
-    graph = autoConnectGraph(graph);
 
-    const pathfinder = algorithm === 'dijkstra' ? dijkstra : astar;
-    let result = pathfinder(graph, startNodeId, endNodeId, { requireAccessible: accessible });
-    
-    // Fallback to Dijkstra if A* fails
-    if (!result.found && algorithm === 'astar') {
-      console.log('[Navigation] A* route failed, falling back to Dijkstra...');
-      result = dijkstra(graph, startNodeId, endNodeId, { requireAccessible: accessible });
+    const { graph } = await getCachedGraph(campusId);
+
+    if (Object.keys(graph).length === 0) {
+      return res.status(400).json({ error: 'No navigation nodes found' });
     }
-    
+
+    let result = astar(graph, startNodeId, endNodeId, { requireAccessible: accessible });
+
     if (!result.found) return res.status(404).json({ error: 'No route found' });
-    
+
     const directions = generateDirections(result.path);
     const summary = computeRouteSummary(directions);
-    
+
     res.json({
       ...result,
       distance: summary.totalDistance,
@@ -90,6 +137,7 @@ router.post('/route', async (req, res) => {
       algorithm: 'astar',
     });
   } catch (err) {
+    console.error('[Navigation Error]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -98,24 +146,12 @@ router.post('/route', async (req, res) => {
 router.post('/route-to-room', async (req, res) => {
   try {
     const { startNodeId, startX, startY, roomId, campusId, accessible = false } = req.body;
-    
-    const [nodes, paths, floors] = await Promise.all([
-      NavNode.find({ campusId, isActive: true }),
-      NavPath.find({ campusId, isActive: true }),
-      Floor.find({ campusId, isActive: true }),
-    ]);
 
-    if (nodes.length === 0) {
+    const { graph } = await getCachedGraph(campusId);
+
+    if (Object.keys(graph).length === 0) {
       return res.status(400).json({ error: 'No navigation nodes have been placed on this campus yet.' });
     }
-
-    // Build floorId → level lookup for floor-aware directions
-    const floorMap = {};
-    floors.forEach(f => { floorMap[f._id.toString()] = f.level; });
-
-    // Build graph and auto-connect disconnected components
-    let graph = buildGraph(nodes, paths, floorMap);
-    graph = autoConnectGraph(graph);
 
     // --- Resolve start node from GPS coordinates if provided ---
     let startId;
@@ -140,7 +176,7 @@ router.post('/route-to-room', async (req, res) => {
 
     // Check if there's a node explicitly linked to this room
     const roomNode = await NavNode.findOne({ roomId, isActive: true });
-    
+
     if (roomNode) {
       endNodeId = roomNode._id.toString();
       destX = roomNode.x;
@@ -152,7 +188,7 @@ router.post('/route-to-room', async (req, res) => {
       if (!room || !room.shape) {
         return res.status(404).json({ error: 'Room not found or has no map geometry. Please add it in the admin panel.' });
       }
-      
+
       destX = room.shape.x;
       destY = room.shape.y;
       destFloorId = room.floorId ? room.floorId.toString() : null;
@@ -164,11 +200,10 @@ router.post('/route-to-room', async (req, res) => {
         destX = sumX / room.shape.points.length;
         destY = sumY / room.shape.points.length;
       }
-      
-      // Find nearest node to the room's position (any floor first, then same floor)
+
+      // Find nearest node to the room's position
       const nearest = findNearestNode(graph, destX, destY, destFloorId);
       if (!nearest) {
-        // Try without floor restriction
         const nearestAny = findNearestNode(graph, destX, destY, null);
         if (!nearestAny) {
           return res.status(404).json({ error: 'No navigation nodes found anywhere near this room.' });
@@ -186,31 +221,18 @@ router.post('/route-to-room', async (req, res) => {
     }
 
     // --- Step 2: Try direct route ---
-    const pathfinder = astar;
-    let result = pathfinder(graph, startId, endNodeId, { requireAccessible: accessible });
-    
-    // Fallback to Dijkstra
-    if (!result.found && algorithm === 'astar') {
-      console.log('[Navigation] A* direct route failed. Falling back to Dijkstra...');
-      result = dijkstra(graph, startId, endNodeId, { requireAccessible: accessible });
-    }
+    let result = astar(graph, startId, endNodeId, { requireAccessible: accessible });
 
-    let routeType = 'direct'; // direct | nearest_reachable
+    let routeType = 'direct';
 
     // --- Step 3: If direct route failed, find nearest reachable node to destination ---
     if (!result.found && destX !== null && destY !== null) {
       console.log(`[Navigation] Direct route failed. Trying nearest reachable node fallback...`);
-      
+
       const fallback = findNearestReachableNode(graph, startId, destX, destY, destFloorId);
-      
+
       if (fallback.node) {
-        result = pathfinder(graph, startId, fallback.node.id, { requireAccessible: accessible });
-        
-        // Fallback to Dijkstra again if A* failed on nearest
-        if (!result.found && algorithm === 'astar') {
-          console.log(`[Navigation] A* fallback route failed. Falling back to Dijkstra...`);
-          result = dijkstra(graph, startId, fallback.node.id, { requireAccessible: accessible });
-        }
+        result = astar(graph, startId, fallback.node.id, { requireAccessible: accessible });
 
         if (result.found) {
           routeType = 'nearest_reachable';
@@ -250,7 +272,6 @@ router.post('/route-to-room', async (req, res) => {
           pathType: 'hallway',
         });
 
-        // Also append a virtual path point at the actual destination for map rendering
         result.path.push({
           nodeId: 'destination',
           x: destX,
@@ -265,7 +286,7 @@ router.post('/route-to-room', async (req, res) => {
       }
     }
 
-    // Count floor transitions for client-side floor tracking
+    // Count floor transitions
     const totalFloorTransitions = directions.filter(d => d.isFloorChange).length;
 
     res.json({
@@ -292,10 +313,7 @@ router.post('/route-to-room', async (req, res) => {
 router.post('/nearest-node', async (req, res) => {
   try {
     const { x, y, floorId, campusId } = req.body;
-    const nodes = await NavNode.find({ campusId, isActive: true });
-    const paths = await NavPath.find({ campusId, isActive: true });
-    let graph = buildGraph(nodes, paths);
-    graph = autoConnectGraph(graph);
+    const { graph } = await getCachedGraph(campusId);
     const nearest = findNearestNode(graph, x, y, floorId);
     if (!nearest) return res.status(404).json({ error: 'No nodes found' });
     res.json(nearest);
@@ -315,12 +333,15 @@ router.get('/map-data/:campusId', async (req, res) => {
       require('../models/QRCode').find({ campusId, isActive: true }),
       require('../models/Beacon').find({ campusId, isActive: true })
     ]);
-    
+
     const Block = require('../models/Block');
-    const Floor = require('../models/Floor');
+    const FloorModel = require('../models/Floor');
     const blocks = await Block.find({ campusId, isActive: true });
-    const floors = await Floor.find({ campusId, isActive: true });
-    
+    const floors = await FloorModel.find({ campusId, isActive: true });
+
+    // Invalidate graph cache when map data is fetched fresh (usually means admin updated data)
+    invalidateGraphCache(campusId);
+
     res.json({ nodes, paths, rooms, qrcodes, beacons, blocks, floors });
   } catch (err) {
     res.status(500).json({ error: err.message });

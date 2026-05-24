@@ -2,14 +2,14 @@ import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Platform } from "react-native";
 import Constants from "expo-constants";
-import { buildGraph, astar, findNearestNode as localFindNearestNode, generateDirections } from './utils/pathfinding';
+import { buildGraph, astar, dijkstra, findNearestNode as localFindNearestNode, generateDirections } from './utils/pathfinding';
 
 let devHost = Platform.OS === "android" ? "10.0.2.2" : "localhost";
 if (Constants?.expoConfig?.hostUri) {
   devHost = Constants.expoConfig.hostUri.split(':')[0];
 }
 
-const API_BASE = process.env.EXPO_PUBLIC_API_BASE_URL || `http://${devHost}:5001/api`;
+const API_BASE = process.env.EXPO_PUBLIC_API_BASE_URL || `http://${devHost}:5000/api`;
 
 const api = axios.create({
   baseURL: API_BASE,
@@ -91,7 +91,6 @@ const runOfflinePathfinding = async (campusId, from, to, isToRoom = false) => {
   
   if (!result.found) {
     console.log('[Offline Navigation] A* route failed, falling back to Dijkstra...');
-    const { dijkstra } = require('./utils/pathfinding');
     result = dijkstra(graph, startNodeId, endNodeId);
   }
 
