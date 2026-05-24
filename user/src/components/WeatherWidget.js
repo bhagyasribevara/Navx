@@ -11,12 +11,12 @@ const REFRESH = 5 * 60 * 1000;
 
 // ─── Weather Background Images ──────────────────────────────────────────
 const weatherBackgrounds = {
-  sunny: require('../../assets/weather/sunny.png'),
-  rain: require('../../assets/weather/rainy.png'),
-  cloudy: require('../../assets/weather/cloudy.png'),
-  cool: require('../../assets/weather/snow.png'),
-  snow: require('../../assets/weather/snow.png'),
-  storm: require('../../assets/weather/storm.png'),
+  sunny: require('../../assets/weather/sunny.jpg'),
+  rain: require('../../assets/weather/rainy.jpg'),
+  cloudy: require('../../assets/weather/cloudy.jpg'),
+  cool: require('../../assets/weather/snow.jpg'),
+  snow: require('../../assets/weather/snow.jpg'),
+  storm: require('../../assets/weather/storm.jpg'),
 };
 
 function WeatherEffects({ type, theme, isNight }) {

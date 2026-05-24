@@ -1,14 +1,19 @@
 {
   "expo": {
     "name": "user",
-    "slug": "user",
+    "slug": "navx-root",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
+    "extra": {
+      "eas": {
+        "projectId": "ed6dfb1b-35d8-41aa-af34-01c56a45ca30"
+      }
+    },
     "splash": {
-      "image": "./assets/splash.png",
+      "image": "./assets/splash.jpg",
       "resizeMode": "cover",
       "backgroundColor": "#f0eef6"
     },
@@ -16,6 +21,7 @@
       "supportsTablet": true
     },
     "android": {
+      "package": "com.yusufabdul07.navxroot",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"

@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "extra": {
+      "eas": {
+        "projectId": "ed6dfb1b-35d8-41aa-af34-01c56a45ca30"
+      }
+    },
+    "android": {
+      "package": "com.yusufabdul07.navxroot"
+    }
+  }
+}

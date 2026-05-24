@@ -47,7 +47,7 @@ export default function SplashScreen({ onFinish }) {
     >
       <StatusBar translucent backgroundColor="transparent" barStyle="dark-content" />
       <Image
-        source={require("../../assets/splash.png")}
+        source={require("../../assets/splash.jpg")}
         style={styles.image}
         resizeMode="cover"
       />

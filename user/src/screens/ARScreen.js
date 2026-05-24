@@ -122,7 +122,7 @@ const RealisticBabyPanda = ({ dirType, floatAnim }) => {
          shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.5, shadowRadius: 15, elevation: 12,
          zIndex: 2
       }}>
-         <Image source={require('../../assets/3d_baby_panda.png')} style={{ width: '100%', height: '100%', resizeMode: 'cover' }} />
+         <Image source={require('../../assets/3d_baby_panda.jpg')} style={{ width: '100%', height: '100%', resizeMode: 'cover' }} />
       </View>
 
       {/* Dynamic Direction Board extending from the Panda Avatar */}
