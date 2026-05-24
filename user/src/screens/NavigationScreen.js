@@ -172,9 +172,15 @@ export default function NavigationScreen({ navigation, route }) {
   // Memoize the HTML so it DOES NOT regenerate on every GPS tick
   const initialUserPosRef = useRef(userPos);
   const mapHtml = React.useMemo(() => {
-    const floorRooms = mapData?.rooms?.filter(r => r.floorId === targetRoom?.floorId) || [];
+    const targetFloorId = targetRoom?.floorId || currentFloor || route.params?.floorId || mapData?.floors?.[0]?._id;
+    let floorRooms = [];
+    if (targetFloorId) {
+      floorRooms = mapData?.rooms?.filter(r => r.floorId === targetFloorId) || [];
+    } else {
+      floorRooms = mapData?.rooms || [];
+    }
     return buildNavMapHTML(floorRooms, routeData?.path, initialUserPosRef.current, targetRoom);
-  }, [mapData, routeData, targetRoom]);
+  }, [mapData, routeData, targetRoom, currentFloor, route.params?.floorId]);
 
   // Push user location updates directly into the WebView via JS
   useEffect(() => {

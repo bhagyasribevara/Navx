@@ -219,7 +219,7 @@ export default function QRScanScreen({ navigation }) {
                           name: result.name
                         }));
                       } catch (e) {}
-                      navigation.navigate("MainTabs", { screen: "Map", params: { campusId: result._id } });
+                      navigation.navigate("Navigation", { campusId: result._id });
                     } else {
                       try {
                         await AsyncStorage.setItem('navx_last_scan', JSON.stringify({
@@ -229,7 +229,7 @@ export default function QRScanScreen({ navigation }) {
                           timestamp: Date.now()
                         }));
                       } catch (e) {}
-                      navigation.navigate("MainTabs", { screen: "Map", params: { userPosition: result.position, floorId: result.floorId?._id } });
+                      navigation.navigate("Navigation", { campusId: result.campusId || result.floorId?.campusId, userPosition: result.position, floorId: result.floorId?._id });
                     }
                   }}
                 >
