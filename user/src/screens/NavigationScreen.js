@@ -170,7 +170,9 @@ export default function NavigationScreen({ navigation, route }) {
   const arrivedAnim = useRef(new Animated.Value(0)).current;
 
   // Memoize the HTML so it DOES NOT regenerate on every GPS tick
-  const initialUserPosRef = useRef(userPos);
+  const initialUserPosRef = useRef(null);
+  // Keep routeData in a stable ref for startNavigation to avoid stale state
+  const routeDataStableRef = useRef(routeData);
   const mapHtml = React.useMemo(() => {
     const targetFloorId = targetRoom?.floorId || currentFloor || route.params?.floorId || mapData?.floors?.[0]?._id;
     let floorRooms = [];
@@ -214,7 +216,7 @@ export default function NavigationScreen({ navigation, route }) {
     if (mapData && (targetRoom || route.params?.emergencyMode) && locationPerm !== null && !routeData) {
       previewRoute();
     }
-  }, [mapData, targetRoom, route.params?.emergencyMode, locationPerm]);
+  }, [mapData, targetRoom, route.params?.emergencyMode, locationPerm, routeData]);
 
   const previewRoute = async () => {
     try {
@@ -291,6 +293,10 @@ export default function NavigationScreen({ navigation, route }) {
         posEngine.setPositionFromQR(uLat, uLng, targetRoom?.floorId);
       }
       setUserPos({ x: uLat, y: uLng, floor: targetRoom?.floorId });
+      // Capture the first user position for the initial map render
+      if (!initialUserPosRef.current) {
+        initialUserPosRef.current = { x: uLat, y: uLng };
+      }
 
       // Step 3: Send raw GPS/QR coords to the backend
       let result;
@@ -354,6 +360,7 @@ export default function NavigationScreen({ navigation, route }) {
       }
 
       setRouteData(result);
+      routeDataStableRef.current = result;
       setLiveDistance(Math.round(result.distance));
       setLiveStepDist(Math.round(result.directions?.[0]?.distance || 0));
 
@@ -390,7 +397,7 @@ export default function NavigationScreen({ navigation, route }) {
   const arrivedRef = useRef(arrived);
 
   useEffect(() => { currentStepRef.current = currentStep; }, [currentStep]);
-  useEffect(() => { routeDataRef.current = routeData; }, [routeData]);
+  useEffect(() => { routeDataRef.current = routeData; routeDataStableRef.current = routeData; }, [routeData]);
   useEffect(() => { arrivedRef.current = arrived; }, [arrived]);
 
   useEffect(() => {
@@ -416,18 +423,17 @@ export default function NavigationScreen({ navigation, route }) {
           (loc) => {
             const lat = loc.coords.latitude;
             const lng = loc.coords.longitude;
-            // Only use raw GPS if we haven't calibrated with a highly accurate QR code recently
-            if (!posEngine.isCalibrated) {
-              setUserPos({ x: lat, y: lng, floor: targetRoom?.floorId });
-            }
+            
+            // Feed raw GPS coordinate into our sensor fusion engine
+            posEngine.processGPSUpdate(lat, lng);
             
             const rData = routeDataRef.current;
             const cStep = currentStepRef.current;
             const isArrived = arrivedRef.current;
             
-            // To calculate live distance, use the current active user position
-            const activeLat = posEngine.isCalibrated ? posEngine.position.x : lat;
-            const activeLng = posEngine.isCalibrated ? posEngine.position.y : lng;
+            // Fused, smoothed position coordinates
+            const activeLat = posEngine.position.x;
+            const activeLng = posEngine.position.y;
 
             if (rData && rData.path && !isArrived) {
               const targetNode = rData.path[cStep + 1] || rData.path[cStep];
@@ -541,32 +547,35 @@ export default function NavigationScreen({ navigation, route }) {
       setError(null);
       setArrived(false);
       
-      if (!routeData) {
+      if (!routeDataStableRef.current) {
          // If preview failed, try again
          await previewRoute();
       }
 
-      if (routeData) {
+      const activeRouteData = routeDataStableRef.current;
+      if (activeRouteData) {
         setCurrentStep(0);
         setIsNavigating(true);
         // Reset floor tracking for fresh navigation
         setCompletedFloorTransitions(0);
-        if (routeData.path?.[0]?.floorId) {
-          setCurrentFloor(routeData.path[0].floorId);
+        if (activeRouteData.path?.[0]?.floorId) {
+          setCurrentFloor(activeRouteData.path[0].floorId);
         }
 
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         if (voiceEnabled) {
-          const prefix = routeData.routeType === 'nearest_reachable'
-            ? `No direct path found. Navigating to the nearest accessible point near ${targetRoom?.name}. `
-            : `Starting navigation to ${targetRoom?.name || "Exit"}. `;
+          let destinationName = targetRoom?.name || "your destination";
+          const prefix = activeRouteData.routeType === 'nearest_reachable'
+            ? `No direct path found. Navigating to the nearest accessible point near ${destinationName}. `
+            : `Starting navigation to ${destinationName}. `;
           
           // Inform user about floor changes ahead
-          const floorChangeNote = (routeData.totalFloorTransitions || 0) > 0
-            ? `This route includes ${routeData.totalFloorTransitions} floor ${routeData.totalFloorTransitions === 1 ? 'change' : 'changes'}. `
+          const floorChangeNote = (activeRouteData.totalFloorTransitions || 0) > 0
+            ? `This route includes ${activeRouteData.totalFloorTransitions} floor ${activeRouteData.totalFloorTransitions === 1 ? 'change' : 'changes'}. `
             : '';
 
-          Speech.speak(prefix + floorChangeNote + (routeData.directions?.[0]?.instruction || "Follow the route."));
+          const startInstruction = activeRouteData.directions?.[0]?.instruction || "Follow the highlighted path.";
+          Speech.speak(prefix + floorChangeNote + startInstruction, { language: "en-US", rate: 0.9 });
         }
         Animated.spring(dirCardAnim, { toValue: 1, tension: 80, friction: 10, useNativeDriver: true }).start();
       }

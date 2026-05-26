@@ -32,7 +32,7 @@ export default function SearchScreen({ navigation, route }) {
   const [activeCat, setActiveCat] = useState(route.params?.filter || null);
   const inputRef = useRef(null);
   const listAnim = useRef(new Animated.Value(0)).current;
-  const searchFocusAnim = useRef(new Animated.Value(0)).current;
+  const [searchFocused, setSearchFocused] = useState(false);
 
   useEffect(() => {
     if (!campusId) {
@@ -75,7 +75,7 @@ export default function SearchScreen({ navigation, route }) {
   }, [query, campusId, activeCat]);
 
   const handleFocus = (focused) => {
-    Animated.spring(searchFocusAnim, { toValue: focused ? 1 : 0, tension: 200, friction: 10, useNativeDriver: false }).start();
+    setSearchFocused(focused);
   };
 
   const s = StyleSheet.create({
@@ -95,7 +95,7 @@ export default function SearchScreen({ navigation, route }) {
       flex: 1, flexDirection: "row", alignItems: "center",
       backgroundColor: colors.surface, borderRadius: RADIUS.md,
       paddingHorizontal: 12, borderWidth: 1.5,
-      borderColor: searchFocusAnim.interpolate({ inputRange: [0, 1], outputRange: [colors.border, colors.primary] }),
+      borderColor: searchFocused ? colors.primary : colors.border,
     },
     searchInput: { flex: 1, paddingVertical: 12, fontSize: 15, color: colors.text, marginLeft: 8 },
     catRow: { flexDirection: "row" },
@@ -180,7 +180,7 @@ export default function SearchScreen({ navigation, route }) {
           <TouchableOpacity style={s.backBtn} onPress={() => navigation.goBack()}>
             <Ionicons name="arrow-back" size={22} color={colors.text} />
           </TouchableOpacity>
-          <Animated.View style={[s.searchBar]}>
+          <View style={[s.searchBar]}>
             <Ionicons name="search" size={20} color={colors.textMuted} />
             <TextInput
               ref={inputRef}
@@ -197,7 +197,7 @@ export default function SearchScreen({ navigation, route }) {
                 <Ionicons name="close-circle" size={20} color={colors.textMuted} />
               </TouchableOpacity>
             )}
-          </Animated.View>
+          </View>
         </View>
         {/* Category filter */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.catRow}>

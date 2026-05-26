@@ -1,8 +1,10 @@
 import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Platform } from "react-native";
-import Constants from "expo-constants";
 import { buildGraph, astar, dijkstra, findNearestNode as localFindNearestNode, generateDirections } from './utils/pathfinding';
+
+let Constants = null;
+try { Constants = require("expo-constants").default; } catch (e) {}
 
 let devHost = Platform.OS === "android" ? "10.0.2.2" : "localhost";
 if (Constants?.expoConfig?.hostUri) {

@@ -219,7 +219,7 @@ export default function QRScanScreen({ navigation }) {
                           name: result.name
                         }));
                       } catch (e) {}
-                      navigation.navigate("Navigation", { campusId: result._id });
+                      navigation.navigate("MainTabs", { screen: "Map", params: { campusId: result._id } });
                     } else {
                       try {
                         await AsyncStorage.setItem('navx_last_scan', JSON.stringify({

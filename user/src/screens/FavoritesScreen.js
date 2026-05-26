@@ -143,7 +143,7 @@ export default function FavoritesScreen({ navigation }) {
             }}>
               <TouchableOpacity
                 style={s.card}
-                onPress={() => navigation.navigate("Map")}
+                onPress={() => navigation.navigate("Navigation", { room: loc, campusId: loc.campusId })}
                 activeOpacity={0.85}
               >
                 <View style={[s.iconWrap, { backgroundColor: (ROOM_COLORS[loc.type] || colors.primary) + "20" }]}>
@@ -156,7 +156,7 @@ export default function FavoritesScreen({ navigation }) {
                 <View style={s.actions}>
                   <TouchableOpacity
                     style={[s.actionBtn, { backgroundColor: colors.primary + "15" }]}
-                    onPress={() => navigation.navigate("Map")}
+                    onPress={() => navigation.navigate("Navigation", { room: loc, campusId: loc.campusId })}
                   >
                     <Ionicons name="navigate" size={18} color={colors.primary} />
                   </TouchableOpacity>

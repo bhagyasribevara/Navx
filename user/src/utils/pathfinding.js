@@ -549,7 +549,7 @@ function generateDirections(detailedPath) {
       else if (turn >    5)                 instruction = 'Bear right';
       else if (turn <   -5)                 instruction = 'Bear left';
     } else {
-      instruction = `Head ${compassLabel(fwdBearing)}`;
+      instruction = 'Proceed straight ahead';
     }
 
     // Approach transition nodes

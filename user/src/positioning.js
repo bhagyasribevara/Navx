@@ -37,7 +37,7 @@ export class PositionEngine {
     return this.position;
   }
 
-  // Motion sensor tracking (dead reckoning)
+  // Motion sensor tracking (dead reckoning with GPS scale conversion)
   processStep(heading) {
     if (!this.isCalibrated) return;
 
@@ -45,15 +45,41 @@ export class PositionEngine {
     this.stepCount++;
 
     const radians = (heading * Math.PI) / 180;
-    const dx = STEP_LENGTH * PIXEL_PER_METER * Math.sin(radians);
-    const dy = -STEP_LENGTH * PIXEL_PER_METER * Math.cos(radians);
 
-    this.position.x += dx + this.driftCorrection.x;
-    this.position.y += dy + this.driftCorrection.y;
+    // Convert step size (0.7m) to GPS degrees
+    // 1 degree of Latitude ≈ 111,320 meters
+    const metersPerLatDegree = 111320;
+    const currentLat = this.position.x || 18.4665;
+    // 1 degree of Longitude depends on the latitude
+    const metersPerLngDegree = 111320 * Math.cos((currentLat * Math.PI) / 180);
+
+    const dLat = (STEP_LENGTH * Math.cos(radians)) / metersPerLatDegree;
+    const dLng = (STEP_LENGTH * Math.sin(radians)) / metersPerLngDegree;
+
+    // Apply displacement
+    this.position.x += dLat + this.driftCorrection.x;
+    this.position.y += dLng + this.driftCorrection.y;
 
     // Reset drift correction after applying
     this.driftCorrection = { x: 0, y: 0 };
 
+    this.notify();
+  }
+
+  // Fused GPS Update - blends GPS coordinate to correct sensor drift and filter noise
+  processGPSUpdate(lat, lng) {
+    if (!this.isCalibrated) {
+      this.position = { ...this.position, x: lat, y: lng };
+      this.isCalibrated = true;
+      this.notify();
+      return;
+    }
+
+    // Blend GPS with sensor dead-reckoning (Weight 0.15 for GPS)
+    // This absorbs GPS jumps/jitter while anchoring sensor drift
+    const weight = 0.15;
+    this.position.x = this.position.x * (1 - weight) + lat * weight;
+    this.position.y = this.position.y * (1 - weight) + lng * weight;
     this.notify();
   }
 

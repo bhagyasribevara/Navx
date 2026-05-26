@@ -76,7 +76,7 @@ export default function MapScreen({ navigation, route }) {
   const handleBack = () => {
     if (selectedFloor) setSelectedFloor(null);
     else if (selectedBlock) setSelectedBlock(null);
-    else navigation.goBack();
+    // At root block level in a tab — don't navigate away
   };
 
   const renderContent = () => {
@@ -160,9 +160,11 @@ export default function MapScreen({ navigation, route }) {
   return (
     <View style={s.container}>
       <View style={s.header}>
-        <TouchableOpacity style={s.backBtn} onPress={handleBack}>
-          <Ionicons name="arrow-back" size={20} color={colors.text} />
-        </TouchableOpacity>
+        {(selectedBlock || selectedFloor) ? (
+          <TouchableOpacity style={s.backBtn} onPress={handleBack}>
+            <Ionicons name="arrow-back" size={20} color={colors.text} />
+          </TouchableOpacity>
+        ) : null}
         <Text style={s.title}>
           {selectedFloor ? selectedFloor.name : selectedBlock ? selectedBlock.name : "Campus Directory"}
         </Text>

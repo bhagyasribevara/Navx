@@ -7,9 +7,12 @@ import { CameraView, useCameraPermissions } from "expo-camera";
 import * as Location from "expo-location";
 import { Magnetometer } from "expo-sensors";
 import * as Haptics from "expo-haptics";
+import * as Speech from "expo-speech";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import Svg, { Path, Defs, LinearGradient, Stop, Rect, Ellipse, Circle } from "react-native-svg";
 import { ThemeContext } from "../context/ThemeContext";
+
+const AnimatedPath = Animated.createAnimatedComponent(Path);
 
 const { width: SW, height: SH } = Dimensions.get("window");
 
@@ -100,44 +103,34 @@ function haversineDist(lat1, lng1, lat2, lng2) {
   return Math.sqrt(dx * dx + dy * dy);
 }
 
-// Custom AR Avatar: Realistic 3D Baby Panda HUD with dynamic directional signboard
+// Custom AR HUD: Realistic 3D floating glowing signboard indicator (No Panda!)
 const RealisticBabyPanda = ({ dirType, floatAnim }) => {
   const isLeft = dirType.includes("left");
   const isRight = dirType.includes("right");
   
-  // Position the panda logically depending on the next turn direction
-  const posStyle = isLeft ? { left: 16 } : isRight ? { right: 16 } : { left: SW / 2 - 70 };
+  // Center it or align it to the side cleanly
+  const posStyle = isLeft ? { left: 24 } : isRight ? { right: 24 } : { left: SW / 2 - 45 };
   
   return (
     <Animated.View style={[
-      { position: 'absolute', top: SH * 0.40, zIndex: 10, flexDirection: isRight ? 'row-reverse' : 'row', alignItems: 'center' },
+      { position: 'absolute', top: SH * 0.38, zIndex: 10, alignItems: 'center' },
       posStyle,
-      { transform: [{ translateY: floatAnim.interpolate({ inputRange:[0,1], outputRange:[-15, 15] }) }] }
+      { transform: [{ translateY: floatAnim.interpolate({ inputRange:[0,1], outputRange:[-12, 12] }) }] }
     ]}>
-      {/* Realistic 3D Panda Image Avatar Bubble */}
+      {/* High-tech Glowing Direction Circle */}
       <View style={{
-         width: 140, height: 140, borderRadius: 70, overflow: 'hidden',
-         borderWidth: 5, borderColor: '#3b82f6',
-         backgroundColor: '#fff',
-         shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.5, shadowRadius: 15, elevation: 12,
-         zIndex: 2
+         width: 90, height: 90, borderRadius: 45,
+         backgroundColor: 'rgba(15, 23, 42, 0.85)',
+         borderWidth: 3.5, borderColor: '#00f0ff',
+         alignItems: 'center', justifyContent: 'center',
+         shadowColor: '#00f0ff', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.6, shadowRadius: 16,
+         elevation: 12,
       }}>
-         <Image source={require('../../assets/3d_baby_panda.jpg')} style={{ width: '100%', height: '100%', resizeMode: 'cover' }} />
-      </View>
-
-      {/* Dynamic Direction Board extending from the Panda Avatar */}
-      <View style={{
-         backgroundColor: '#3b82f6', borderRadius: 24, padding: 16,
-         borderWidth: 4, borderColor: '#fff',
-         shadowColor: '#3b82f6', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.6, shadowRadius: 12,
-         elevation: 10,
-         marginLeft: isRight ? 0 : -30,
-         marginRight: isRight ? -30 : 0,
-         paddingLeft: isRight ? 16 : 40,
-         paddingRight: isRight ? 40 : 16,
-         zIndex: 1
-      }}>
-         <MaterialCommunityIcons name={isLeft ? 'turn-left' : isRight ? 'turn-right' : 'arrow-up-thick'} size={60} color="#fff" />
+         <MaterialCommunityIcons 
+           name={isLeft ? 'turn-left' : isRight ? 'turn-right' : 'arrow-up-thick'} 
+           size={46} 
+           color="#00f0ff" 
+         />
       </View>
     </Animated.View>
   );
@@ -157,6 +150,8 @@ export default function ARScreen({ navigation, route }) {
   // Animations
   const floatAnim = useRef(new Animated.Value(0)).current;
   const pulseAnim = useRef(new Animated.Value(0)).current;
+  const pathFade = useRef(new Animated.Value(0)).current;
+  const dashOffset = useRef(new Animated.Value(0)).current;
 
   // Refs for tracking current state inside callbacks
   const currentStepRef = useRef(currentStep);
@@ -188,8 +183,29 @@ export default function ARScreen({ navigation, route }) {
       Animated.timing(pulseAnim, { toValue: 1, duration: 1500, useNativeDriver: true })
     ).start();
 
+    // Continuous centerline flow loop (flowing forward along path)
+    Animated.loop(
+      Animated.timing(dashOffset, {
+        toValue: -90,
+        duration: 1500,
+        easing: Easing.linear,
+        useNativeDriver: false
+      })
+    ).start();
+
     return () => sub.remove();
   }, []);
+
+  // Entrance Slide/Fade animation when step direction changes
+  useEffect(() => {
+    pathFade.setValue(0);
+    Animated.timing(pathFade, {
+      toValue: 1,
+      duration: 800,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: true
+    }).start();
+  }, [currentStep]);
 
   useEffect(() => {
     let locationWatcher;
@@ -281,7 +297,17 @@ export default function ARScreen({ navigation, route }) {
       <View style={styles.topGradient} />
 
       {/* --- 3D Ground Projected Solid Road --- */}
-      <View style={styles.groundContainer} pointerEvents="none">
+      <Animated.View style={[
+        styles.groundContainer,
+        {
+          opacity: pathFade,
+          transform: [
+            { perspective: 550 },
+            { rotateX: '74deg' },
+            { translateY: pathFade.interpolate({ inputRange: [0, 1], outputRange: [100, 0] }) }
+          ]
+        }
+      ]} pointerEvents="none">
         {/* REMOVED translateX transform so the oversized SVG inherently centers via alignItems: 'center' */}
         <Svg width={roadW} height={roadH}>
           {/* Thick solid white outer border */}
@@ -289,12 +315,24 @@ export default function ARScreen({ navigation, route }) {
           {/* Inner solid blue painted road */}
           <Path d={rPath} stroke="#2563eb" strokeWidth={160} strokeLinecap="butt" fill="none" opacity={0.95} />
           
+          {/* Flowing animated center line dashes */}
+          <AnimatedPath
+            d={rPath}
+            stroke="#ffffff"
+            strokeWidth={10}
+            strokeLinecap="round"
+            fill="none"
+            opacity={0.8}
+            strokeDasharray={[50, 40]}
+            strokeDashoffset={dashOffset}
+          />
+
           {/* Solid White Directional Chevrons along the curve */}
           {chevrons.map((chPath, i) => (
              <Path key={i} d={chPath} stroke="#ffffff" strokeWidth={32} strokeLinecap="round" strokeLinejoin="round" fill="none" opacity={0.95} />
           ))}
         </Svg>
-      </View>
+      </Animated.View>
 
       {/* Realistic AR Baby Panda HUD Guide */}
       {!arrived && <RealisticBabyPanda dirType={dirType} floatAnim={floatAnim} />}
@@ -332,9 +370,9 @@ export default function ARScreen({ navigation, route }) {
           <View style={[styles.metric, { flex: 1.2 }]}>
             <Text style={styles.metricLabel}>COMPASS</Text>
             <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "center" }}>
-              <Animated.View style={{ transform: [{ rotate: `-${heading}deg` }] }}>
+              <View style={{ transform: [{ rotate: `${-heading}deg` }] }}>
                 <Ionicons name="compass" size={16} color="#3b82f6" />
-              </Animated.View>
+              </View>
               <Text style={[styles.metricVal, { marginLeft: 6 }]}>{Math.round(heading)}°</Text>
             </View>
           </View>
@@ -383,8 +421,6 @@ const styles = StyleSheet.create({
   
   groundContainer: {
     position: 'absolute', bottom: -SH * 0.15, left: 0, width: SW, height: SH * 0.85,
-    // The magic 3D perspective transform that lays the SVG flat on the ground!
-    transform: [{ perspective: 550 }, { rotateX: '74deg' }],
     alignItems: 'center', justifyContent: 'flex-end',
     zIndex: 1,
   },
