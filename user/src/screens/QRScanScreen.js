@@ -1,7 +1,7 @@
 import React, { useState, useContext, useRef, useEffect } from "react";
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  Animated, Dimensions, Platform,
+  Animated, Dimensions, Platform, ActivityIndicator
 } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { Ionicons } from "@expo/vector-icons";
@@ -195,7 +195,12 @@ export default function QRScanScreen({ navigation }) {
           </View>
         )}
         <View style={s.actionRow}>
-          {scanned ? (
+          {scanned && !result && !error ? (
+            <View style={{ flex: 1, alignItems: 'center', padding: 14 }}>
+              <ActivityIndicator color="#6366f1" size="small" />
+              <Text style={{ color: '#94a3b8', marginTop: 8, fontSize: 13 }}>Verifying QR Code...</Text>
+            </View>
+          ) : scanned ? (
             <>
               <TouchableOpacity style={s.rescanBtn} onPress={resetScan}>
                 <Ionicons name="refresh" size={18} color="#6366f1" />
