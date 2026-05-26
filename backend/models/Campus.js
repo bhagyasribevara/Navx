@@ -13,6 +13,7 @@ const campusSchema = new mongoose.Schema({
     lat: { type: Number, default: 0 },
     lng: { type: Number, default: 0 }
   },
+  radius: { type: Number, default: 500 },
   bounds: {
     width: { type: Number, default: 1000 },
     height: { type: Number, default: 800 }

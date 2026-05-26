@@ -7,10 +7,22 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { ThemeContext } from "../context/ThemeContext";
-import { getCampuses, cachedGet, downloadCampusOffline } from "../api";
+import { getCampuses, cachedGet, downloadCampusOffline, getRoomsByCat } from "../api";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SHADOWS, RADIUS, QUICK_ACTIONS, ROOM_COLORS } from "../theme/designSystem";
 import WeatherWidget from "../components/WeatherWidget";
+import * as Location from "expo-location";
+
+const haversine = (lat1, lon1, lat2, lon2) => {
+  const R = 6371e3;
+  const φ1 = lat1 * Math.PI/180;
+  const φ2 = lat2 * Math.PI/180;
+  const Δφ = (lat2-lat1) * Math.PI/180;
+  const Δλ = (lon2-lon1) * Math.PI/180;
+  const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ/2) * Math.sin(Δλ/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+};
 
 const { width: SW } = Dimensions.get("window");
 const HOUR = new Date().getHours();
@@ -24,6 +36,7 @@ const VENUE_CATS = {
     { label: "Cafeteria", icon: "restaurant", color: "#ef4444", filter: "cafeteria" },
     { label: "Library", icon: "library", color: "#06b6d4", filter: "library" },
     { label: "Restrooms", icon: "water", color: "#f59e0b", filter: "restroom" },
+    { label: "Parking", icon: "car", color: "#64748b", filter: "parking" },
   ],
   hospital: [
     { label: "Wards", icon: "bed", color: "#3b82f6", filter: "ward" },
@@ -109,8 +122,36 @@ export default function HomeScreen({ navigation }) {
       AsyncStorage.getItem(`navx_offline_${activeCampusId}`).then(res => {
         if (res) setDownloadedStatus(prev => ({ ...prev, [activeCampusId]: true }));
       }).catch(() => {});
+      
+      let sub = null;
+      const checkGeofence = async () => {
+        let { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') return;
+        
+        const currentCampus = campuses.find(c => c._id === activeCampusId);
+        if (!currentCampus || !currentCampus.location?.lat) return;
+
+        sub = await Location.watchPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+          timeInterval: 10000,
+          distanceInterval: 50,
+        }, async (loc) => {
+          const dist = haversine(
+            loc.coords.latitude, loc.coords.longitude,
+            currentCampus.location.lat, currentCampus.location.lng
+          );
+          const radius = currentCampus.radius || 500;
+          if (dist > radius) {
+            await AsyncStorage.removeItem('navx_active_campus');
+            setActiveCampusId(null);
+            if (sub) sub.remove();
+          }
+        });
+      };
+      checkGeofence();
+      return () => { if (sub) sub.remove(); };
     }
-  }, [activeCampusId]);
+  }, [activeCampusId, campuses]);
 
   const [showNotifs, setShowNotifs] = useState(false);
   const MOCK_NOTIFS = [
@@ -341,7 +382,29 @@ export default function HomeScreen({ navigation }) {
         </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20 }}>
           {(VENUE_CATS[campuses.find(c => c._id === activeCampusId)?.venueType] || VENUE_CATS.campus).map((c, i) => (
-            <TouchableOpacity key={i} style={s.catChip} onPress={() => navigation.navigate("Search", { filter: c.filter })} activeOpacity={0.78}>
+            <TouchableOpacity key={i} style={s.catChip} onPress={async () => {
+              if (c.filter === 'parking' && activeCampusId) {
+                try {
+                  const rooms = await getRoomsByCat(activeCampusId, 'parking');
+                  if (rooms && rooms.length > 0) {
+                    let closest = rooms[0];
+                    const storedScan = await AsyncStorage.getItem('navx_last_scan');
+                    if (storedScan) {
+                      const pos = JSON.parse(storedScan);
+                      let minD = Infinity;
+                      rooms.forEach(r => {
+                        let d = Math.hypot((r.shape?.x || 0) - pos.x, (r.shape?.y || 0) - pos.y);
+                        if (r.floorId !== pos.floorId) d += 1000;
+                        if (d < minD) { minD = d; closest = r; }
+                      });
+                    }
+                    navigation.navigate("Navigation", { room: closest, campusId: closest.campusId || activeCampusId });
+                    return;
+                  }
+                } catch(e) {}
+              }
+              navigation.navigate("Search", { filter: c.filter });
+            }} activeOpacity={0.78}>
               <Ionicons name={c.icon} size={16} color={c.color} />
               <Text style={s.catLabel}>{c.label}</Text>
             </TouchableOpacity>

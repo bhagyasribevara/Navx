@@ -26,7 +26,7 @@ const NC = { waypoint:'#94a3b8', entrance:'#10b981', exit:'#ef4444', elevator:'#
 
 // Venue-specific room types
 const VENUE_ROOM_TYPES = {
-  campus: ['classroom', 'office', 'lab', 'restroom', 'cafeteria', 'library', 'auditorium', 'elevator', 'stairs', 'corridor', 'entrance', 'exit', 'other'],
+  campus: ['classroom', 'office', 'lab', 'restroom', 'cafeteria', 'library', 'auditorium', 'elevator', 'stairs', 'corridor', 'entrance', 'exit', 'parking', 'other'],
   hospital: ['ward', 'icu', 'ot', 'pharmacy', 'reception', 'emergency', 'radiology', 'pathology', 'blood_bank', 'consultation', 'waiting_area', 'nursing_station', 'elevator', 'stairs', 'restroom', 'cafeteria', 'entrance', 'exit', 'corridor', 'other'],
   airport: ['gate', 'terminal', 'check_in', 'security', 'lounge', 'baggage_claim', 'immigration', 'duty_free', 'boarding', 'customs', 'restroom', 'cafeteria', 'elevator', 'stairs', 'entrance', 'exit', 'corridor', 'other'],
   mall: ['store', 'food_court', 'anchor_store', 'kiosk', 'parking', 'entertainment', 'atm', 'customer_service', 'fitting_room', 'restroom', 'elevator', 'stairs', 'entrance', 'exit', 'corridor', 'other'],
@@ -152,13 +152,13 @@ function MapUpdater({ center }) {
   return null;
 }
 
-const EditablePolygon = ({ r, isSelected, isLocked, onUpdate, onClick }) => {
+const EditablePolygon = ({ r, isSelected, isLocked, onUpdate, onClick, activeMode }) => {
   const polyRef = useRef(null);
   const onUpdateRef = useRef(onUpdate);
-  const s = r.shape;
+  const s = r.shape || { points: [] };
   const c = RC[r.type] || (r.isBlock ? '#64748b' : '#94a3b8');
   
-  // NEVER update positions after initial mount. Let Geoman handle visual updates.
+  // NEVER pass inline array to positions prop directly.
   const initialBounds = useRef(
     s.points && s.points.length > 0
       ? s.points.map(p => [p.x, p.y])
@@ -174,6 +174,7 @@ const EditablePolygon = ({ r, isSelected, isLocked, onUpdate, onClick }) => {
     onUpdateRef.current = onUpdate;
   }, [onUpdate]);
 
+  // Main Geoman Management Effect
   useEffect(() => {
     const layer = polyRef.current;
     if (!layer) return;
@@ -188,13 +189,22 @@ const EditablePolygon = ({ r, isSelected, isLocked, onUpdate, onClick }) => {
       onUpdateRef.current(r._id || 'temp', { points: pts, type: r.shape?.type || 'polygon' });
     };
 
+    // Attach listeners
     layer.on('pm:markerdragend', handleEdit);
     layer.on('pm:dragend', handleEdit);
     layer.on('pm:rotateend', handleEdit);
     layer.on('pm:cut', handleEdit);
 
-    if (isSelected && !isLocked) {
-      layer.pm.enable({ allowSelfIntersection: false, preventMarkerRemoval: true, snappable: true, draggable: true });
+    // Determine if Geoman edit mode should be active
+    const shouldBeEnabled = isSelected && !isLocked && (!activeMode || activeMode === 'select');
+
+    if (shouldBeEnabled) {
+      layer.pm.enable({ 
+        allowSelfIntersection: false, 
+        preventMarkerRemoval: true, 
+        snappable: true, 
+        draggable: true // Re-enable draggable so user can drag in Select mode
+      });
     } else {
       layer.pm.disable();
     }
@@ -206,18 +216,60 @@ const EditablePolygon = ({ r, isSelected, isLocked, onUpdate, onClick }) => {
       layer.off('pm:cut', handleEdit);
       layer.pm.disable(); 
     };
-  }, [isSelected, isLocked, r._id]);
+  }, [isSelected, isLocked, activeMode]); // Run when selection/mode changes
+
+  // Sync positions from external changes (Undo/Redo)
+  useEffect(() => {
+    const layer = polyRef.current;
+    if (!layer || !s.points || s.points.length === 0) return;
+    
+    const ll = layer.getLatLngs();
+    if (!ll || ll.length === 0) return;
+    
+    const arr = Array.isArray(ll[0]) ? (Array.isArray(ll[0][0]) ? ll[0][0] : ll[0]) : ll;
+    if (arr.length > 0 && s.points.length > 0) {
+      const dist = Math.hypot(arr[0].lat - s.points[0].x, arr[0].lng - s.points[0].y);
+      if (dist > 0.00001) { // Significant external change
+        const wasEnabled = layer.pm.enabled();
+        if (wasEnabled) layer.pm.disable();
+        layer.setLatLngs(s.points.map(p => [p.x, p.y]));
+        if (wasEnabled) {
+          layer.pm.enable({ allowSelfIntersection: false, preventMarkerRemoval: true, snappable: true, draggable: true });
+        }
+      }
+    }
+  }, [s.points]); // Run when shape updates
+
+  // Memoize pathOptions to prevent react-leaflet from calling setStyle on every re-render
+  const pathOpts = React.useMemo(() => ({ 
+    color: isSelected ? '#fff' : c, 
+    fillColor: c, 
+    fillOpacity: r.isBlock ? 0.1 : (isSelected ? 0.6 : 0.3), 
+    weight: isSelected ? 3 : (r.isBlock ? 2 : 1.5),
+    dashArray: r.isBlock ? '5, 5' : null
+  }), [isSelected, c, r.isBlock]);
+
+  // Memoize event handlers to prevent react-leaflet re-binds which can disrupt Geoman
+  const rRef = useRef(r);
+  const onClickRef = useRef(onClick);
+  useEffect(() => { 
+    rRef.current = r; 
+    onClickRef.current = onClick;
+  }, [r, onClick]);
+
+  const eventHandlers = React.useMemo(() => ({
+    click: (e) => {
+      if(!isLocked) {
+        L.DomEvent.stopPropagation(e);
+        onClickRef.current(rRef.current);
+      }
+    }
+  }), [isLocked]); // ONLY recreate if isLocked changes!
 
   return (
     <Polygon ref={polyRef} positions={initialBounds.current} 
-      pathOptions={{ 
-        color: isSelected ? '#fff' : c, 
-        fillColor: c, 
-        fillOpacity: r.isBlock ? 0.1 : (isSelected ? 0.6 : 0.3), 
-        weight: isSelected ? 3 : (r.isBlock ? 2 : 1.5),
-        dashArray: r.isBlock ? '5, 5' : null
-      }} 
-      eventHandlers={{ click: (e) => { if(!isLocked) { L.DomEvent.stopPropagation(e); onClick(r); } } }}>
+      pathOptions={pathOpts} 
+      eventHandlers={eventHandlers}>
       {!r.isBlock && (
         <Tooltip permanent direction="center" className="room-label">
           <span style={{fontSize:10,fontWeight:700,color:'#fff',textShadow:'0 1px 2px rgba(0,0,0,0.8)'}}>{r.name}</span>
@@ -1006,10 +1058,10 @@ export default function GuidedMapBuilder() {
 
           {/* Render Active Block Outline */}
           {activeBlock?.shape && (
-            <EditablePolygon key={`block-${activeBlock._id}`} r={{ ...activeBlock, isBlock: true }} isSelected={step === 1} isLocked={step > 1} onUpdate={(id, s) => setActiveBlock(p => ({...p, shape: s}))} onClick={()=>{}} />
+            <EditablePolygon key={`block-${activeBlock._id}`} r={{ ...activeBlock, isBlock: true }} isSelected={step === 1} isLocked={step > 1} onUpdate={(id, s) => setActiveBlock(p => ({...p, shape: s}))} onClick={()=>{}} activeMode={drawMode} />
           )}
           {step === 1 && !activeBlock && tempBlockShape && (
-            <EditablePolygon key="temp-block" r={{ _id: 'temp', shape: tempBlockShape, type: 'other', name: 'New Block' }} isSelected={true} isLocked={false} onUpdate={(_, s) => setTempBlockShape(s)} onClick={()=>{}} />
+            <EditablePolygon key="temp-block" r={{ _id: 'temp', shape: tempBlockShape, type: 'other', name: 'New Block' }} isSelected={true} isLocked={false} onUpdate={(_, s) => setTempBlockShape(s)} onClick={()=>{}} activeMode={drawMode} />
           )}
 
           {/* Render Rooms (Step 3 & 4) */}
@@ -1021,7 +1073,7 @@ export default function GuidedMapBuilder() {
                 setActiveRoom(p => p?._id === id ? { ...p, shape: s } : { ...r, shape: s });
               }} 
               onClick={(roomData) => { if (step===3) setActiveRoom(p => p?._id === roomData._id ? p : roomData); }} 
-               />;
+              activeMode={drawMode} />;
           })}
 
           {/* Render Interior Nodes & Paths (Step 4) */}
