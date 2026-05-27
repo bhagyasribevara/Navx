@@ -12,6 +12,7 @@ if (Constants?.expoConfig?.hostUri) {
 }
 
 const API_BASE = process.env.EXPO_PUBLIC_API_BASE_URL || `http://${devHost}:5000/api`;
+export const SOCKET_URL = process.env.EXPO_PUBLIC_API_BASE_URL ? process.env.EXPO_PUBLIC_API_BASE_URL.replace('/api', '') : `http://${devHost}:5000`;
 
 const api = axios.create({
   baseURL: API_BASE,
@@ -125,6 +126,10 @@ export const getMapData = async (campusId) => {
     }
     throw error;
   }
+};
+
+export const getGeoJSONMapData = async (campusId) => {
+  return await api.get(`/campus/geojson/${campusId}`).then((r) => r.data);
 };
 
 export const findRoute = async (data) => {

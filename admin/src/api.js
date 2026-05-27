@@ -22,6 +22,7 @@ export const createCampus = (data) => api.post("/campus", data);
 export const updateCampus = (id, data) => api.put(`/campus/${id}`, data);
 export const deleteCampus = (id) => api.delete(`/campus/${id}`);
 export const triggerEmergency = (id, data) => api.post(`/campus/${id}/emergency`, data);
+export const publishMap = (id) => api.post(`/campus/${id}/publish`);
 
 // Blocks
 export const getBlocks = (campusId) => api.get(`/blocks?campusId=${campusId}`);
@@ -57,6 +58,12 @@ export const getAllCampusPaths = (campusId) => api.get(`/paths?campusId=${campus
 export const createPath = (data) => api.post("/paths", data);
 export const updatePath = (id, data) => api.put(`/paths/${id}`, data);
 export const deletePath = (id) => api.delete(`/paths/${id}`);
+
+// Map Layers (GeoJSON Overlays)
+export const getMapLayers = (campusId) => api.get(`/mapLayers?campusId=${campusId}`);
+export const createMapLayer = (data) => api.post("/mapLayers", data);
+export const updateMapLayer = (id, data) => api.put(`/mapLayers/${id}`, data);
+export const deleteMapLayer = (id) => api.delete(`/mapLayers/${id}`);
 
 // QR Codes
 export const getQRCodes = (floorId) => api.get(`/qrcodes?floorId=${floorId}`);

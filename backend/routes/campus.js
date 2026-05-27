@@ -1,5 +1,9 @@
 const router = require('express').Router();
 const Campus = require('../models/Campus');
+const Block = require('../models/Block');
+const Room = require('../models/Room');
+const NavPath = require('../models/NavPath');
+const MapLayer = require('../models/MapLayer');
 
 // GET all campuses
 router.get('/', async (req, res) => {
@@ -134,6 +138,96 @@ router.get('/qr/:campusId', async (req, res) => {
     });
   } catch (err) {
     res.status(400).json({ error: 'Invalid QR code.' });
+  }
+});
+
+// GET campus data as unified GeoJSON FeatureCollection
+router.get('/geojson/:id', async (req, res) => {
+  try {
+    const campusId = req.params.id;
+    const [blocks, rooms, paths, mapLayers] = await Promise.all([
+      Block.find({ campusId, isActive: true }),
+      Room.find({ campusId, isActive: true }),
+      NavPath.find({ campusId, isActive: true }).populate('nodeA').populate('nodeB'),
+      MapLayer.find({ campusId, isActive: true })
+    ]);
+
+    const features = [];
+
+    // Convert Blocks to GeoJSON Polygons
+    blocks.forEach(b => {
+      if (b.shape && b.shape.points && b.shape.points.length >= 3) {
+        const coords = b.shape.points.map(p => [p.y, p.x]);
+        // Close the polygon
+        if (coords[0][0] !== coords[coords.length - 1][0] || coords[0][1] !== coords[coords.length - 1][1]) {
+          coords.push([...coords[0]]);
+        }
+        features.push({
+          type: 'Feature',
+          geometry: { type: 'Polygon', coordinates: [coords] },
+          properties: { id: b._id, name: b.name, type: 'block', category: b.domain, color: b.shape.fill || '#64748b' }
+        });
+      }
+    });
+
+    // Convert Rooms to GeoJSON Polygons
+    rooms.forEach(r => {
+      if (r.shape && r.shape.points && r.shape.points.length >= 3) {
+        const coords = r.shape.points.map(p => [p.y, p.x]);
+        // Close the polygon
+        if (coords[0][0] !== coords[coords.length - 1][0] || coords[0][1] !== coords[coords.length - 1][1]) {
+          coords.push([...coords[0]]);
+        }
+        features.push({
+          type: 'Feature',
+          geometry: { type: 'Polygon', coordinates: [coords] },
+          properties: { id: r._id, name: r.name, type: 'room', category: r.type, floorId: r.floorId }
+        });
+      }
+    });
+
+    // Convert NavPaths to GeoJSON LineStrings
+    paths.forEach(p => {
+      if (p.nodeA && p.nodeB) {
+        features.push({
+          type: 'Feature',
+          geometry: { type: 'LineString', coordinates: [[p.nodeA.y, p.nodeA.x], [p.nodeB.y, p.nodeB.x]] },
+          properties: { id: p._id, name: 'Path', type: 'path', bidirectional: p.bidirectional, floorId: p.floorId }
+        });
+      }
+    });
+
+    // Convert custom MapLayers to GeoJSON
+    mapLayers.forEach(l => {
+      features.push({
+        type: 'Feature',
+        geometry: l.geometry,
+        properties: { id: l._id, name: l.name, type: 'map_layer', category: l.category, color: l.color, ...l.properties }
+      });
+    });
+
+    res.json({
+      type: 'FeatureCollection',
+      features
+    });
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST publish map to live
+router.post('/:id/publish', async (req, res) => {
+  try {
+    const campus = await Campus.findById(req.params.id);
+    if (!campus) return res.status(404).json({ error: 'Campus not found' });
+    
+    if (req.app.get('io')) {
+      req.app.get('io').to(req.params.id.toString()).emit('map_updated', { type: 'map_published' });
+    }
+    res.json({ success: true, message: 'Map published live successfully' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 

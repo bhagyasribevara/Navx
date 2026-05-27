@@ -1,21 +1,100 @@
-import React, { useState, useEffect, useContext } from "react";
+import React, { useState, useEffect, useContext, useRef, useMemo } from "react";
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  ActivityIndicator, ScrollView, Platform
+  ActivityIndicator, ScrollView, Platform, Dimensions, Animated, Easing
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { WebView } from "react-native-webview";
 import { ThemeContext } from "../context/ThemeContext";
-import { getMapData, getCampuses } from "../api";
+import { getMapData, getCampuses, getGeoJSONMapData, SOCKET_URL } from "../api";
+import { io } from "socket.io-client";
 import { SHADOWS, RADIUS, ROOM_COLORS } from "../theme/designSystem";
+
+const { height: SH, width: SW } = Dimensions.get('window');
+
+function buildCampusMapHTML(geoJSONData, centerCoords) {
+  const center = centerCoords ? [centerCoords.x, centerCoords.y] : [18.4665, 83.6629];
+  
+  return `<!DOCTYPE html>
+<html><head>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  body{margin:0;padding:0;background-color:#0a0e17;}
+  #map{width:100%;height:100vh;background:#0a0e17;}
+  .leaflet-container { background: #0a0e17 !important; }
+  .layer-label {
+    background: rgba(10, 14, 23, 0.8); border: 1px solid rgba(255,255,255,0.2);
+    color: white; font-weight: bold; padding: 2px 6px; border-radius: 4px;
+    font-size: 11px; box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+  }
+</style>
+</head><body><div id="map"></div>
+<script>
+var map=L.map('map',{zoomControl:false}).setView([${center[0]},${center[1]}], 18);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png',{maxZoom:22,subdomains:'abcd'}).addTo(map);
+
+var geojsonLayer = null;
+function styleFeature(feature) {
+  var baseStyle = { weight: 2, fillOpacity: 0.3 };
+  if (feature.properties.type === 'block') {
+    return Object.assign(baseStyle, { color: feature.properties.color || '#64748b', fillOpacity: 0.15 });
+  } else if (feature.properties.type === 'room') {
+    return Object.assign(baseStyle, { color: '#3b82f6', weight: 1, fillOpacity: 0.2 });
+  } else if (feature.properties.type === 'path') {
+    return { color: '#c084fc', weight: 4, opacity: 0.6, dashArray: '5, 5' };
+  } else if (feature.properties.type === 'map_layer') {
+    return Object.assign(baseStyle, { 
+      color: feature.properties.color || '#ef4444', 
+      fillColor: feature.properties.color || '#ef4444',
+      fillOpacity: 0.4, weight: 2
+    });
+  }
+  return baseStyle;
+}
+
+window.updateGeoJSON = function(data, floorId) {
+  if (geojsonLayer) { map.removeLayer(geojsonLayer); }
+  geojsonLayer = L.geoJSON(data, {
+    filter: function(f) {
+      if ((f.properties.type === 'room' || f.properties.type === 'path') && f.properties.floorId) {
+        if (floorId && f.properties.floorId !== floorId) return false;
+      }
+      return true; // Always show blocks and custom map layers
+    },
+    style: styleFeature,
+    onEachFeature: function(f, l) {
+      if (f.properties && f.properties.name) {
+        l.bindTooltip(f.properties.name, { permanent: f.properties.type === 'map_layer', direction: 'center', className: 'layer-label' });
+      }
+    }
+  }).addTo(map);
+};
+
+window.panTo = function(lat, lng) {
+  map.flyTo([lat, lng], 20, { duration: 1.5 });
+};
+
+// Initialize MapLayers
+${geoJSONData ? `window.updateGeoJSON(${JSON.stringify(geoJSONData)}, '');` : ''}
+
+</script></body></html>`;
+}
 
 export default function MapScreen({ navigation, route }) {
   const { colors } = useContext(ThemeContext);
   const [mapData, setMapData] = useState(null);
+  const [geoJSONData, setGeoJSONData] = useState(null);
   const [loading, setLoading] = useState(true);
   
   const [campusId, setCampusId] = useState(route.params?.campusId || null);
   const [selectedBlock, setSelectedBlock] = useState(null);
   const [selectedFloor, setSelectedFloor] = useState(null);
+
+  const webViewRef = useRef(null);
+  const socketRef = useRef(null);
+  const panelHeightAnim = useRef(new Animated.Value(SH * 0.45)).current; // Bottom sheet height
 
   useEffect(() => {
     if (route.params?.campusId) {
@@ -33,29 +112,103 @@ export default function MapScreen({ navigation, route }) {
   useEffect(() => {
     if (campusId) {
       setLoading(true);
-      getMapData(campusId).then(data => {
-        setMapData(data);
+      Promise.all([
+        getMapData(campusId),
+        getGeoJSONMapData(campusId)
+      ]).then(([hierarchy, geojson]) => {
+        setMapData(hierarchy);
+        setGeoJSONData(geojson);
         setLoading(false);
       }).catch(() => setLoading(false));
+
+      socketRef.current = io(SOCKET_URL);
+      socketRef.current.emit('join_campus', campusId);
+      socketRef.current.on('map_updated', () => {
+        getGeoJSONMapData(campusId).then(setGeoJSONData).catch(console.warn);
+      });
+
+      return () => { if (socketRef.current) socketRef.current.disconnect(); };
     }
   }, [campusId]);
 
+  // Inject GeoJSON when it changes or when floor changes
+  useEffect(() => {
+    if (geoJSONData && webViewRef.current) {
+      const floorId = selectedFloor?._id || '';
+      webViewRef.current.injectJavaScript(`
+        if (typeof window.updateGeoJSON === 'function') {
+          window.updateGeoJSON(${JSON.stringify(geoJSONData)}, '${floorId}');
+        }
+        true;
+      `);
+    }
+  }, [geoJSONData, selectedFloor]);
+
+  // Animate panel height based on state
+  useEffect(() => {
+    const targetHeight = (selectedFloor || selectedBlock) ? SH * 0.55 : SH * 0.45;
+    Animated.timing(panelHeightAnim, {
+      toValue: targetHeight,
+      duration: 300,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false
+    }).start();
+  }, [selectedBlock, selectedFloor]);
+
+  const handleBlockSelect = (block) => {
+    setSelectedBlock(block);
+    if (block.shape?.points?.[0]) {
+      // Pan map to block
+      webViewRef.current?.injectJavaScript(`
+        if (typeof window.panTo === 'function') {
+          window.panTo(${block.shape.points[0].x}, ${block.shape.points[0].y});
+        }
+        true;
+      `);
+    }
+  };
+
+  const handleBack = () => {
+    if (selectedFloor) setSelectedFloor(null);
+    else if (selectedBlock) setSelectedBlock(null);
+  };
+
+  const mapHtml = useMemo(() => {
+    const center = mapData?.blocks?.[0]?.shape?.points?.[0];
+    return buildCampusMapHTML(geoJSONData, center);
+  }, [geoJSONData, mapData]);
+
   const s = StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.bg },
-    header: {
-      paddingTop: 16,
-      paddingHorizontal: 20, paddingBottom: 20,
+    mapContainer: { flex: 1 },
+    bottomSheet: {
+      position: 'absolute',
+      bottom: 0,
+      width: '100%',
       backgroundColor: colors.card,
-      borderBottomWidth: 1, borderBottomColor: colors.border,
-      flexDirection: "row", alignItems: "center"
+      borderTopLeftRadius: RADIUS.xl,
+      borderTopRightRadius: RADIUS.xl,
+      ...SHADOWS.lg,
+      shadowColor: '#000', shadowOffset: { width: 0, height: -5 }, shadowOpacity: 0.3, shadowRadius: 10,
+      elevation: 20,
+    },
+    sheetHeader: {
+      flexDirection: 'row', alignItems: 'center',
+      paddingTop: 20, paddingHorizontal: 20, paddingBottom: 16,
+      borderBottomWidth: 1, borderBottomColor: colors.border
+    },
+    dragHandle: {
+      width: 40, height: 4, borderRadius: 2,
+      backgroundColor: colors.border,
+      alignSelf: 'center', position: 'absolute', top: 8
     },
     title: { fontSize: 20, fontWeight: "800", color: colors.text, marginLeft: 12 },
-    backBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.surface, alignItems: "center", justifyContent: "center" },
-    list: { padding: 20 },
+    backBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.surface, alignItems: "center", justifyContent: "center" },
+    list: { padding: 20, paddingBottom: 100 },
     card: {
       flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-      backgroundColor: colors.card, padding: 16, borderRadius: RADIUS.md,
-      marginBottom: 12, borderWidth: 1, borderColor: colors.border, ...SHADOWS.sm
+      backgroundColor: colors.surface, padding: 16, borderRadius: RADIUS.md,
+      marginBottom: 12, borderWidth: 1, borderColor: colors.border
     },
     cardIcon: { width: 44, height: 44, borderRadius: RADIUS.sm, backgroundColor: colors.primary + "18", alignItems: "center", justifyContent: "center", marginRight: 14 },
     cardTitle: { fontSize: 16, fontWeight: "700", color: colors.text },
@@ -68,16 +221,10 @@ export default function MapScreen({ navigation, route }) {
     return (
       <View style={[s.container, { justifyContent: "center", alignItems: "center" }]}>
         <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={{ color: colors.textSec, marginTop: 12, fontSize: 14 }}>Loading directory…</Text>
+        <Text style={{ color: colors.textSec, marginTop: 12, fontSize: 14 }}>Loading map data…</Text>
       </View>
     );
   }
-
-  const handleBack = () => {
-    if (selectedFloor) setSelectedFloor(null);
-    else if (selectedBlock) setSelectedBlock(null);
-    // At root block level in a tab — don't navigate away
-  };
 
   const renderContent = () => {
     if (selectedFloor) {
@@ -116,7 +263,7 @@ export default function MapScreen({ navigation, route }) {
             </View>
             <View>
               <Text style={s.cardTitle}>{floor.name}</Text>
-              <Text style={s.cardMeta}>Select to view rooms</Text>
+              <Text style={s.cardMeta}>Select to view rooms on map</Text>
             </View>
           </View>
           <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
@@ -136,18 +283,18 @@ export default function MapScreen({ navigation, route }) {
 
     return Object.keys(domains).map(domain => (
       <View key={domain} style={{ marginBottom: 24 }}>
-        <Text style={{ fontSize: 16, fontWeight: "800", color: colors.textSec, marginBottom: 12, marginLeft: 4, textTransform: "uppercase", letterSpacing: 1 }}>
+        <Text style={{ fontSize: 14, fontWeight: "800", color: colors.textSec, marginBottom: 12, marginLeft: 4, textTransform: "uppercase", letterSpacing: 1 }}>
           {domain}
         </Text>
         {domains[domain].map(block => (
-          <TouchableOpacity key={block._id} style={s.card} activeOpacity={0.7} onPress={() => setSelectedBlock(block)}>
+          <TouchableOpacity key={block._id} style={s.card} activeOpacity={0.7} onPress={() => handleBlockSelect(block)}>
             <View style={{ flexDirection: "row", alignItems: "center" }}>
               <View style={s.cardIcon}>
                 <Ionicons name="business" size={20} color={colors.primary} />
               </View>
               <View>
                 <Text style={s.cardTitle}>{block.name}</Text>
-                <Text style={s.cardMeta}>Tap to browse floors</Text>
+                <Text style={s.cardMeta}>Tap to zoom & browse floors</Text>
               </View>
             </View>
             <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
@@ -159,19 +306,39 @@ export default function MapScreen({ navigation, route }) {
 
   return (
     <View style={s.container}>
-      <View style={s.header}>
-        {(selectedBlock || selectedFloor) ? (
-          <TouchableOpacity style={s.backBtn} onPress={handleBack}>
-            <Ionicons name="arrow-back" size={20} color={colors.text} />
-          </TouchableOpacity>
-        ) : null}
-        <Text style={s.title}>
-          {selectedFloor ? selectedFloor.name : selectedBlock ? selectedBlock.name : "Campus Directory"}
-        </Text>
+      {/* 🗺 FULL SCREEN MAP */}
+      <View style={s.mapContainer}>
+        {geoJSONData && (
+          <WebView
+            ref={webViewRef}
+            source={{ html: mapHtml }}
+            style={{ flex: 1, backgroundColor: '#0a0e17' }}
+            scrollEnabled={false}
+            bounces={false}
+            showsHorizontalScrollIndicator={false}
+            showsVerticalScrollIndicator={false}
+            originWhitelist={['*']}
+          />
+        )}
       </View>
-      <ScrollView contentContainerStyle={s.list}>
-        {renderContent()}
-      </ScrollView>
+
+      {/* 📑 FLOATING BOTTOM SHEET DIRECTORY */}
+      <Animated.View style={[s.bottomSheet, { height: panelHeightAnim }]}>
+        <View style={s.dragHandle} />
+        <View style={s.sheetHeader}>
+          {(selectedBlock || selectedFloor) ? (
+            <TouchableOpacity style={s.backBtn} onPress={handleBack}>
+              <Ionicons name="arrow-back" size={20} color={colors.text} />
+            </TouchableOpacity>
+          ) : null}
+          <Text style={s.title}>
+            {selectedFloor ? selectedFloor.name : selectedBlock ? selectedBlock.name : "Campus Directory"}
+          </Text>
+        </View>
+        <ScrollView contentContainerStyle={s.list} showsVerticalScrollIndicator={false}>
+          {renderContent()}
+        </ScrollView>
+      </Animated.View>
     </View>
   );
 }

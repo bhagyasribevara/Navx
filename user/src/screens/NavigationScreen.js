@@ -11,7 +11,8 @@ import * as Speech from "expo-speech";
 import * as Haptics from "expo-haptics";
 import { ThemeContext } from "../context/ThemeContext";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { findRouteToRoom, findRouteToExit } from "../api";
+import { findRouteToRoom, findRouteToExit, getGeoJSONMapData, SOCKET_URL } from "../api";
+import { io } from "socket.io-client";
 import { PositionEngine, StepDetector } from "../positioning";
 import { SHADOWS, RADIUS, ROOM_COLORS } from "../theme/designSystem";
 
@@ -55,23 +56,9 @@ async function fetchStreetRoute(lat1, lon1, lat2, lon2) {
   return null;
 }
 
-function buildNavMapHTML(rooms, pathPoints, initialPos, targetRoom) {
+function buildNavMapHTML(geoJSONData, pathPoints, initialPos, targetRoom) {
   const center = initialPos ? [initialPos.x, initialPos.y] : (pathPoints?.length ? [pathPoints[0].x, pathPoints[0].y] : [18.4665, 83.6629]);
   
-  const roomGeoJSON = rooms.map(r => {
-    const s = r.shape;
-    if (!s) return '';
-    const isSel = targetRoom?._id === r._id;
-    const c = isSel ? '#ef4444' : '#64748b';
-    let coords = '';
-    if (s.points && s.points.length > 0) {
-      coords = s.points.map(p => `[${p.x},${p.y}]`).join(',');
-    } else if (s.x && s.y) {
-      coords = `[${s.x},${s.y}],[${s.x},${s.y+(s.width||0.0003)}],[${s.x+(s.height||0.0002)},${s.y+(s.width||0.0003)}],[${s.x+(s.height||0.0002)},${s.y}]`;
-    } else { return ''; }
-    return `L.polygon([${coords}], {color:'${c}', fillColor:'${c}', fillOpacity:${isSel?0.6:0.2}, weight:${isSel?3:1}}).addTo(map);`;
-  }).join('\n');
-
   const destX = targetRoom?.shape?.points?.[0]?.x || targetRoom?.shape?.x;
   const destY = targetRoom?.shape?.points?.[0]?.y || targetRoom?.shape?.y;
   const destDot = (destX && destY) ? `L.circleMarker([${destX},${destY}],{radius:9,color:'#fff',weight:2,fillColor:'#3b82f6',fillOpacity:1}).addTo(map);` : '';
@@ -87,12 +74,62 @@ function buildNavMapHTML(rooms, pathPoints, initialPos, targetRoom) {
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-<style>body{margin:0;padding:0}#map{width:100%;height:100vh}</style>
+<style>
+  body{margin:0;padding:0;background-color:#0a0e17;}
+  #map{width:100%;height:100vh;background:#0a0e17;}
+  .leaflet-container { background: #0a0e17 !important; }
+  .layer-label {
+    background: rgba(10, 14, 23, 0.8); border: 1px solid rgba(255,255,255,0.2);
+    color: white; font-weight: bold; padding: 2px 6px; border-radius: 4px;
+    font-size: 11px; box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+  }
+</style>
 </head><body><div id="map"></div>
 <script>
 var map=L.map('map',{zoomControl:false}).setView([${center[0]},${center[1]}], 19);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:22}).addTo(map);
-${roomGeoJSON}
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png',{maxZoom:22,subdomains:'abcd'}).addTo(map);
+
+var geojsonLayer = null;
+function styleFeature(feature) {
+  var baseStyle = { weight: 2, fillOpacity: 0.3 };
+  if (feature.properties.type === 'block') {
+    return Object.assign(baseStyle, { color: feature.properties.color || '#64748b', fillOpacity: 0.1 });
+  } else if (feature.properties.type === 'room') {
+    var isTarget = feature.properties.id === '${targetRoom?._id || ''}';
+    return Object.assign(baseStyle, { color: isTarget ? '#ef4444' : '#3b82f6', weight: isTarget ? 3 : 1, fillOpacity: isTarget ? 0.6 : 0.2 });
+  } else if (feature.properties.type === 'path') {
+    return { color: '#c084fc', weight: 4, opacity: 0.6, dashArray: '5, 5' };
+  } else if (feature.properties.type === 'map_layer') {
+    return Object.assign(baseStyle, { 
+      color: feature.properties.color || '#ef4444', 
+      fillColor: feature.properties.color || '#ef4444',
+      fillOpacity: 0.4, weight: 2
+    });
+  }
+  return baseStyle;
+}
+
+window.updateGeoJSON = function(data, floorId) {
+  if (geojsonLayer) { map.removeLayer(geojsonLayer); }
+  geojsonLayer = L.geoJSON(data, {
+    filter: function(f) {
+      if ((f.properties.type === 'room' || f.properties.type === 'path') && f.properties.floorId) {
+        if (floorId && f.properties.floorId !== floorId) return false;
+      }
+      return true;
+    },
+    style: styleFeature,
+    onEachFeature: function(f, l) {
+      if (f.properties && f.properties.name) {
+        l.bindTooltip(f.properties.name, { permanent: f.properties.type === 'map_layer', direction: 'center', className: 'layer-label' });
+      }
+    }
+  }).addTo(map);
+};
+
+// Initialize MapLayers
+${geoJSONData ? `window.updateGeoJSON(${JSON.stringify(geoJSONData)}, '${targetRoom?.floorId || ''}');` : ''}
+
 ${routeLine}
 ${destDot}
 
@@ -161,6 +198,9 @@ export default function NavigationScreen({ navigation, route }) {
   const [completedFloorTransitions, setCompletedFloorTransitions] = useState(0);
   const [totalFloorTransitions, setTotalFloorTransitions] = useState(0);
 
+  const [geoJSONData, setGeoJSONData] = useState(null);
+  const socketRef = useRef(null);
+
   const webViewRef = useRef(null);
   const posEngine = useRef(new PositionEngine()).current;
   const stepDetector = useRef(null);
@@ -174,15 +214,37 @@ export default function NavigationScreen({ navigation, route }) {
   // Keep routeData in a stable ref for startNavigation to avoid stale state
   const routeDataStableRef = useRef(routeData);
   const mapHtml = React.useMemo(() => {
+    return buildNavMapHTML(geoJSONData, routeData?.path, initialUserPosRef.current, targetRoom);
+  }, [geoJSONData, routeData, targetRoom]);
+
+  // Inject updated GeoJSON when it changes without reloading WebView
+  useEffect(() => {
     const targetFloorId = targetRoom?.floorId || currentFloor || route.params?.floorId || mapData?.floors?.[0]?._id;
-    let floorRooms = [];
-    if (targetFloorId) {
-      floorRooms = mapData?.rooms?.filter(r => r.floorId === targetFloorId) || [];
-    } else {
-      floorRooms = mapData?.rooms || [];
+    if (geoJSONData && webViewRef.current) {
+      webViewRef.current.injectJavaScript(`
+        if (typeof window.updateGeoJSON === 'function') {
+          window.updateGeoJSON(${JSON.stringify(geoJSONData)}, '${targetFloorId || ''}');
+        }
+        true;
+      `);
     }
-    return buildNavMapHTML(floorRooms, routeData?.path, initialUserPosRef.current, targetRoom);
-  }, [mapData, routeData, targetRoom, currentFloor, route.params?.floorId]);
+  }, [geoJSONData, currentFloor, targetRoom, mapData, route.params?.floorId]);
+
+  // Load GeoJSON and socket connection
+  useEffect(() => {
+    if (campusId) {
+      getGeoJSONMapData(campusId).then(setGeoJSONData).catch(console.warn);
+
+      socketRef.current = io(SOCKET_URL);
+      socketRef.current.emit('join_campus', campusId);
+      socketRef.current.on('map_updated', () => {
+        console.log("Real-time map update received");
+        getGeoJSONMapData(campusId).then(setGeoJSONData).catch(console.warn);
+      });
+
+      return () => { if (socketRef.current) socketRef.current.disconnect(); };
+    }
+  }, [campusId]);
 
   // Push user location updates directly into the WebView via JS
   useEffect(() => {

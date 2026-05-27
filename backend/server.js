@@ -7,8 +7,27 @@ const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
 const path = require('path');
+const http = require('http');
+const { Server } = require('socket.io');
 
 const app = express();
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: { origin: '*' }
+});
+
+app.set('io', io);
+
+io.on('connection', (socket) => {
+  console.log('Socket client connected:', socket.id);
+  socket.on('join_campus', (campusId) => {
+    socket.join(campusId);
+    console.log(`Socket ${socket.id} joined campus ${campusId}`);
+  });
+  socket.on('disconnect', () => {
+    console.log('Socket client disconnected:', socket.id);
+  });
+});
 
 // Middleware
 app.use(cors());
@@ -98,6 +117,7 @@ app.use('/api/analytics', require('./routes/analytics'));
 app.use('/api/ai', require('./routes/ai'));
 app.use('/api/admin', require('./routes/admin'));
 app.use('/api/weather', require('./routes/weather'));
+app.use('/api/mapLayers', require('./routes/mapLayers'));
 
 // Health check (includes MongoDB status)
 app.get('/api/health', (req, res) => {
@@ -116,6 +136,6 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log(`🚀 NavX Backend running on port ${PORT}`);
 });

@@ -355,7 +355,7 @@ export default function HomeScreen({ navigation }) {
       </View>
 
       {/* Banner */}
-      <TouchableOpacity style={s.banner} activeOpacity={0.9} onPress={() => navigation.navigate("Map")}>
+      <TouchableOpacity style={s.banner} activeOpacity={0.9} onPress={() => navigation.navigate("Map", { campusId: activeCampusId })}>
         <View style={[s.bannerInner, { backgroundColor: "#4f46e5" }]}>
           <View style={[s.bannerInner, { padding: 0 }]}>
             <View style={{ flexDirection: "row", position: "absolute", right: 20, top: -10, opacity: 0.15 }}>
@@ -368,7 +368,7 @@ export default function HomeScreen({ navigation }) {
           </View>
           <Text style={s.bannerTitle}>Interactive Floor Map</Text>
           <Text style={s.bannerSub}>Explore with real-time indoor positioning</Text>
-          <TouchableOpacity style={s.bannerBtn} onPress={() => navigation.navigate("Map")}>
+          <TouchableOpacity style={s.bannerBtn} onPress={() => navigation.navigate("Map", { campusId: activeCampusId })}>
             <Ionicons name="map" size={16} color="#4f46e5" />
             <Text style={s.bannerBtnText}>Open Map</Text>
           </TouchableOpacity>
