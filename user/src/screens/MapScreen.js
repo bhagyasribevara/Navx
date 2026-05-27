@@ -9,6 +9,7 @@ import { ThemeContext } from "../context/ThemeContext";
 import { getMapData, getCampuses, getGeoJSONMapData, SOCKET_URL } from "../api";
 import { io } from "socket.io-client";
 import { SHADOWS, RADIUS, ROOM_COLORS } from "../theme/designSystem";
+import * as Location from 'expo-location';
 
 const { height: SH, width: SW } = Dimensions.get('window');
 
@@ -33,7 +34,7 @@ function buildCampusMapHTML(geoJSONData, centerCoords) {
 </head><body><div id="map"></div>
 <script>
 var map=L.map('map',{zoomControl:false}).setView([${center[0]},${center[1]}], 18);
-L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png',{maxZoom:22,subdomains:'abcd'}).addTo(map);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:22}).addTo(map);
 
 var geojsonLayer = null;
 function styleFeature(feature) {
@@ -58,10 +59,8 @@ window.updateGeoJSON = function(data, floorId) {
   if (geojsonLayer) { map.removeLayer(geojsonLayer); }
   geojsonLayer = L.geoJSON(data, {
     filter: function(f) {
-      if ((f.properties.type === 'room' || f.properties.type === 'path') && f.properties.floorId) {
-        if (floorId && f.properties.floorId !== floorId) return false;
-      }
-      return true; // Always show blocks and custom map layers
+      if (f.properties.type === 'path' || f.properties.type === 'node' || f.properties.type === 'block' || f.properties.type === 'room') return false;
+      return true;
     },
     style: styleFeature,
     onEachFeature: function(f, l) {
@@ -72,12 +71,46 @@ window.updateGeoJSON = function(data, floorId) {
   }).addTo(map);
 };
 
+const userIconHtml = \`
+  <style>
+    @keyframes pulseGlow {
+      0% { transform: scale(0.85); opacity: 0.8; }
+      50% { transform: scale(1.4); opacity: 0.3; }
+      100% { transform: scale(0.85); opacity: 0.8; }
+    }
+  </style>
+  <div style="position:relative; width:70px; height:70px; display:flex; align-items:center; justify-content:center;">
+    <div style="position:absolute; width:100%; height:100%; background:radial-gradient(circle, rgba(139, 92, 246, 0.45) 0%, rgba(139, 92, 246, 0) 65%); border-radius:50%; animation: pulseGlow 2.5s infinite;"></div>
+    <div id="user-puck-inner" style="position:relative; width:30px; height:30px; background:linear-gradient(135deg, #A855F7, #6D28D9); border-radius:50%; box-shadow: 0 6px 16px rgba(109, 40, 217, 0.6); display:flex; align-items:center; justify-content:center; border: 2px solid rgba(255,255,255,0.4); transition: transform 0.2s ease-out;">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="white" style="transform: translateY(-1px);">
+        <path d="M12 2L4 20l8-4 8 4z"/>
+      </svg>
+    </div>
+  </div>
+\`;
+const customUserIcon = L.divIcon({ className: '', html: userIconHtml, iconSize: [70, 70], iconAnchor: [35, 35] });
+
+window.userMarker = null;
+
+window.updateUserPos = function(lat, lng, heading) {
+  if (!window.userMarker) {
+    window.userMarker = L.marker([lat, lng], {icon: customUserIcon, zIndexOffset: 1000}).addTo(map);
+  } else {
+    window.userMarker.setLatLng([lat, lng]);
+  }
+  if (heading !== undefined && heading !== null) {
+    const puck = document.getElementById('user-puck-inner');
+    if (puck) {
+      puck.style.transform = 'rotate(' + heading + 'deg)';
+    }
+  }
+};
+
 window.panTo = function(lat, lng) {
   map.flyTo([lat, lng], 20, { duration: 1.5 });
 };
 
-// Initialize MapLayers
-${geoJSONData ? `window.updateGeoJSON(${JSON.stringify(geoJSONData)}, '');` : ''}
+${geoJSONData ? `window.updateGeoJSON(${JSON.stringify(geoJSONData)}, '${centerCoords?.floorId || ''}');` : ''}
 
 </script></body></html>`;
 }
@@ -85,12 +118,14 @@ ${geoJSONData ? `window.updateGeoJSON(${JSON.stringify(geoJSONData)}, '');` : ''
 export default function MapScreen({ navigation, route }) {
   const { colors } = useContext(ThemeContext);
   const [mapData, setMapData] = useState(null);
-  const [geoJSONData, setGeoJSONData] = useState(null);
   const [loading, setLoading] = useState(true);
   
   const [campusId, setCampusId] = useState(route.params?.campusId || null);
   const [selectedBlock, setSelectedBlock] = useState(null);
   const [selectedFloor, setSelectedFloor] = useState(null);
+  const [geoJSONData, setGeoJSONData] = useState(null);
+  const [userPos, setUserPos] = useState(null);
+  const [heading, setHeading] = useState(0);
 
   const webViewRef = useRef(null);
   const socketRef = useRef(null);
@@ -143,6 +178,39 @@ export default function MapScreen({ navigation, route }) {
       `);
     }
   }, [geoJSONData, selectedFloor]);
+
+  // Request location permissions and track user location
+  useEffect(() => {
+    let locationSubscription = null;
+    (async () => {
+      let { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') return;
+
+      locationSubscription = await Location.watchPositionAsync(
+        { accuracy: Location.Accuracy.High, timeInterval: 2000, distanceInterval: 1 },
+        (loc) => {
+          setUserPos({ x: loc.coords.latitude, y: loc.coords.longitude });
+          setHeading(loc.coords.heading || 0);
+        }
+      );
+    })();
+    return () => {
+      if (locationSubscription) locationSubscription.remove();
+    };
+  }, []);
+
+  // Push user location updates directly into the WebView via JS
+  useEffect(() => {
+    if (userPos && webViewRef.current) {
+      webViewRef.current.injectJavaScript(`
+        if (typeof window.updateUserPos === 'function') {
+          window.updateUserPos(${userPos.x}, ${userPos.y}, ${heading});
+        }
+        true;
+      `);
+    }
+  }, [userPos, heading]);
+
 
   // Animate panel height based on state
   useEffect(() => {

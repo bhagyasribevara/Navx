@@ -18,8 +18,14 @@ import { SHADOWS, RADIUS, ROOM_COLORS } from "../theme/designSystem";
 
 const { width: SW, height: SH } = Dimensions.get("window");
 
-// ── Haversine helper (matches backend formula) ──
+// 🌍 Haversine helper (matches backend formula) 🌍
 const EARTH_R = 6_371_000;
+
+// Helper to format text for better Speech pronunciation (e.g., "5-g-03" -> "5 g 0 3")
+const formatSpeech = (text) => {
+  if (!text) return "";
+  return text.replace(/-/g, " ");
+};
 const toRad = d => d * Math.PI / 180;
 function haversine(lat1, lon1, lat2, lon2) {
   const dLat = toRad(lat2 - lat1), dLon = toRad(lon2 - lon1);
@@ -87,7 +93,7 @@ function buildNavMapHTML(geoJSONData, pathPoints, initialPos, targetRoom) {
 </head><body><div id="map"></div>
 <script>
 var map=L.map('map',{zoomControl:false}).setView([${center[0]},${center[1]}], 19);
-L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png',{maxZoom:22,subdomains:'abcd'}).addTo(map);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:22}).addTo(map);
 
 var geojsonLayer = null;
 function styleFeature(feature) {
@@ -113,7 +119,8 @@ window.updateGeoJSON = function(data, floorId) {
   if (geojsonLayer) { map.removeLayer(geojsonLayer); }
   geojsonLayer = L.geoJSON(data, {
     filter: function(f) {
-      if ((f.properties.type === 'room' || f.properties.type === 'path') && f.properties.floorId) {
+      if (f.properties.type === 'path' || f.properties.type === 'node') return false;
+      if (f.properties.type === 'room' && f.properties.floorId) {
         if (floorId && f.properties.floorId !== floorId) return false;
       }
       return true;
@@ -568,7 +575,7 @@ export default function NavigationScreen({ navigation, route }) {
                   }
                   floorMsg += '.';
 
-                  Speech.speak(floorMsg, { language: "en-US" });
+                  Speech.speak(formatSpeech(floorMsg), { language: "en-US" });
                   Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
 
                   // Track floor transition completion
@@ -586,7 +593,7 @@ export default function NavigationScreen({ navigation, route }) {
                 }
               } else {
                 // Normal (non-floor-change) step announcement
-                Speech.speak(`${nextDir.instruction}. ${Math.round(nextDir.distance)} meters.`, { language: "en-US" });
+                Speech.speak(formatSpeech(`${nextDir.instruction}. ${Math.round(nextDir.distance)} meters.`), { language: "en-US" });
               }
             }
           } else {
@@ -595,7 +602,7 @@ export default function NavigationScreen({ navigation, route }) {
             setLiveDistance(0);
             setLiveStepDist(0);
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            if (voiceEnabled) Speech.speak("You have arrived at " + (targetRoom?.name || "your destination"), { language: "en-US" });
+            if (voiceEnabled) Speech.speak(formatSpeech("You have arrived at " + (targetRoom?.name || "your destination")), { language: "en-US" });
             Animated.spring(arrivedAnim, { toValue: 1, friction: 8, tension: 40, useNativeDriver: true }).start();
           }
         }
@@ -637,7 +644,7 @@ export default function NavigationScreen({ navigation, route }) {
             : '';
 
           const startInstruction = activeRouteData.directions?.[0]?.instruction || "Follow the highlighted path.";
-          Speech.speak(prefix + floorChangeNote + startInstruction, { language: "en-US", rate: 0.9 });
+          Speech.speak(formatSpeech(prefix + floorChangeNote + startInstruction), { language: "en-US", rate: 0.9 });
         }
         Animated.spring(dirCardAnim, { toValue: 1, tension: 80, friction: 10, useNativeDriver: true }).start();
       }

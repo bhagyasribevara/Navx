@@ -11,6 +11,7 @@ import * as Speech from "expo-speech";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import Svg, { Path, Defs, LinearGradient, Stop, Rect, Ellipse, Circle } from "react-native-svg";
 import { ThemeContext } from "../context/ThemeContext";
+import { BlurView } from "expo-blur";
 
 const AnimatedPath = Animated.createAnimatedComponent(Path);
 
@@ -43,31 +44,19 @@ function getDirIcon(dirType) {
   }
 }
 
-// Curve calculation parameters
-function getCurveParams(dirType, w, h) {
-  const startX = w / 2;
-  const startY = h;
-  const endY = h * 0.15; // Horizon
-  
-  if (dirType.includes("left")) {
-    return { p0: {x: startX, y: startY}, p1: {x: startX, y: h * 0.6}, p2: {x: -w * 0.2, y: endY} };
-  } else if (dirType.includes("right")) {
-    return { p0: {x: startX, y: startY}, p1: {x: startX, y: h * 0.6}, p2: {x: w * 1.2, y: endY} };
-  } else {
-    return { p0: {x: startX, y: startY}, p1: {x: startX, y: h * 0.5}, p2: {x: startX, y: endY} };
-  }
-}
+// Helper to format text for better Speech pronunciation (e.g., "5-g-03" -> "5 g 0 3")
+const formatSpeech = (text) => {
+  if (!text) return "";
+  return text.replace(/-/g, " ");
+};
 
-function getPointOnCurve(t, p0, p1, p2) {
-  const x = Math.pow(1 - t, 2) * p0.x + 2 * (1 - t) * t * p1.x + Math.pow(t, 2) * p2.x;
-  const y = Math.pow(1 - t, 2) * p0.y + 2 * (1 - t) * t * p1.y + Math.pow(t, 2) * p2.y;
-  return { x, y };
-}
-
-function getDerivativeAngle(t, p0, p1, p2) {
-  const dx = 2 * (1 - t) * (p1.x - p0.x) + 2 * t * (p2.x - p1.x);
-  const dy = 2 * (1 - t) * (p1.y - p0.y) + 2 * t * (p2.y - p1.y);
-  return Math.atan2(dy, dx);
+function getBearing(lat1, lng1, lat2, lng2) {
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const l1 = lat1 * Math.PI / 180;
+  const l2 = lat2 * Math.PI / 180;
+  const y = Math.sin(dLng) * Math.cos(l2);
+  const x = Math.cos(l1) * Math.sin(l2) - Math.sin(l1) * Math.cos(l2) * Math.cos(dLng);
+  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
 }
 
 // Generate an SVG path for a chevron pointing along the path angle
@@ -92,9 +81,58 @@ function getChevronPath(cx, cy, angle, size) {
   return `M ${rl.x} ${rl.y} L ${rt.x} ${rt.y} L ${rr.x} ${rr.y}`;
 }
 
-// Generate the SVG Path for the main road
-function getRoadPath(p0, p1, p2) {
-  return `M ${p0.x} ${p0.y} Q ${p1.x} ${p1.y} ${p2.x} ${p2.y}`;
+// Map real-world GPS coordinates to local SVG coordinates based on user heading
+function getProjectedPath(pathNodes, userLat, userLng, userHeading, w, h) {
+  // If we don't have enough data, draw a straight line ahead (default)
+  if (!userLat || !userLng || !pathNodes || pathNodes.length === 0) {
+    return { pathString: `M ${w/2} ${h} L ${w/2} ${h*0.2}`, chevrons: [] };
+  }
+
+  const SCALE = 25; // pixels per meter on the projected ground
+  const startX = w / 2;
+  const startY = h;
+
+  let points = [{ x: startX, y: startY }];
+  let chevrons = [];
+
+  for (let i = 0; i < pathNodes.length; i++) {
+    const node = pathNodes[i];
+    const dist = haversineDist(userLat, userLng, node.x, node.y);
+    const bearing = getBearing(userLat, userLng, node.x, node.y);
+    
+    // Convert true bearing into relative screen angle based on compass
+    let relAngle = (bearing - userHeading + 360) % 360;
+    
+    // Normalize relative angle to -180 to +180
+    if (relAngle > 180) relAngle -= 360;
+
+    const rad = relAngle * (Math.PI / 180);
+    // X goes right, Y goes up (which means decreasing Y in SVG)
+    const px = startX + (dist * SCALE) * Math.sin(rad);
+    const py = startY - (dist * SCALE) * Math.cos(rad);
+
+    points.push({ x: px, y: py });
+  }
+
+  // Generate polyline
+  let pathString = `M ${points[0].x} ${points[0].y}`;
+  for (let i = 1; i < points.length; i++) {
+    pathString += ` L ${points[i].x} ${points[i].y}`;
+    
+    const dx = points[i].x - points[i-1].x;
+    const dy = points[i].y - points[i-1].y;
+    const segDist = Math.sqrt(dx*dx + dy*dy);
+    const angle = Math.atan2(dy, dx);
+
+    const numChevs = Math.floor(segDist / 60);
+    for (let c = 1; c <= numChevs; c++) {
+      const cx = points[i-1].x + dx * (c / (numChevs + 1));
+      const cy = points[i-1].y + dy * (c / (numChevs + 1));
+      chevrons.push(getChevronPath(cx, cy, angle, 45));
+    }
+  }
+
+  return { pathString, chevrons };
 }
 
 function haversineDist(lat1, lng1, lat2, lng2) {
@@ -146,6 +184,7 @@ export default function ARScreen({ navigation, route }) {
   const [liveDistance, setLiveDistance] = useState(routeData?.distance || 0);
   const [liveStepDist, setLiveStepDist] = useState(Math.round(routeData?.directions?.[0]?.distance || 0));
   const [arrived, setArrived] = useState(false);
+  const [userLoc, setUserLoc] = useState(null);
 
   // Animations
   const floatAnim = useRef(new Animated.Value(0)).current;
@@ -215,6 +254,7 @@ export default function ARScreen({ navigation, route }) {
         (loc) => {
           const lat = loc.coords.latitude;
           const lng = loc.coords.longitude;
+          setUserLoc({ lat, lng });
 
           const rData = routeDataRef.current;
           const cStep = currentStepRef.current;
@@ -241,12 +281,12 @@ export default function ARScreen({ navigation, route }) {
               setLiveStepDist(Math.round(rData.directions[cStep + 1]?.distance || 0));
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
               const nextInst = rData.directions[cStep + 1]?.instruction;
-              if (nextInst) Speech.speak(nextInst, { language: "en-US", rate: 0.9 });
+              if (nextInst) Speech.speak(formatSpeech(nextInst), { language: "en-US", rate: 0.9 });
             } else {
               setArrived(true);
               setLiveDistance(0); setLiveStepDist(0);
               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-              Speech.speak("You have arrived at your destination!");
+              Speech.speak(formatSpeech("You have arrived at your destination!"), { language: "en-US" });
             }
           }
         }
@@ -279,15 +319,16 @@ export default function ARScreen({ navigation, route }) {
   const roadW = SW * 1.5;
   const roadH = SH * 0.85;
   
-  const curveParams = getCurveParams(dirType, roadW, roadH);
-  const rPath = getRoadPath(curveParams.p0, curveParams.p1, curveParams.p2);
-  
-  // Generate 5 chevrons spaced evenly along the bezier curve
-  const chevrons = [0.15, 0.35, 0.55, 0.75, 0.9].map(t => {
-    const pt = getPointOnCurve(t, curveParams.p0, curveParams.p1, curveParams.p2);
-    const angle = getDerivativeAngle(t, curveParams.p0, curveParams.p1, curveParams.p2);
-    return getChevronPath(pt.x, pt.y, angle, 45);
-  });
+  // Calculate true real-world projected path based on upcoming coordinates
+  const upcomingNodes = routeData?.path?.slice(currentStep) || [];
+  const { pathString: rPath, chevrons } = getProjectedPath(
+    upcomingNodes, 
+    userLoc?.lat, 
+    userLoc?.lng, 
+    heading, 
+    roadW, 
+    roadH
+  );
 
   return (
     <View style={styles.container}>
@@ -302,34 +343,36 @@ export default function ARScreen({ navigation, route }) {
         {
           opacity: pathFade,
           transform: [
-            { perspective: 550 },
-            { rotateX: '74deg' },
-            { translateY: pathFade.interpolate({ inputRange: [0, 1], outputRange: [100, 0] }) }
+            { perspective: 800 },
+            { rotateX: '82deg' },
+            { translateY: pathFade.interpolate({ inputRange: [0, 1], outputRange: [200, 50] }) }
           ]
         }
       ]} pointerEvents="none">
         {/* REMOVED translateX transform so the oversized SVG inherently centers via alignItems: 'center' */}
         <Svg width={roadW} height={roadH}>
-          {/* Thick solid white outer border */}
-          <Path d={rPath} stroke="#ffffff" strokeWidth={180} strokeLinecap="butt" fill="none" opacity={0.95} />
-          {/* Inner solid blue painted road */}
-          <Path d={rPath} stroke="#2563eb" strokeWidth={160} strokeLinecap="butt" fill="none" opacity={0.95} />
+          {/* Outer Glow */}
+          <Path d={rPath} stroke="rgba(0, 240, 255, 0.15)" strokeWidth={240} strokeLinecap="round" fill="none" />
+          {/* Main Road Surface */}
+          <Path d={rPath} stroke="rgba(0, 240, 255, 0.35)" strokeWidth={180} strokeLinecap="round" fill="none" />
+          {/* Neon Borders */}
+          <Path d={rPath} stroke="#00f0ff" strokeWidth={12} fill="none" strokeDasharray="1, 20" strokeLinecap="round" opacity={0.8} />
           
-          {/* Flowing animated center line dashes */}
+          {/* Flowing animated center arrows (using dashes) */}
           <AnimatedPath
             d={rPath}
             stroke="#ffffff"
-            strokeWidth={10}
-            strokeLinecap="round"
+            strokeWidth={40}
+            strokeLinecap="butt"
             fill="none"
-            opacity={0.8}
-            strokeDasharray={[50, 40]}
+            opacity={0.9}
+            strokeDasharray={[30, 80]}
             strokeDashoffset={dashOffset}
           />
 
-          {/* Solid White Directional Chevrons along the curve */}
+          {/* Static Glowing Chevrons pointing to direction */}
           {chevrons.map((chPath, i) => (
-             <Path key={i} d={chPath} stroke="#ffffff" strokeWidth={32} strokeLinecap="round" strokeLinejoin="round" fill="none" opacity={0.95} />
+             <Path key={i} d={chPath} stroke="#00f0ff" strokeWidth={32} strokeLinecap="round" strokeLinejoin="round" fill="none" opacity={0.9} />
           ))}
         </Svg>
       </Animated.View>
@@ -352,11 +395,13 @@ export default function ARScreen({ navigation, route }) {
 
       {/* --- Top Futuristic Info Bar --- */}
       <View style={styles.topBar}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-          <Ionicons name="close" size={24} color="#fff" />
+        <TouchableOpacity style={styles.backBtnWrapper} onPress={() => navigation.goBack()}>
+          <BlurView intensity={80} tint="dark" style={styles.backBtn}>
+            <Ionicons name="close" size={24} color="#fff" />
+          </BlurView>
         </TouchableOpacity>
         
-        <View style={styles.metricsContainer}>
+        <BlurView intensity={80} tint="dark" style={styles.metricsContainer}>
           <View style={styles.metric}>
             <Text style={styles.metricLabel}>DISTANCE</Text>
             <Text style={styles.metricVal}>{liveDistance} m</Text>
@@ -376,30 +421,34 @@ export default function ARScreen({ navigation, route }) {
               <Text style={[styles.metricVal, { marginLeft: 6 }]}>{Math.round(heading)}°</Text>
             </View>
           </View>
-        </View>
+        </BlurView>
       </View>
 
       {/* --- Next-Turn Floating Glass Card --- */}
       {!arrived && (
-        <View style={styles.turnCard}>
-          <View style={[styles.turnIconBg, { backgroundColor: "#3b82f6" }]}>
-            <MaterialCommunityIcons name={dirIcon} size={42} color="#fff" />
-          </View>
-          <View style={styles.turnTextWrap}>
-            <Text style={[styles.turnDistLabel, { color: "#3b82f6" }]}>IN {liveStepDist} METERS</Text>
-            <Text style={styles.turnInstText} numberOfLines={2}>{dirLabel}</Text>
-          </View>
+        <View style={styles.turnCardWrapper}>
+          <BlurView intensity={80} tint="dark" style={styles.turnCard}>
+            <View style={[styles.turnIconBg, { backgroundColor: "#3b82f6" }]}>
+              <MaterialCommunityIcons name={dirIcon} size={42} color="#fff" />
+            </View>
+            <View style={styles.turnTextWrap}>
+              <Text style={[styles.turnDistLabel, { color: "#3b82f6" }]}>IN {liveStepDist} METERS</Text>
+              <Text style={styles.turnInstText} numberOfLines={2}>{dirLabel}</Text>
+            </View>
+          </BlurView>
         </View>
       )}
 
       {/* --- Arrived Overlay Card --- */}
       {arrived && (
-        <View style={[styles.turnCard, { backgroundColor: "rgba(16, 185, 129, 0.95)", borderColor: "#10b981" }]}>
-          <Ionicons name="checkmark-circle" size={48} color="#fff" />
-          <View style={styles.turnTextWrap}>
-            <Text style={[styles.turnInstText, { fontSize: 22 }]}>Destination Reached</Text>
-            <Text style={[styles.turnDistLabel, { color: "rgba(255,255,255,0.8)", marginTop: 4 }]}>{room?.name || "Target Location"}</Text>
-          </View>
+        <View style={styles.turnCardWrapper}>
+          <BlurView intensity={90} tint="dark" style={[styles.turnCard, { borderColor: "#10b981" }]}>
+            <Ionicons name="checkmark-circle" size={48} color="#10b981" />
+            <View style={styles.turnTextWrap}>
+              <Text style={[styles.turnInstText, { fontSize: 22 }]}>Destination Reached</Text>
+              <Text style={[styles.turnDistLabel, { color: "rgba(255,255,255,0.8)", marginTop: 4 }]}>{room?.name || "Target Location"}</Text>
+            </View>
+          </BlurView>
         </View>
       )}
       
@@ -443,32 +492,42 @@ const styles = StyleSheet.create({
     flexDirection: "row", alignItems: "center",
     zIndex: 10,
   },
+  backBtnWrapper: {
+    marginRight: 12,
+    borderRadius: 23,
+    overflow: "hidden",
+  },
   backBtn: {
-    width: 46, height: 46, borderRadius: 23,
-    backgroundColor: "rgba(15, 23, 42, 0.85)",
+    width: 46, height: 46,
+    backgroundColor: "rgba(15, 23, 42, 0.4)",
     alignItems: "center", justifyContent: "center",
     borderWidth: 1, borderColor: "rgba(255,255,255,0.15)",
-    marginRight: 12,
   },
   metricsContainer: {
     flex: 1, flexDirection: "row", alignItems: "center",
-    backgroundColor: "rgba(15, 23, 42, 0.85)",
+    backgroundColor: "rgba(15, 23, 42, 0.4)",
     borderRadius: 18, paddingVertical: 12, paddingHorizontal: 12,
     borderWidth: 1, borderColor: "rgba(255,255,255,0.15)",
+    overflow: "hidden",
   },
   metric: { flex: 1, alignItems: "center" },
   metricLabel: { color: "#94a3b8", fontSize: 10, fontWeight: "800", letterSpacing: 0.5, marginBottom: 4 },
   metricVal: { color: "#fff", fontSize: 16, fontWeight: "900" },
   divider: { width: 1, height: "80%", backgroundColor: "rgba(255,255,255,0.2)" },
 
-  turnCard: {
+  turnCardWrapper: {
     position: "absolute", bottom: Platform.OS === "ios" ? 50 : 40, alignSelf: "center",
-    width: SW * 0.92, backgroundColor: "rgba(15, 23, 42, 0.9)",
-    borderRadius: 24, padding: 18,
-    flexDirection: "row", alignItems: "center",
-    borderWidth: 1.5, borderColor: "rgba(0, 240, 255, 0.4)",
+    width: SW * 0.92,
+    borderRadius: 24,
     shadowColor: "#00f0ff", shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.35, shadowRadius: 20,
     elevation: 12, zIndex: 10,
+    overflow: "hidden",
+  },
+  turnCard: {
+    width: "100%", backgroundColor: "rgba(15, 23, 42, 0.4)",
+    padding: 18,
+    flexDirection: "row", alignItems: "center",
+    borderWidth: 1.5, borderColor: "rgba(0, 240, 255, 0.4)",
   },
   turnIconBg: {
     width: 68, height: 68, borderRadius: 20,
