@@ -54,20 +54,39 @@ export default function QRScanScreen({ navigation }) {
     Animated.spring(successAnim, { toValue: 1, tension: 80, friction: 8, useNativeDriver: true }).start();
 
     try {
-      if (data.startsWith("navx://campus/")) {
-        const campusId = data.split("navx://campus/")[1];
+      const lowerData = data.toLowerCase();
+      if (lowerData.startsWith("navx://campus/")) {
+        // Handle case-insensitive split
+        const prefixLength = "navx://campus/".length;
+        const campusId = data.substring(prefixLength);
+        
+        console.log("Scanning campus QR:", campusId);
         const campusData = await getCampusByQR(campusId);
+        console.log("Campus API response:", campusData);
+        
         setResult(campusData);
         setIsCampusQR(true);
         setError(null);
       } else {
+        console.log("Scanning standard QR:", data);
         const qrData = await scanQRCode(data);
+        console.log("Standard QR API response:", qrData);
+        
         setResult(qrData);
         setIsCampusQR(false);
         setError(null);
       }
-    } catch {
-      setError("QR not recognized. Try another code.");
+    } catch (err) {
+      console.error("QR Scan Error:", err?.response?.data || err.message || err);
+      if (err?.code === 'ECONNABORTED' || err?.message?.includes('timeout')) {
+        setError("Server is waking up. Please wait a moment and try again.");
+      } else if (err?.message === 'Network Error' || !err?.response) {
+        setError("No internet connection. Please check your network.");
+      } else if (err?.response?.status === 404) {
+        setError("QR not recognized. Try another code.");
+      } else {
+        setError("Something went wrong. Please try again.");
+      }
     }
   };
 

@@ -7,11 +7,6 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
-    "extra": {
-      "eas": {
-        "projectId": "ed6dfb1b-35d8-41aa-af34-01c56a45ca30"
-      }
-    },
     "splash": {
       "image": "./assets/splash.jpg",
       "resizeMode": "cover",
@@ -34,8 +29,14 @@
     "runtimeVersion": {
       "policy": "appVersion"
     },
+    "extra": {
+      "eas": {
+        "projectId": "689dd141-c477-4db7-9ff5-f452abeaec14"
+      }
+    },
+    "owner": "yunus714",
     "updates": {
-      "url": "https://u.expo.dev/ed6dfb1b-35d8-41aa-af34-01c56a45ca30"
+      "url": "https://u.expo.dev/689dd141-c477-4db7-9ff5-f452abeaec14"
     }
   }
 }

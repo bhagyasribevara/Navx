@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useContext, useRef } from "react";
+import React, { useState, useEffect, useContext, useRef, useMemo } from "react";
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  Dimensions, Animated, Platform, Easing, Image
+  Dimensions, Animated, Platform, Easing
 } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as Location from "expo-location";
@@ -9,9 +9,10 @@ import { Magnetometer } from "expo-sensors";
 import * as Haptics from "expo-haptics";
 import * as Speech from "expo-speech";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
-import Svg, { Path, Defs, LinearGradient, Stop, Rect, Ellipse, Circle } from "react-native-svg";
+import Svg, { Path, Defs, LinearGradient, Stop, RadialGradient } from "react-native-svg";
 import { ThemeContext } from "../context/ThemeContext";
 import { BlurView } from "expo-blur";
+import ARRobotGuide from "../components/ARRobotGuide";
 
 const AnimatedPath = Animated.createAnimatedComponent(Path);
 
@@ -59,120 +60,146 @@ function getBearing(lat1, lng1, lat2, lng2) {
   return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
 }
 
-// Generate an SVG path for a chevron pointing along the path angle
-function getChevronPath(cx, cy, angle, size) {
-  const pLeft = { x: -size, y: size * 0.8 };
-  const pTip = { x: 0, y: -size * 0.6 };
-  const pRight = { x: size, y: size * 0.8 };
-  
-  const rot = angle + Math.PI / 2;
-  const cos = Math.cos(rot);
-  const sin = Math.sin(rot);
-  
-  const rotPoint = (p) => ({
-    x: cx + p.x * cos - p.y * sin,
-    y: cy + p.x * sin + p.y * cos
-  });
-
-  const rl = rotPoint(pLeft);
-  const rt = rotPoint(pTip);
-  const rr = rotPoint(pRight);
-  
-  return `M ${rl.x} ${rl.y} L ${rt.x} ${rt.y} L ${rr.x} ${rr.y}`;
-}
-
-// Map real-world GPS coordinates to local SVG coordinates based on user heading
-function getProjectedPath(pathNodes, userLat, userLng, userHeading, w, h) {
-  // If we don't have enough data, draw a straight line ahead (default)
-  if (!userLat || !userLng || !pathNodes || pathNodes.length === 0) {
-    return { pathString: `M ${w/2} ${h} L ${w/2} ${h*0.2}`, chevrons: [] };
-  }
-
-  const SCALE = 25; // pixels per meter on the projected ground
-  const startX = w / 2;
-  const startY = h;
-
-  let points = [{ x: startX, y: startY }];
-  let chevrons = [];
-
-  for (let i = 0; i < pathNodes.length; i++) {
-    const node = pathNodes[i];
-    const dist = haversineDist(userLat, userLng, node.x, node.y);
-    const bearing = getBearing(userLat, userLng, node.x, node.y);
-    
-    // Convert true bearing into relative screen angle based on compass
-    let relAngle = (bearing - userHeading + 360) % 360;
-    
-    // Normalize relative angle to -180 to +180
-    if (relAngle > 180) relAngle -= 360;
-
-    const rad = relAngle * (Math.PI / 180);
-    // X goes right, Y goes up (which means decreasing Y in SVG)
-    const px = startX + (dist * SCALE) * Math.sin(rad);
-    const py = startY - (dist * SCALE) * Math.cos(rad);
-
-    points.push({ x: px, y: py });
-  }
-
-  // Generate polyline
-  let pathString = `M ${points[0].x} ${points[0].y}`;
-  for (let i = 1; i < points.length; i++) {
-    pathString += ` L ${points[i].x} ${points[i].y}`;
-    
-    const dx = points[i].x - points[i-1].x;
-    const dy = points[i].y - points[i-1].y;
-    const segDist = Math.sqrt(dx*dx + dy*dy);
-    const angle = Math.atan2(dy, dx);
-
-    const numChevs = Math.floor(segDist / 60);
-    for (let c = 1; c <= numChevs; c++) {
-      const cx = points[i-1].x + dx * (c / (numChevs + 1));
-      const cy = points[i-1].y + dy * (c / (numChevs + 1));
-      chevrons.push(getChevronPath(cx, cy, angle, 45));
-    }
-  }
-
-  return { pathString, chevrons };
-}
-
 function haversineDist(lat1, lng1, lat2, lng2) {
   const dx = (lat1 - lat2) * 111320;
   const dy = (lng1 - lng2) * 111320 * Math.cos(lat1 * Math.PI / 180);
   return Math.sqrt(dx * dx + dy * dy);
 }
 
-// Custom AR HUD: Realistic 3D floating glowing signboard indicator (No Panda!)
-const RealisticBabyPanda = ({ dirType, floatAnim }) => {
-  const isLeft = dirType.includes("left");
-  const isRight = dirType.includes("right");
-  
-  // Center it or align it to the side cleanly
-  const posStyle = isLeft ? { left: 24 } : isRight ? { right: 24 } : { left: SW / 2 - 45 };
-  
+// ─── Generate individual chevron arrow paths along the projected route ───
+function generateChevronArrows(pathNodes, userLat, userLng, userHeading, w, h) {
+  if (!userLat || !userLng || !pathNodes || pathNodes.length === 0) {
+    // Default: straight-ahead chevrons
+    const chevrons = [];
+    const centerX = w / 2;
+    for (let i = 0; i < 8; i++) {
+      const y = h - (i * h * 0.1) - 40;
+      const size = 50 - i * 3;
+      const opacity = 1 - (i * 0.1);
+      chevrons.push({
+        path: buildChevronPath(centerX, y, 0, size),
+        opacity,
+        scale: 1 - i * 0.04,
+        index: i,
+      });
+    }
+    return { chevrons, mainPath: `M ${centerX} ${h} L ${centerX} ${h * 0.15}` };
+  }
+
+  const SCALE = 25;
+  const startX = w / 2;
+  const startY = h;
+
+  let points = [{ x: startX, y: startY }];
+
+  for (let i = 0; i < pathNodes.length; i++) {
+    const node = pathNodes[i];
+    const dist = haversineDist(userLat, userLng, node.x, node.y);
+    const bearing = getBearing(userLat, userLng, node.x, node.y);
+    let relAngle = (bearing - userHeading + 360) % 360;
+    if (relAngle > 180) relAngle -= 360;
+    const rad = relAngle * (Math.PI / 180);
+    const px = startX + (dist * SCALE) * Math.sin(rad);
+    const py = startY - (dist * SCALE) * Math.cos(rad);
+    points.push({ x: px, y: py });
+  }
+
+  // Build main path string
+  let mainPath = `M ${points[0].x} ${points[0].y}`;
+  for (let i = 1; i < points.length; i++) {
+    mainPath += ` L ${points[i].x} ${points[i].y}`;
+  }
+
+  // Generate chevrons along the path at even intervals
+  const chevrons = [];
+  const CHEVRON_SPACING = 65;
+  let accumulated = 0;
+  let chevronIndex = 0;
+
+  for (let i = 1; i < points.length; i++) {
+    const dx = points[i].x - points[i - 1].x;
+    const dy = points[i].y - points[i - 1].y;
+    const segLen = Math.sqrt(dx * dx + dy * dy);
+    const angle = Math.atan2(dy, dx);
+
+    let distAlongSeg = CHEVRON_SPACING - accumulated;
+
+    while (distAlongSeg <= segLen && chevronIndex < 14) {
+      const t = distAlongSeg / segLen;
+      const cx = points[i - 1].x + dx * t;
+      const cy = points[i - 1].y + dy * t;
+
+      // Perspective: farther = smaller & more transparent
+      const normDist = chevronIndex / 14;
+      const size = 55 - normDist * 25;
+      const opacity = 1.0 - normDist * 0.5;
+
+      chevrons.push({
+        path: buildChevronPath(cx, cy, angle, size),
+        opacity,
+        scale: 1 - normDist * 0.3,
+        index: chevronIndex,
+      });
+
+      chevronIndex++;
+      distAlongSeg += CHEVRON_SPACING;
+    }
+
+    accumulated = segLen - (distAlongSeg - CHEVRON_SPACING);
+    if (accumulated < 0) accumulated = 0;
+  }
+
+  return { chevrons, mainPath };
+}
+
+// Build a single chevron (>>>) shape SVG path at a given position and angle
+function buildChevronPath(cx, cy, angle, size) {
+  // Chevron points: like a "V" rotated to point along the direction
+  const halfW = size * 0.4;
+  const halfH = size * 0.3;
+
+  const pts = [
+    { x: -halfW, y: halfH },    // bottom-left
+    { x: 0, y: -halfH },        // tip (forward)
+    { x: halfW, y: halfH },     // bottom-right
+  ];
+
+  // Rotate by angle - 90deg (since angle 0 = right, but we want forward = up)
+  const rot = angle - Math.PI / 2;
+  const cos = Math.cos(rot);
+  const sin = Math.sin(rot);
+
+  const rotated = pts.map(p => ({
+    x: cx + p.x * cos - p.y * sin,
+    y: cy + p.x * sin + p.y * cos,
+  }));
+
+  return `M ${rotated[0].x} ${rotated[0].y} L ${rotated[1].x} ${rotated[1].y} L ${rotated[2].x} ${rotated[2].y}`;
+}
+
+
+// ═══════════════════════════════════════════════════════
+// ANIMATED CHEVRON ARROW COMPONENT
+// ═══════════════════════════════════════════════════════
+const AnimatedChevronArrow = ({ pathData, delay, opacity: baseOpacity, flowAnim }) => {
+  const animatedOpacity = flowAnim.interpolate({
+    inputRange: [0, 0.3, 0.6, 1],
+    outputRange: [baseOpacity * 0.3, baseOpacity, baseOpacity * 0.8, baseOpacity * 0.3],
+  });
+
   return (
-    <Animated.View style={[
-      { position: 'absolute', top: SH * 0.38, zIndex: 10, alignItems: 'center' },
-      posStyle,
-      { transform: [{ translateY: floatAnim.interpolate({ inputRange:[0,1], outputRange:[-12, 12] }) }] }
-    ]}>
-      {/* High-tech Glowing Direction Circle */}
-      <View style={{
-         width: 90, height: 90, borderRadius: 45,
-         backgroundColor: 'rgba(15, 23, 42, 0.85)',
-         borderWidth: 3.5, borderColor: '#00f0ff',
-         alignItems: 'center', justifyContent: 'center',
-         shadowColor: '#00f0ff', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.6, shadowRadius: 16,
-         elevation: 12,
-      }}>
-         <MaterialCommunityIcons 
-           name={isLeft ? 'turn-left' : isRight ? 'turn-right' : 'arrow-up-thick'} 
-           size={46} 
-           color="#00f0ff" 
-         />
-      </View>
-    </Animated.View>
+    <AnimatedPath
+      d={pathData}
+      stroke="#00e5ff"
+      strokeWidth={5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      fill="none"
+      opacity={animatedOpacity}
+    />
   );
 };
+
 
 export default function ARScreen({ navigation, route }) {
   const { colors } = useContext(ThemeContext);
@@ -191,6 +218,12 @@ export default function ARScreen({ navigation, route }) {
   const pulseAnim = useRef(new Animated.Value(0)).current;
   const pathFade = useRef(new Animated.Value(0)).current;
   const dashOffset = useRef(new Animated.Value(0)).current;
+
+  // Chevron flow animations — staggered wave
+  const NUM_CHEVRONS = 14;
+  const chevronAnims = useRef(
+    Array.from({ length: NUM_CHEVRONS }, () => new Animated.Value(0))
+  ).current;
 
   // Refs for tracking current state inside callbacks
   const currentStepRef = useRef(currentStep);
@@ -217,12 +250,12 @@ export default function ARScreen({ navigation, route }) {
       ])
     ).start();
 
-    // Pulse animation for the ground ring
+    // Pulse animation for ground ring
     Animated.loop(
       Animated.timing(pulseAnim, { toValue: 1, duration: 1500, useNativeDriver: true })
     ).start();
 
-    // Continuous centerline flow loop (flowing forward along path)
+    // Continuous centerline flow loop
     Animated.loop(
       Animated.timing(dashOffset, {
         toValue: -90,
@@ -232,10 +265,34 @@ export default function ARScreen({ navigation, route }) {
       })
     ).start();
 
+    // Staggered chevron wave animation
+    const startChevronWave = () => {
+      const animations = chevronAnims.map((anim, i) => {
+        return Animated.loop(
+          Animated.sequence([
+            Animated.delay(i * 120),
+            Animated.timing(anim, {
+              toValue: 1,
+              duration: 1200,
+              easing: Easing.inOut(Easing.ease),
+              useNativeDriver: false,
+            }),
+            Animated.timing(anim, {
+              toValue: 0,
+              duration: 0,
+              useNativeDriver: false,
+            }),
+          ])
+        );
+      });
+      Animated.parallel(animations).start();
+    };
+    startChevronWave();
+
     return () => sub.remove();
   }, []);
 
-  // Entrance Slide/Fade animation when step direction changes
+  // Entrance animation when step changes
   useEffect(() => {
     pathFade.setValue(0);
     Animated.timing(pathFade, {
@@ -246,6 +303,7 @@ export default function ARScreen({ navigation, route }) {
     }).start();
   }, [currentStep]);
 
+  // GPS location watcher
   useEffect(() => {
     let locationWatcher;
     (async () => {
@@ -281,7 +339,7 @@ export default function ARScreen({ navigation, route }) {
               setLiveStepDist(Math.round(rData.directions[cStep + 1]?.distance || 0));
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
               const nextInst = rData.directions[cStep + 1]?.instruction;
-              if (nextInst) Speech.speak(formatSpeech(nextInst), { language: "en-US", rate: 0.9 });
+              // Speech is handled by ARRobotGuide component via instructionText prop
             } else {
               setArrived(true);
               setLiveDistance(0); setLiveStepDist(0);
@@ -321,7 +379,7 @@ export default function ARScreen({ navigation, route }) {
   
   // Calculate true real-world projected path based on upcoming coordinates
   const upcomingNodes = routeData?.path?.slice(currentStep) || [];
-  const { pathString: rPath, chevrons } = getProjectedPath(
+  const { chevrons, mainPath } = generateChevronArrows(
     upcomingNodes, 
     userLoc?.lat, 
     userLoc?.lng, 
@@ -334,10 +392,10 @@ export default function ARScreen({ navigation, route }) {
     <View style={styles.container}>
       <CameraView style={StyleSheet.absoluteFill} facing="back" />
 
-      {/* Dark gradient overlay to ensure UI elements remain visible but lighter than before */}
+      {/* Dark gradient overlay for UI visibility */}
       <View style={styles.topGradient} />
 
-      {/* --- 3D Ground Projected Solid Road --- */}
+      {/* ─── 3D Ground Projected Path with Animated Chevron Arrows ─── */}
       <Animated.View style={[
         styles.groundContainer,
         {
@@ -349,38 +407,57 @@ export default function ARScreen({ navigation, route }) {
           ]
         }
       ]} pointerEvents="none">
-        {/* REMOVED translateX transform so the oversized SVG inherently centers via alignItems: 'center' */}
         <Svg width={roadW} height={roadH}>
-          {/* Outer Glow */}
-          <Path d={rPath} stroke="rgba(0, 240, 255, 0.15)" strokeWidth={240} strokeLinecap="round" fill="none" />
-          {/* Main Road Surface */}
-          <Path d={rPath} stroke="rgba(0, 240, 255, 0.35)" strokeWidth={180} strokeLinecap="round" fill="none" />
-          {/* Neon Borders */}
-          <Path d={rPath} stroke="#00f0ff" strokeWidth={12} fill="none" strokeDasharray="1, 20" strokeLinecap="round" opacity={0.8} />
+          <Defs>
+            {/* Path glow gradient */}
+            <LinearGradient id="pathGlow" x1="0" y1="0" x2="0" y2="1">
+              <Stop offset="0" stopColor="#00e5ff" stopOpacity="0.4" />
+              <Stop offset="1" stopColor="#00e5ff" stopOpacity="0.05" />
+            </LinearGradient>
+            <RadialGradient id="chevGlow" cx="0.5" cy="0.5" r="0.5">
+              <Stop offset="0" stopColor="#00e5ff" stopOpacity="0.5" />
+              <Stop offset="1" stopColor="#00e5ff" stopOpacity="0" />
+            </RadialGradient>
+          </Defs>
+
+          {/* Outer soft glow under path */}
+          <Path d={mainPath} stroke="rgba(0, 229, 255, 0.08)" strokeWidth={260} strokeLinecap="round" fill="none" />
           
-          {/* Flowing animated center arrows (using dashes) */}
+          {/* Main road surface — subtle translucent */}
+          <Path d={mainPath} stroke="rgba(0, 229, 255, 0.18)" strokeWidth={180} strokeLinecap="round" fill="none" />
+
+          {/* Edge glow lines */}
+          <Path d={mainPath} stroke="rgba(0, 229, 255, 0.45)" strokeWidth={4} fill="none" strokeDasharray="2, 30" strokeLinecap="round" />
+
+          {/* ═══ ANIMATED CHEVRON ARROWS ═══ */}
+          {chevrons.map((chev, i) => (
+            <AnimatedChevronArrow
+              key={i}
+              pathData={chev.path}
+              delay={i * 120}
+              opacity={chev.opacity}
+              flowAnim={chevronAnims[Math.min(i, chevronAnims.length - 1)]}
+            />
+          ))}
+
+          {/* Inner flowing dashes (animated) */}
           <AnimatedPath
-            d={rPath}
+            d={mainPath}
             stroke="#ffffff"
-            strokeWidth={40}
+            strokeWidth={3}
             strokeLinecap="butt"
             fill="none"
-            opacity={0.9}
-            strokeDasharray={[30, 80]}
+            opacity={0.25}
+            strokeDasharray={[15, 45]}
             strokeDashoffset={dashOffset}
           />
-
-          {/* Static Glowing Chevrons pointing to direction */}
-          {chevrons.map((chPath, i) => (
-             <Path key={i} d={chPath} stroke="#00f0ff" strokeWidth={32} strokeLinecap="round" strokeLinejoin="round" fill="none" opacity={0.9} />
-          ))}
         </Svg>
       </Animated.View>
 
-      {/* Realistic AR Baby Panda HUD Guide */}
-      {!arrived && <RealisticBabyPanda dirType={dirType} floatAnim={floatAnim} />}
+      {/* ─── Realistic Robot Guide ─── */}
+      {!arrived && <ARRobotGuide dirType={dirType} instructionText={dirLabel} />}
 
-      {/* --- Floating Destination Pin --- */}
+      {/* ─── Floating Destination Pin ─── */}
       {arrived ? (
         <Animated.View style={[styles.destMarker, { transform: [{ translateY: floatAnim.interpolate({ inputRange:[0,1], outputRange:[-15, 15] }) }] }]}>
           <Ionicons name="checkmark-circle" size={90} color="#10b981" />
@@ -393,7 +470,7 @@ export default function ARScreen({ navigation, route }) {
         </Animated.View>
       )}
 
-      {/* --- Top Futuristic Info Bar --- */}
+      {/* ─── Top Futuristic Info Bar ─── */}
       <View style={styles.topBar}>
         <TouchableOpacity style={styles.backBtnWrapper} onPress={() => navigation.goBack()}>
           <BlurView intensity={80} tint="dark" style={styles.backBtn}>
@@ -424,7 +501,7 @@ export default function ARScreen({ navigation, route }) {
         </BlurView>
       </View>
 
-      {/* --- Next-Turn Floating Glass Card --- */}
+      {/* ─── Next-Turn Floating Glass Card ─── */}
       {!arrived && (
         <View style={styles.turnCardWrapper}>
           <BlurView intensity={80} tint="dark" style={styles.turnCard}>
@@ -432,14 +509,14 @@ export default function ARScreen({ navigation, route }) {
               <MaterialCommunityIcons name={dirIcon} size={42} color="#fff" />
             </View>
             <View style={styles.turnTextWrap}>
-              <Text style={[styles.turnDistLabel, { color: "#3b82f6" }]}>IN {liveStepDist} METERS</Text>
+              <Text style={[styles.turnDistLabel, { color: "#00e5ff" }]}>IN {liveStepDist} METERS</Text>
               <Text style={styles.turnInstText} numberOfLines={2}>{dirLabel}</Text>
             </View>
           </BlurView>
         </View>
       )}
 
-      {/* --- Arrived Overlay Card --- */}
+      {/* ─── Arrived Overlay Card ─── */}
       {arrived && (
         <View style={styles.turnCardWrapper}>
           <BlurView intensity={90} tint="dark" style={[styles.turnCard, { borderColor: "#10b981" }]}>
@@ -519,7 +596,7 @@ const styles = StyleSheet.create({
     position: "absolute", bottom: Platform.OS === "ios" ? 50 : 40, alignSelf: "center",
     width: SW * 0.92,
     borderRadius: 24,
-    shadowColor: "#00f0ff", shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.35, shadowRadius: 20,
+    shadowColor: "#00e5ff", shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.35, shadowRadius: 20,
     elevation: 12, zIndex: 10,
     overflow: "hidden",
   },
@@ -527,7 +604,7 @@ const styles = StyleSheet.create({
     width: "100%", backgroundColor: "rgba(15, 23, 42, 0.4)",
     padding: 18,
     flexDirection: "row", alignItems: "center",
-    borderWidth: 1.5, borderColor: "rgba(0, 240, 255, 0.4)",
+    borderWidth: 1.5, borderColor: "rgba(0, 229, 255, 0.4)",
   },
   turnIconBg: {
     width: 68, height: 68, borderRadius: 20,

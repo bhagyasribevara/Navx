@@ -11,12 +11,12 @@ if (Constants?.expoConfig?.hostUri) {
   devHost = Constants.expoConfig.hostUri.split(':')[0];
 }
 
-const API_BASE = process.env.EXPO_PUBLIC_API_BASE_URL || `http://${devHost}:5000/api`;
-export const SOCKET_URL = process.env.EXPO_PUBLIC_API_BASE_URL ? process.env.EXPO_PUBLIC_API_BASE_URL.replace('/api', '') : `http://${devHost}:5000`;
+const API_BASE = process.env.EXPO_PUBLIC_API_BASE_URL || `https://navx-backend-f8wa.onrender.com/api`;
+export const SOCKET_URL = process.env.EXPO_PUBLIC_API_BASE_URL ? process.env.EXPO_PUBLIC_API_BASE_URL.replace('/api', '') : `https://navx-backend-f8wa.onrender.com`;
 
 const api = axios.create({
   baseURL: API_BASE,
-  timeout: 10000,
+  timeout: 30000,
   headers: { "Content-Type": "application/json" },
 });
 
