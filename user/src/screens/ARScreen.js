@@ -89,7 +89,7 @@ function smoothHeadingEMA(current, target, alpha = 0.15) {
 }
 
 // ── Project GPS path nodes → screen coords via pinhole camera ──
-function projectPathToScreen(pathNodes, userLat, userLng, userHeading) {
+function projectPathToScreen(pathNodes, userLat, userLng, userHeading, pitch = 0) {
   if (!userLat || !userLng || !pathNodes || pathNodes.length === 0) return [];
 
   const hRad   = (userHeading * Math.PI) / 180;
@@ -97,55 +97,76 @@ function projectPathToScreen(pathNodes, userLat, userLng, userHeading) {
   const sinH   = Math.sin(hRad);
   const cosLat = Math.cos(userLat * Math.PI / 180);
 
+  const cosP = Math.cos(pitch);
+  const sinP = Math.sin(pitch);
+
   const out = [];
   for (const node of pathNodes) {
     // GPS delta → metres
     const dLatM = (node.x - userLat) * 111320;
     const dLngM = (node.y - userLng) * 111320 * cosLat;
 
-    // Rotate into local camera frame: z = forward along heading, x = right
-    const z =  dLatM * cosH + dLngM * sinH;
-    const x = -dLatM * sinH + dLngM * cosH;
+    // Rotate into local camera frame: z = forward along heading, x = right (horizontal plane)
+    const z_horiz =  dLatM * cosH + dLngM * sinH;
+    const x_horiz = -dLatM * sinH + dLngM * cosH;
+    const y_horiz = -CAMERA_HEIGHT;
 
-    if (z < MIN_Z || z > MAX_Z) continue;                                   // depth cull
+    // Rotate around X-axis by pitch angle
+    const x_cam = x_horiz;
+    const y_cam = y_horiz * cosP - z_horiz * sinP;
+    const z_cam = y_horiz * sinP + z_horiz * cosP;
 
-    // Pinhole projection
-    const sx = SW / 2 + FOCAL_PX * x / z;
-    const sy = VANISH_Y + FOCAL_PX * CAMERA_HEIGHT / z;
+    if (z_cam < MIN_Z || z_cam > MAX_Z) continue;                                   // depth cull
+
+    // Pinhole projection onto the tilted screen
+    const sx = SW / 2 + FOCAL_PX * x_cam / z_cam;
+    const sy = VANISH_Y - FOCAL_PX * y_cam / z_cam;
 
     if (sx < -120 || sx > SW + 120 || sy < -60 || sy > SH + 60) continue;   // frustum cull
 
-    out.push({ screenX: sx, screenY: sy, depth: z, x: x, z: z });
+    out.push({ screenX: sx, screenY: sy, depth: z_cam, x: x_horiz, z: z_horiz });
   }
   return out;
 }
 
 // ── Full AR overlay data: chevrons + SVG mainPath string ──
-function generateARPath(pathNodes, userLat, userLng, userHeading) {
+function generateARPath(pathNodes, userLat, userLng, userHeading, pitch = 0) {
   if (!pathNodes || pathNodes.length === 0) {
     return { chevrons: [], mainPath: "" };
   }
-  const projected = projectPathToScreen(pathNodes, userLat, userLng, userHeading);
+  const projected = projectPathToScreen(pathNodes, userLat, userLng, userHeading, pitch);
+
+  const CHEVRON_GAP_PX = 70;
+  const CHEVRON_SIZE = 36;
+  const CHEVRON_STROKE = 5;
 
   // ── fallback: straight-ahead when no projected points ──
   if (projected.length < 2) {
     const chevrons = [];
     const cx = SW / 2;
-    for (let i = 0; i < 8; i++) {
-      const fakeZ = 3 + i * 6;
-      const sy    = VANISH_Y + FOCAL_PX * CAMERA_HEIGHT / fakeZ;
-      const size  = BASE_CHEV * (REF_Z / fakeZ);
-      const opacity = Math.max(0.15, 1.0 - fakeZ / MAX_Z);
-      const strokeWidth = Math.max(3, 12 * (REF_Z / fakeZ));
+    
+    const y_cam_start = -CAMERA_HEIGHT * Math.cos(pitch) - MIN_Z * Math.sin(pitch);
+    const z_cam_start = -CAMERA_HEIGHT * Math.sin(pitch) + MIN_Z * Math.cos(pitch);
+    const sy_start = Math.min(SH, VANISH_Y - FOCAL_PX * y_cam_start / Math.max(z_cam_start, MIN_Z));
+
+    const y_cam_end = -CAMERA_HEIGHT * Math.cos(pitch) - MAX_Z * Math.sin(pitch);
+    const z_cam_end = -CAMERA_HEIGHT * Math.sin(pitch) + MAX_Z * Math.cos(pitch);
+    const sy_end = Math.max(0, VANISH_Y - FOCAL_PX * y_cam_end / Math.max(z_cam_end, MIN_Z));
+
+    const totalHeight = sy_start - sy_end;
+    const numChevrons = Math.min(MAX_CHEVRONS, Math.floor(totalHeight / CHEVRON_GAP_PX));
+
+    for (let i = 0; i < numChevrons; i++) {
+      const sy = sy_start - i * CHEVRON_GAP_PX;
       chevrons.push({
-        path: buildChevronPath(cx, sy, -Math.PI / 2, Math.max(size, 10)),
-        opacity,
-        strokeWidth,
+        path: buildChevronPath(cx, sy, -Math.PI / 2, CHEVRON_SIZE),
+        opacity: 0.8,
+        strokeWidth: CHEVRON_STROKE,
         scale: 1,
         index: i,
       });
     }
-    return { chevrons, mainPath: `M ${cx} ${SH} L ${cx} ${VANISH_Y}` };
+    return { chevrons, mainPath: `M ${cx} ${sy_start} L ${cx} ${sy_end}` };
   }
 
   // ── SVG main-path string ──
@@ -154,62 +175,48 @@ function generateARPath(pathNodes, userLat, userLng, userHeading) {
     mainPath += ` L ${projected[i].screenX} ${projected[i].screenY}`;
   }
 
-  // ── chevrons at even real-world meter intervals along the projected path ──
+  // ── chevrons at even 2D screen pixel intervals along the projected path ──
   const chevrons = [];
-  let accumulated = 0; // in meters
+  let accumulated = 0; // in pixels
   let idx = 0;
   
-  // Real-world gap between chevrons in meters
-  const REAL_GAP_M = 1.6; 
-
   for (let i = 1; i < projected.length && idx < MAX_CHEVRONS; i++) {
     const p0 = projected[i - 1];
     const p1 = projected[i];
     
-    // 3D segment length in meters
-    const dx3D = p1.x - p0.x;
-    const dz3D = p1.z - p0.z;
-    const segLenM = Math.sqrt(dx3D * dx3D + dz3D * dz3D);
+    // 2D segment length in screen pixels
+    const dx = p1.screenX - p0.screenX;
+    const dy = p1.screenY - p0.screenY;
+    const segLenPx = Math.sqrt(dx * dx + dy * dy);
     
-    let cursor = REAL_GAP_M - accumulated;
+    let cursor = CHEVRON_GAP_PX - accumulated;
 
-    while (cursor <= segLenM && idx < MAX_CHEVRONS) {
-      const t = cursor / segLenM;
+    while (cursor <= segLenPx && idx < MAX_CHEVRONS) {
+      const t = cursor / segLenPx;
       
-      // Interpolate 3D coordinates
-      const cx3D = p0.x + dx3D * t;
-      const cz3D = p0.z + dz3D * t;
+      // Interpolate 2D screen coordinates
+      const sx = p0.screenX + dx * t;
+      const sy = p0.screenY + dy * t;
       
-      // Project to screen space
-      const sx = SW / 2 + FOCAL_PX * cx3D / cz3D;
-      const sy = VANISH_Y + FOCAL_PX * CAMERA_HEIGHT / cz3D;
-      
-      // Calculate screen rotation angle:
-      const tAhead = Math.min(1.0, t + 0.05);
-      const aheadX = p0.x + dx3D * tAhead;
-      const aheadZ = p0.z + dz3D * tAhead;
-      const sax = SW / 2 + FOCAL_PX * aheadX / aheadZ;
-      const say = VANISH_Y + FOCAL_PX * CAMERA_HEIGHT / aheadZ;
-      const angle = Math.atan2(say - sy, sax - sx);
+      // Calculate rotation angle along the screen path
+      const angle = Math.atan2(dy, dx);
 
-      // Perspective size, opacity and strokeWidth scaling
-      const size        = BASE_CHEV * (REF_Z / Math.max(cz3D, MIN_Z));
-      const opacity     = Math.max(0.15, 1.0 - cz3D / MAX_Z);
-      const strokeWidth = Math.max(3, 12 * (REF_Z / Math.max(cz3D, MIN_Z)));
+      // Uniform opacity, size, and stroke width
+      const opacity = 0.8;
 
       chevrons.push({
-        path: buildChevronPath(sx, sy, angle, Math.max(size, 10)),
+        path: buildChevronPath(sx, sy, angle, CHEVRON_SIZE),
         opacity,
-        strokeWidth,
+        strokeWidth: CHEVRON_STROKE,
         scale: 1,
         index: idx,
       });
 
       idx++;
-      cursor += REAL_GAP_M;
+      cursor += CHEVRON_GAP_PX;
     }
 
-    accumulated = segLenM - (cursor - REAL_GAP_M);
+    accumulated = segLenPx - (cursor - CHEVRON_GAP_PX);
     if (accumulated < 0) accumulated = 0;
   }
 
@@ -279,6 +286,8 @@ export default function ARScreen({ navigation, route }) {
   const [userLoc, setUserLoc] = useState(null);
 
   // Phone orientation & off-course detection
+  const [pitch, setPitch] = useState(0);
+  const latestRotationRef = useRef(null);
   const [isPhoneUpright, setIsPhoneUpright] = useState(true);
   const isPhoneUprightRef = useRef(true);
 
@@ -306,20 +315,61 @@ export default function ARScreen({ navigation, route }) {
   useEffect(() => { arrivedRef.current = arrived; }, [arrived]);
 
   useEffect(() => {
-    // Subscribe to Magnetometer for real-time live compass (with EMA smoothing)
-    const sub = Magnetometer.addListener(d => {
-      const rawH = (Math.atan2(d.y, d.x) * (180 / Math.PI) + 360) % 360;
-      const smooth = smoothHeadingEMA(smoothedHeadingRef.current, rawH, 0.15);
-      smoothedHeadingRef.current = smooth;
-      setHeading(smooth);
-    });
-    Magnetometer.setUpdateInterval(50);
+    let headingWatcher;
+    let magnetometerSub;
+
+    const startHeadingSubscription = async () => {
+      try {
+        // Try watchHeadingAsync first for tilt-compensated, system-calibrated heading
+        headingWatcher = await Location.watchHeadingAsync((headingData) => {
+          if (headingData && headingData.trueHeading !== undefined) {
+            const rawH = headingData.trueHeading !== -1 ? headingData.trueHeading : headingData.magneticHeading;
+            const smooth = smoothHeadingEMA(smoothedHeadingRef.current, rawH, 0.15);
+            smoothedHeadingRef.current = smooth;
+            setHeading(smooth);
+          }
+        });
+      } catch (err) {
+        console.warn("watchHeadingAsync failed, falling back to raw Magnetometer with tilt-compensation", err);
+        // Fallback to Magnetometer with basic tilt compensation using DeviceMotion
+        magnetometerSub = Magnetometer.addListener(d => {
+          let rawH = 0;
+          const rot = latestRotationRef.current;
+          if (rot) {
+            // Basic tilt compensation using pitch (beta) and roll (gamma)
+            const p = rot.beta - Math.PI / 2;
+            const r = rot.gamma;
+            const cosP = Math.cos(p);
+            const sinP = Math.sin(p);
+            const cosR = Math.cos(r);
+            const sinR = Math.sin(r);
+
+            const Xh = d.x * cosR + d.z * sinR;
+            const Yh = d.x * sinP * sinR + d.y * cosP - d.z * sinP * cosR;
+            rawH = (Math.atan2(Yh, Xh) * (180 / Math.PI) + 360) % 360;
+          } else {
+            rawH = (Math.atan2(d.y, d.x) * (180 / Math.PI) + 360) % 360;
+          }
+          const smooth = smoothHeadingEMA(smoothedHeadingRef.current, rawH, 0.15);
+          smoothedHeadingRef.current = smooth;
+          setHeading(smooth);
+        });
+        Magnetometer.setUpdateInterval(50);
+      }
+    };
+
+    startHeadingSubscription();
 
     // Subscribe to DeviceMotion for phone pitch (vertical hold detection)
-    DeviceMotion.setUpdateInterval(200);
+    DeviceMotion.setUpdateInterval(100);
     const motionSub = DeviceMotion.addListener(({ rotation }) => {
       if (rotation) {
-        // beta = pitch in radians. ~π/2 (90°) = phone held vertical (upright)
+        latestRotationRef.current = rotation;
+        const pitchRad = rotation.beta - Math.PI / 2;
+        // Clamp pitch between -35 degrees (-0.61 rad) and +20 degrees (+0.35 rad) to keep path visible
+        const clampedPitch = Math.max(-0.61, Math.min(0.35, pitchRad));
+        setPitch(clampedPitch);
+
         const pitchDeg = Math.abs(rotation.beta * (180 / Math.PI));
         const upright = pitchDeg > 45 && pitchDeg < 135;
         isPhoneUprightRef.current = upright;
@@ -383,7 +433,8 @@ export default function ARScreen({ navigation, route }) {
     ).start();
 
     return () => {
-      sub.remove();
+      if (headingWatcher) headingWatcher.remove();
+      if (magnetometerSub) magnetometerSub.remove();
       motionSub.remove();
     };
   }, []);
@@ -483,12 +534,12 @@ export default function ARScreen({ navigation, route }) {
     const bearingToNext = getBearing(userLoc.lat, userLoc.lng, nextNode.x, nextNode.y);
     // Signed angle difference: negative = need to turn left, positive = need to turn right
     offCourseAngle = ((bearingToNext - heading) + 540) % 360 - 180;
-    isOffCourse = Math.abs(offCourseAngle) > 60;
+    isOffCourse = Math.abs(offCourseAngle) > 90;
 
     if (isOffCourse) {
       if (Math.abs(offCourseAngle) > 150) {
         turnDirection = 'uturn';
-      } else if (offCourseAngle < -60) {
+      } else if (offCourseAngle < -90) {
         turnDirection = 'left';
       } else {
         turnDirection = 'right';
@@ -503,7 +554,8 @@ export default function ARScreen({ navigation, route }) {
     showARPath ? upcomingNodes : [],
     userLoc?.lat,
     userLoc?.lng,
-    heading
+    heading,
+    pitch
   );
 
   // Turn indicator icon & label
@@ -533,23 +585,6 @@ export default function ARScreen({ navigation, route }) {
       {showARPath && (
         <Animated.View style={[styles.arOverlay, { opacity: pathFade }]} pointerEvents="none">
           <Svg width={SW} height={SH}>
-            <Defs>
-              {/* Path glow gradient */}
-              <LinearGradient id="pathGlow" x1="0" y1="0" x2="0" y2="1">
-                <Stop offset="0" stopColor="#00e5ff" stopOpacity="0.3" />
-                <Stop offset="1" stopColor="#00e5ff" stopOpacity="0.05" />
-              </LinearGradient>
-            </Defs>
-
-            {/* Soft outer glow */}
-            <Path d={mainPath} stroke="rgba(0, 229, 255, 0.05)" strokeWidth={95} strokeLinecap="round" strokeLinejoin="round" fill="none" />
-
-            {/* Road surface */}
-            <Path d={mainPath} stroke="rgba(0, 229, 255, 0.12)" strokeWidth={55} strokeLinecap="round" strokeLinejoin="round" fill="none" />
-
-            {/* Edge highlight */}
-            <Path d={mainPath} stroke="rgba(0, 229, 255, 0.3)" strokeWidth={4} fill="none" strokeDasharray="4,40" strokeLinecap="round" />
-
             {/* ═══ ANIMATED CHEVRON ARROWS ═══ */}
             {chevrons.map((chev, i) => (
               <AnimatedChevronArrow
@@ -561,18 +596,6 @@ export default function ARScreen({ navigation, route }) {
                 flowAnim={chevronAnims[i % chevronAnims.length]} // cycle staggering across the entire path
               />
             ))}
-
-            {/* Flowing center dashes */}
-            <AnimatedPath
-              d={mainPath}
-              stroke="#ffffff"
-              strokeWidth={2}
-              strokeLinecap="butt"
-              fill="none"
-              opacity={0.18}
-              strokeDasharray={[10, 36]}
-              strokeDashoffset={dashOffset}
-            />
           </Svg>
         </Animated.View>
       )}
@@ -646,6 +669,21 @@ export default function ARScreen({ navigation, route }) {
               <Text style={[styles.turnDistLabel, { color: "rgba(255,255,255,0.8)", marginTop: 4 }]}>{room?.name || "Target Location"}</Text>
             </View>
           </BlurView>
+        </View>
+      )}
+
+      {/* ─── Off-Course Guidance Overlay ─── */}
+      {isOffCourse && !arrived && (
+        <View style={styles.turnOverlay}>
+          <Animated.View style={[styles.turnIndicatorCard, { transform: [{ scale: turnPulseAnim }] }]}>
+            <View style={styles.turnGlowRing}>
+              <View style={styles.turnIconCircle}>
+                <MaterialCommunityIcons name={turnInfo.icon} size={48} color="#fff" />
+              </View>
+            </View>
+            <Text style={[styles.turnLabelText, { marginTop: 16 }]}>{turnInfo.label}</Text>
+            <Text style={styles.turnSubText}>Point camera towards the path</Text>
+          </Animated.View>
         </View>
       )}
       
