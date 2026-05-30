@@ -76,9 +76,9 @@ const VANISH_Y     = SH * 0.33;   // vanishing-point screen position
 const MIN_Z        = 1.5;         // min forward depth (metres)
 const MAX_Z        = 50;          // max render distance (tighter for accuracy)
 const REF_Z        = 4;           // depth at which chevrons are "base" size
-const BASE_CHEV    = 50;          // chevron px size at REF_Z
-const CHEV_GAP_PX  = 65;          // pixel gap between chevrons (more spaced for clarity)
-const MAX_CHEVRONS = 8;           // fewer chevrons for single-segment display
+const BASE_CHEV    = 85;          // chevron px size at REF_Z (perspective base size)
+const CHEV_GAP_PX  = 80;          // pixel gap between chevrons
+const MAX_CHEVRONS = 30;          // continuous arrows along the entire path (increased from 8)
 
 // ── Heading circular EMA (handles 0° / 360° wraparound) ──
 function smoothHeadingEMA(current, target, alpha = 0.15) {
@@ -115,13 +115,16 @@ function projectPathToScreen(pathNodes, userLat, userLng, userHeading) {
 
     if (sx < -120 || sx > SW + 120 || sy < -60 || sy > SH + 60) continue;   // frustum cull
 
-    out.push({ screenX: sx, screenY: sy, depth: z });
+    out.push({ screenX: sx, screenY: sy, depth: z, x: x, z: z });
   }
   return out;
 }
 
 // ── Full AR overlay data: chevrons + SVG mainPath string ──
 function generateARPath(pathNodes, userLat, userLng, userHeading) {
+  if (!pathNodes || pathNodes.length === 0) {
+    return { chevrons: [], mainPath: "" };
+  }
   const projected = projectPathToScreen(pathNodes, userLat, userLng, userHeading);
 
   // ── fallback: straight-ahead when no projected points ──
@@ -132,9 +135,12 @@ function generateARPath(pathNodes, userLat, userLng, userHeading) {
       const fakeZ = 3 + i * 6;
       const sy    = VANISH_Y + FOCAL_PX * CAMERA_HEIGHT / fakeZ;
       const size  = BASE_CHEV * (REF_Z / fakeZ);
+      const opacity = Math.max(0.15, 1.0 - fakeZ / MAX_Z);
+      const strokeWidth = Math.max(3, 12 * (REF_Z / fakeZ));
       chevrons.push({
-        path: buildChevronPath(cx, sy, -Math.PI / 2, Math.max(size, 8)),
-        opacity: Math.max(0.2, 1 - i * 0.09),
+        path: buildChevronPath(cx, sy, -Math.PI / 2, Math.max(size, 10)),
+        opacity,
+        strokeWidth,
         scale: 1,
         index: i,
       });
@@ -148,43 +154,62 @@ function generateARPath(pathNodes, userLat, userLng, userHeading) {
     mainPath += ` L ${projected[i].screenX} ${projected[i].screenY}`;
   }
 
-  // ── chevrons at even pixel intervals along the projected path ──
+  // ── chevrons at even real-world meter intervals along the projected path ──
   const chevrons = [];
-  let accumulated = 0;
+  let accumulated = 0; // in meters
   let idx = 0;
+  
+  // Real-world gap between chevrons in meters
+  const REAL_GAP_M = 1.6; 
 
   for (let i = 1; i < projected.length && idx < MAX_CHEVRONS; i++) {
     const p0 = projected[i - 1];
     const p1 = projected[i];
-    const dx = p1.screenX - p0.screenX;
-    const dy = p1.screenY - p0.screenY;
-    const segLen = Math.sqrt(dx * dx + dy * dy);
-    const angle  = Math.atan2(dy, dx);
+    
+    // 3D segment length in meters
+    const dx3D = p1.x - p0.x;
+    const dz3D = p1.z - p0.z;
+    const segLenM = Math.sqrt(dx3D * dx3D + dz3D * dz3D);
+    
+    let cursor = REAL_GAP_M - accumulated;
 
-    let cursor = CHEV_GAP_PX - accumulated;
+    while (cursor <= segLenM && idx < MAX_CHEVRONS) {
+      const t = cursor / segLenM;
+      
+      // Interpolate 3D coordinates
+      const cx3D = p0.x + dx3D * t;
+      const cz3D = p0.z + dz3D * t;
+      
+      // Project to screen space
+      const sx = SW / 2 + FOCAL_PX * cx3D / cz3D;
+      const sy = VANISH_Y + FOCAL_PX * CAMERA_HEIGHT / cz3D;
+      
+      // Calculate screen rotation angle:
+      const tAhead = Math.min(1.0, t + 0.05);
+      const aheadX = p0.x + dx3D * tAhead;
+      const aheadZ = p0.z + dz3D * tAhead;
+      const sax = SW / 2 + FOCAL_PX * aheadX / aheadZ;
+      const say = VANISH_Y + FOCAL_PX * CAMERA_HEIGHT / aheadZ;
+      const angle = Math.atan2(say - sy, sax - sx);
 
-    while (cursor <= segLen && idx < MAX_CHEVRONS) {
-      const t     = cursor / segLen;
-      const cx    = p0.screenX + dx * t;
-      const cy    = p0.screenY + dy * t;
-      const depth = p0.depth + (p1.depth - p0.depth) * t;
-
-      // Perspective-correct sizing: close = large, far = small
-      const size    = BASE_CHEV * (REF_Z / Math.max(depth, MIN_Z));
-      const opacity = Math.max(0.15, 1.0 - depth / MAX_Z);
+      // Perspective size, opacity and strokeWidth scaling
+      const size        = BASE_CHEV * (REF_Z / Math.max(cz3D, MIN_Z));
+      const opacity     = Math.max(0.15, 1.0 - cz3D / MAX_Z);
+      const strokeWidth = Math.max(3, 12 * (REF_Z / Math.max(cz3D, MIN_Z)));
 
       chevrons.push({
-        path: buildChevronPath(cx, cy, angle, Math.max(size, 8)),
+        path: buildChevronPath(sx, sy, angle, Math.max(size, 10)),
         opacity,
+        strokeWidth,
         scale: 1,
         index: idx,
       });
 
       idx++;
-      cursor += CHEV_GAP_PX;
+      cursor += REAL_GAP_M;
     }
 
-    accumulated = segLen - (cursor - CHEV_GAP_PX);
+    accumulated = segLenM - (cursor - REAL_GAP_M);
     if (accumulated < 0) accumulated = 0;
   }
 
@@ -220,7 +245,7 @@ function buildChevronPath(cx, cy, angle, size) {
 // ═══════════════════════════════════════════════════════
 // ANIMATED CHEVRON ARROW COMPONENT
 // ═══════════════════════════════════════════════════════
-const AnimatedChevronArrow = ({ pathData, delay, opacity: baseOpacity, flowAnim }) => {
+const AnimatedChevronArrow = ({ pathData, strokeWidth, delay, opacity: baseOpacity, flowAnim }) => {
   const animatedOpacity = flowAnim.interpolate({
     inputRange: [0, 0.3, 0.6, 1],
     outputRange: [baseOpacity * 0.3, baseOpacity, baseOpacity * 0.8, baseOpacity * 0.3],
@@ -230,7 +255,7 @@ const AnimatedChevronArrow = ({ pathData, delay, opacity: baseOpacity, flowAnim 
     <AnimatedPath
       d={pathData}
       stroke="#00e5ff"
-      strokeWidth={5}
+      strokeWidth={strokeWidth}
       strokeLinecap="round"
       strokeLinejoin="round"
       fill="none"
@@ -266,7 +291,7 @@ export default function ARScreen({ navigation, route }) {
   const turnPulseAnim = useRef(new Animated.Value(1)).current;
 
   // Chevron flow animations — staggered wave
-  const NUM_CHEVRONS = 8;
+  const NUM_CHEVRONS = 12; // increased to 12 animation stages for smoother stagger
   const chevronAnims = useRef(
     Array.from({ length: NUM_CHEVRONS }, () => new Animated.Value(0))
   ).current;
@@ -444,13 +469,8 @@ export default function ARScreen({ navigation, route }) {
   const dirIcon = getDirIcon(dirType);
   const dirLabel = currentDir?.instruction || "Proceed on the highlighted path";
   
-  // ── Limit path to ONLY the current segment (next first path) ──
-  // Each direction[i] maps to path[i] → path[i+1], so for the current step
-  // we only need the nodes from currentStep to currentStep+1 (one segment).
-  // We include a small look-ahead buffer of +1 extra node for smooth visuals.
-  const pathLen = routeData?.path?.length || 0;
-  const segmentEnd = Math.min(currentStep + 2, pathLen); // current node + next node
-  const upcomingNodes = routeData?.path?.slice(currentStep, segmentEnd) || [];
+  // ── Render all remaining nodes for continuous arrows along the entire path ──
+  const upcomingNodes = routeData?.path?.slice(currentStep) || [];
 
   // ── Off-course detection ──
   // Compare user's compass heading to the bearing toward the next path node
@@ -476,8 +496,8 @@ export default function ARScreen({ navigation, route }) {
     }
   }
 
-  // Only generate AR path when phone is upright AND user is on-course
-  const showARPath = isPhoneUpright && !isOffCourse && !arrived;
+  // Only generate AR path when not off-course and not arrived
+  const showARPath = !isOffCourse && !arrived;
 
   const { chevrons, mainPath } = generateARPath(
     showARPath ? upcomingNodes : [],
@@ -522,22 +542,23 @@ export default function ARScreen({ navigation, route }) {
             </Defs>
 
             {/* Soft outer glow */}
-            <Path d={mainPath} stroke="rgba(0, 229, 255, 0.05)" strokeWidth={50} strokeLinecap="round" strokeLinejoin="round" fill="none" />
+            <Path d={mainPath} stroke="rgba(0, 229, 255, 0.05)" strokeWidth={95} strokeLinecap="round" strokeLinejoin="round" fill="none" />
 
             {/* Road surface */}
-            <Path d={mainPath} stroke="rgba(0, 229, 255, 0.12)" strokeWidth={24} strokeLinecap="round" strokeLinejoin="round" fill="none" />
+            <Path d={mainPath} stroke="rgba(0, 229, 255, 0.12)" strokeWidth={55} strokeLinecap="round" strokeLinejoin="round" fill="none" />
 
             {/* Edge highlight */}
-            <Path d={mainPath} stroke="rgba(0, 229, 255, 0.3)" strokeWidth={2} fill="none" strokeDasharray="2,24" strokeLinecap="round" />
+            <Path d={mainPath} stroke="rgba(0, 229, 255, 0.3)" strokeWidth={4} fill="none" strokeDasharray="4,40" strokeLinecap="round" />
 
             {/* ═══ ANIMATED CHEVRON ARROWS ═══ */}
             {chevrons.map((chev, i) => (
               <AnimatedChevronArrow
                 key={i}
                 pathData={chev.path}
+                strokeWidth={chev.strokeWidth}
                 delay={i * 120}
                 opacity={chev.opacity}
-                flowAnim={chevronAnims[Math.min(i, chevronAnims.length - 1)]}
+                flowAnim={chevronAnims[i % chevronAnims.length]} // cycle staggering across the entire path
               />
             ))}
 
@@ -556,43 +577,15 @@ export default function ARScreen({ navigation, route }) {
         </Animated.View>
       )}
 
-      {/* ─── OFF-COURSE: Turn Direction Indicator ─── */}
-      {isOffCourse && isPhoneUpright && !arrived && (
-        <View style={styles.turnOverlay} pointerEvents="none">
-          <Animated.View style={[
-            styles.turnIndicatorCard,
-            { transform: [{ scale: turnPulseAnim }] }
-          ]}>
-            {/* Glowing ring behind icon */}
-            <View style={styles.turnGlowRing}>
-              <View style={styles.turnIconCircle}>
-                <MaterialCommunityIcons
-                  name={turnInfo.icon}
-                  size={64}
-                  color="#fff"
-                />
-              </View>
-            </View>
-            <Text style={styles.turnLabelText}>{turnInfo.label}</Text>
-            <Text style={styles.turnSubText}>
-              {Math.abs(Math.round(offCourseAngle))}° off course
-            </Text>
-          </Animated.View>
-        </View>
-      )}
+
 
       {/* ─── Realistic Robot Guide ─── */}
-      {!arrived && <ARRobotGuide dirType={dirType} instructionText={dirLabel} />}
+      {!arrived && !isOffCourse && <ARRobotGuide dirType={dirType} instructionText={dirLabel} />}
 
       {/* ─── Floating Destination Pin ─── */}
-      {arrived ? (
+      {arrived && (
         <Animated.View style={[styles.destMarker, { transform: [{ translateY: floatAnim.interpolate({ inputRange:[0,1], outputRange:[-15, 15] }) }] }]}>
           <Ionicons name="checkmark-circle" size={90} color="#10b981" />
-          <View style={styles.pinShadow} />
-        </Animated.View>
-      ) : (
-        <Animated.View style={[styles.destMarker, { transform: [{ translateY: floatAnim.interpolate({ inputRange:[0,1], outputRange:[-15, 15] }) }] }]}>
-          <Ionicons name="location-sharp" size={90} color="#ef4444" />
           <View style={styles.pinShadow} />
         </Animated.View>
       )}
@@ -629,7 +622,7 @@ export default function ARScreen({ navigation, route }) {
       </View>
 
       {/* ─── Next-Turn Floating Glass Card ─── */}
-      {!arrived && (
+      {!arrived && !isOffCourse && (
         <View style={styles.turnCardWrapper}>
           <BlurView intensity={80} tint="dark" style={styles.turnCard}>
             <View style={[styles.turnIconBg, { backgroundColor: "#3b82f6" }]}>
@@ -729,44 +722,42 @@ const styles = StyleSheet.create({
   turnIndicatorCard: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 32,
-    paddingHorizontal: 40,
-    borderRadius: 30,
-    backgroundColor: 'rgba(10, 16, 30, 0.85)',
+    padding: 20,
+    borderRadius: 24,
+    backgroundColor: 'rgba(10, 16, 30, 0.75)',
     borderWidth: 2,
-    borderColor: 'rgba(255, 165, 0, 0.6)',
-    shadowColor: '#ff8c00',
+    borderColor: 'rgba(0, 229, 255, 0.6)',
+    shadowColor: '#00e5ff',
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.6,
-    shadowRadius: 30,
-    elevation: 20,
+    shadowRadius: 20,
+    elevation: 15,
   },
   turnGlowRing: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: 'rgba(255, 165, 0, 0.12)',
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: 'rgba(0, 229, 255, 0.12)',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16,
     borderWidth: 2,
-    borderColor: 'rgba(255, 165, 0, 0.3)',
+    borderColor: 'rgba(0, 229, 255, 0.3)',
   },
   turnIconCircle: {
-    width: 90,
-    height: 90,
-    borderRadius: 45,
-    backgroundColor: 'rgba(255, 140, 0, 0.85)',
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    backgroundColor: 'rgba(0, 140, 255, 0.85)',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#ff8c00',
+    shadowColor: '#00e5ff',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.8,
-    shadowRadius: 15,
-    elevation: 10,
+    shadowRadius: 12,
+    elevation: 8,
   },
   turnLabelText: {
-    color: '#ffa500',
+    color: '#00e5ff',
     fontSize: 22,
     fontWeight: '900',
     letterSpacing: 1,

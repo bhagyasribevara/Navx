@@ -151,7 +151,7 @@ const styles = StyleSheet.create({
   },
   bubbleWrap: {
     position: 'absolute',
-    top: -90,
+    top: -55, // moved closer to the robot
     left: 10,
     width: 180,
     zIndex: 20,
