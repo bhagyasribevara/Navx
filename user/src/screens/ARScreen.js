@@ -76,7 +76,7 @@ const VANISH_Y     = SH * 0.33;   // vanishing-point screen position
 const MIN_Z        = 1.5;         // min forward depth (metres)
 const MAX_Z        = 50;          // max render distance (tighter for accuracy)
 const REF_Z        = 4;           // depth at which chevrons are "base" size
-const BASE_CHEV    = 85;          // chevron px size at REF_Z (perspective base size)
+const BASE_CHEV    = 120;         // chevron px size at REF_Z (perspective base size) - increased for larger size
 const CHEV_GAP_PX  = 80;          // pixel gap between chevrons
 const MAX_CHEVRONS = 30;          // continuous arrows along the entire path (increased from 8)
 
@@ -136,10 +136,6 @@ function generateARPath(pathNodes, userLat, userLng, userHeading, pitch = 0) {
   }
   const projected = projectPathToScreen(pathNodes, userLat, userLng, userHeading, pitch);
 
-  const CHEVRON_GAP_PX = 70;
-  const CHEVRON_SIZE = 36;
-  const CHEVRON_STROKE = 5;
-
   // ── fallback: straight-ahead when no projected points ──
   if (projected.length < 2) {
     const chevrons = [];
@@ -153,18 +149,23 @@ function generateARPath(pathNodes, userLat, userLng, userHeading, pitch = 0) {
     const z_cam_end = -CAMERA_HEIGHT * Math.sin(pitch) + MAX_Z * Math.cos(pitch);
     const sy_end = Math.max(0, VANISH_Y - FOCAL_PX * y_cam_end / Math.max(z_cam_end, MIN_Z));
 
-    const totalHeight = sy_start - sy_end;
-    const numChevrons = Math.min(MAX_CHEVRONS, Math.floor(totalHeight / CHEVRON_GAP_PX));
-
-    for (let i = 0; i < numChevrons; i++) {
-      const sy = sy_start - i * CHEVRON_GAP_PX;
+    let sy = sy_start;
+    let idx = 0;
+    while (sy > sy_end && idx < MAX_CHEVRONS) {
+      // Estimate depth from sy on ground plane
+      const depth = (FOCAL_PX * CAMERA_HEIGHT) / Math.max(1, sy - VANISH_Y);
+      const size = Math.max(16, Math.min(180, (BASE_CHEV * REF_Z) / depth));
+      
       chevrons.push({
-        path: buildChevronPath(cx, sy, -Math.PI / 2, CHEVRON_SIZE),
+        path: buildChevronPath(cx, sy, -Math.PI / 2, size),
         opacity: 0.8,
-        strokeWidth: CHEVRON_STROKE,
+        strokeWidth: 2,
         scale: 1,
-        index: i,
+        index: idx,
       });
+
+      sy -= size * 1.4;
+      idx++;
     }
     return { chevrons, mainPath: `M ${cx} ${sy_start} L ${cx} ${sy_end}` };
   }
@@ -175,10 +176,11 @@ function generateARPath(pathNodes, userLat, userLng, userHeading, pitch = 0) {
     mainPath += ` L ${projected[i].screenX} ${projected[i].screenY}`;
   }
 
-  // ── chevrons at even 2D screen pixel intervals along the projected path ──
+  // ── chevrons at dynamic screen pixel intervals along the projected path ──
   const chevrons = [];
   let accumulated = 0; // in pixels
   let idx = 0;
+  let nextGap = 80;
   
   for (let i = 1; i < projected.length && idx < MAX_CHEVRONS; i++) {
     const p0 = projected[i - 1];
@@ -189,7 +191,7 @@ function generateARPath(pathNodes, userLat, userLng, userHeading, pitch = 0) {
     const dy = p1.screenY - p0.screenY;
     const segLenPx = Math.sqrt(dx * dx + dy * dy);
     
-    let cursor = CHEVRON_GAP_PX - accumulated;
+    let cursor = nextGap - accumulated;
 
     while (cursor <= segLenPx && idx < MAX_CHEVRONS) {
       const t = cursor / segLenPx;
@@ -201,22 +203,26 @@ function generateARPath(pathNodes, userLat, userLng, userHeading, pitch = 0) {
       // Calculate rotation angle along the screen path
       const angle = Math.atan2(dy, dx);
 
-      // Uniform opacity, size, and stroke width
-      const opacity = 0.8;
+      // Interpolate depth and compute size with perspective scaling
+      const depth = p0.depth + (p1.depth - p0.depth) * t;
+      const size = Math.max(16, Math.min(180, (BASE_CHEV * REF_Z) / depth));
+
+      // Dynamic gap to prevent overlapping at different sizes/depths
+      nextGap = size * 1.4;
 
       chevrons.push({
-        path: buildChevronPath(sx, sy, angle, CHEVRON_SIZE),
-        opacity,
-        strokeWidth: CHEVRON_STROKE,
+        path: buildChevronPath(sx, sy, angle, size),
+        opacity: 0.8,
+        strokeWidth: 2,
         scale: 1,
         index: idx,
       });
 
       idx++;
-      cursor += CHEVRON_GAP_PX;
+      cursor += nextGap;
     }
 
-    accumulated = segLenPx - (cursor - CHEVRON_GAP_PX);
+    accumulated = segLenPx - (cursor - nextGap);
     if (accumulated < 0) accumulated = 0;
   }
 
@@ -226,13 +232,16 @@ function generateARPath(pathNodes, userLat, userLng, userHeading, pitch = 0) {
 // Build a single chevron (>>>) shape SVG path at a given position and angle
 function buildChevronPath(cx, cy, angle, size) {
   // Chevron points: like a "V" rotated to point along the direction
-  const halfW = size * 0.4;
+  const halfW = size * 0.5;
   const halfH = size * 0.3;
 
   const pts = [
-    { x: -halfW, y: halfH },    // bottom-left
-    { x: 0, y: -halfH },        // tip (forward)
-    { x: halfW, y: halfH },     // bottom-right
+    { x: 0, y: -halfH },        // outer tip (forward)
+    { x: halfW, y: halfH },     // outer right
+    { x: halfW * 0.55, y: halfH }, // inner right
+    { x: 0, y: -halfH * 0.1 },  // inner tip
+    { x: -halfW * 0.55, y: halfH }, // inner left
+    { x: -halfW, y: halfH },    // outer left
   ];
 
   // Rotate to point along the screen-space path direction
@@ -245,7 +254,7 @@ function buildChevronPath(cx, cy, angle, size) {
     y: cy + p.x * sin + p.y * cos,
   }));
 
-  return `M ${rotated[0].x} ${rotated[0].y} L ${rotated[1].x} ${rotated[1].y} L ${rotated[2].x} ${rotated[2].y}`;
+  return `M ${rotated[0].x} ${rotated[0].y} L ${rotated[1].x} ${rotated[1].y} L ${rotated[2].x} ${rotated[2].y} L ${rotated[3].x} ${rotated[3].y} L ${rotated[4].x} ${rotated[4].y} L ${rotated[5].x} ${rotated[5].y} Z`;
 }
 
 
@@ -265,7 +274,7 @@ const AnimatedChevronArrow = ({ pathData, strokeWidth, delay, opacity: baseOpaci
       strokeWidth={strokeWidth}
       strokeLinecap="round"
       strokeLinejoin="round"
-      fill="none"
+      fill="#00e5ff"
       opacity={animatedOpacity}
     />
   );
