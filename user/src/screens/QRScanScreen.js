@@ -6,8 +6,10 @@ import {
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import * as Location from "expo-location";
 import { ThemeContext } from "../context/ThemeContext";
-import { scanQRCode, getCampusByQR } from "../api";
+import { useGeofence } from "../context/GeofenceContext";
+import { scanQRCode, getCampusByQR, verifyCampusGeofence } from "../api";
 import { SHADOWS, RADIUS } from "../theme/designSystem";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
@@ -16,12 +18,14 @@ const FRAME = 240;
 
 export default function QRScanScreen({ navigation }) {
   const { colors } = useContext(ThemeContext);
+  const { activateCampus } = useGeofence();
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
   const [scanning, setScanning] = useState(true);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [isCampusQR, setIsCampusQR] = useState(false);
+  const [geofenceDenied, setGeofenceDenied] = useState(null); // { distance, radius, campusName, message }
 
   const scanLineAnim = useRef(new Animated.Value(0)).current;
   const successAnim = useRef(new Animated.Value(0)).current;
@@ -61,12 +65,54 @@ export default function QRScanScreen({ navigation }) {
         const campusId = data.substring(prefixLength);
         
         console.log("Scanning campus QR:", campusId);
-        const campusData = await getCampusByQR(campusId);
-        console.log("Campus API response:", campusData);
-        
-        setResult(campusData);
-        setIsCampusQR(true);
-        setError(null);
+
+        // ── Geofence verification ──────────────────────────────
+        // Step 1: Get user's current GPS location
+        let userLat = null, userLng = null;
+        try {
+          const { status } = await Location.requestForegroundPermissionsAsync();
+          if (status !== "granted") {
+            setError("Location permission is required to verify campus access. Please enable location services.");
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+            return;
+          }
+          const loc = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.High,
+            timeout: 10000,
+          });
+          userLat = loc.coords.latitude;
+          userLng = loc.coords.longitude;
+        } catch (locErr) {
+          console.warn("Location fetch failed:", locErr);
+          setError("Unable to determine your location. Please ensure GPS is enabled and try again.");
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+          return;
+        }
+
+        // Step 2: Verify geofence with backend
+        const verifyResult = await verifyCampusGeofence(campusId, userLat, userLng);
+        console.log("Geofence verify response:", verifyResult);
+
+        if (verifyResult.authorized) {
+          // Access granted — user is within campus boundary
+          setResult(verifyResult.campus);
+          setIsCampusQR(true);
+          setGeofenceDenied(null);
+          setError(null);
+        } else {
+          // Access denied — user is outside campus boundary
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+          setGeofenceDenied({
+            distance: verifyResult.distance,
+            radius: verifyResult.radius,
+            campusName: verifyResult.campusName,
+            message: verifyResult.message,
+          });
+          setResult(null);
+          setIsCampusQR(true);
+          setError(null);
+          return;
+        }
       } else {
         console.log("Scanning standard QR:", data);
         const qrData = await scanQRCode(data);
@@ -74,6 +120,7 @@ export default function QRScanScreen({ navigation }) {
         
         setResult(qrData);
         setIsCampusQR(false);
+        setGeofenceDenied(null);
         setError(null);
       }
     } catch (err) {
@@ -95,6 +142,7 @@ export default function QRScanScreen({ navigation }) {
     setScanning(true);
     setResult(null);
     setError(null);
+    setGeofenceDenied(null);
     successAnim.setValue(0);
     animateScanLine();
   };
@@ -150,10 +198,18 @@ export default function QRScanScreen({ navigation }) {
               <Animated.View style={[s.scanLine, { top: scanLineY }]} />
             )}
             {/* Success check */}
-            {scanned && !error && (
+            {scanned && !error && !geofenceDenied && (
               <Animated.View style={[s.successOverlay, { transform: [{ scale: successAnim }], opacity: successAnim }]}>
                 <View style={s.successCheck}>
                   <Ionicons name="checkmark" size={40} color="#fff" />
+                </View>
+              </Animated.View>
+            )}
+            {/* Geofence denied overlay */}
+            {scanned && geofenceDenied && (
+              <Animated.View style={[s.successOverlay, { backgroundColor: "rgba(239,68,68,0.35)" }, { transform: [{ scale: successAnim }], opacity: successAnim }]}>
+                <View style={[s.successCheck, { backgroundColor: "#ef4444" }]}>
+                  <Ionicons name="lock-closed" size={36} color="#fff" />
                 </View>
               </Animated.View>
             )}
@@ -176,7 +232,7 @@ export default function QRScanScreen({ navigation }) {
       {/* Center hint */}
       <View style={s.hintWrap}>
         <Text style={s.hintText}>
-          {scanned ? (error ? "❌ QR not recognized" : "✅ QR detected!") : "Point camera at a NavX QR code"}
+          {scanned ? (error ? "❌ QR not recognized" : (geofenceDenied ? "🔒 Access Denied" : "✅ QR detected!")) : "Point camera at a NavX QR code"}
         </Text>
       </View>
 
@@ -213,11 +269,32 @@ export default function QRScanScreen({ navigation }) {
             <Text style={s.errorText}>{error}</Text>
           </View>
         )}
+        {/* Geofence Denied Card */}
+        {geofenceDenied && !error && (
+          <Animated.View style={[s.deniedCard, { transform: [{ translateY: successAnim.interpolate({ inputRange: [0, 1], outputRange: [60, 0] }) }], opacity: successAnim }]}>
+            <View style={s.deniedIconWrap}>
+              <Ionicons name="shield-checkmark" size={24} color="#ef4444" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={s.deniedTitle}>Campus Access Denied</Text>
+              <Text style={s.deniedMessage}>You must be physically present on campus to access this data.</Text>
+              <View style={s.deniedDistanceRow}>
+                <Ionicons name="location" size={13} color="#f59e0b" />
+                <Text style={s.deniedDistance}>
+                  {geofenceDenied.distance}m away · Boundary: {geofenceDenied.radius}m
+                </Text>
+              </View>
+              {geofenceDenied.campusName && (
+                <Text style={s.deniedCampusName}>{geofenceDenied.campusName}</Text>
+              )}
+            </View>
+          </Animated.View>
+        )}
         <View style={s.actionRow}>
-          {scanned && !result && !error ? (
+          {scanned && !result && !error && !geofenceDenied ? (
             <View style={{ flex: 1, alignItems: 'center', padding: 14 }}>
               <ActivityIndicator color="#6366f1" size="small" />
-              <Text style={{ color: '#94a3b8', marginTop: 8, fontSize: 13 }}>Verifying QR Code...</Text>
+              <Text style={{ color: '#94a3b8', marginTop: 8, fontSize: 13 }}>Verifying location & QR Code...</Text>
             </View>
           ) : scanned ? (
             <>
@@ -231,17 +308,9 @@ export default function QRScanScreen({ navigation }) {
                   onPress={async () => {
                     if (isCampusQR) {
                       try {
-                        const previousCampusStr = await AsyncStorage.getItem('navx_active_campus');
-                        if (previousCampusStr) {
-                          const previousCampus = JSON.parse(previousCampusStr);
-                          if (previousCampus.id !== result._id) {
-                            await AsyncStorage.removeItem('navx_recent');
-                          }
-                        }
-                        await AsyncStorage.setItem('navx_active_campus', JSON.stringify({
-                          id: result._id,
-                          name: result.name
-                        }));
+                        // Activate campus session via GeofenceContext
+                        // This persists to AsyncStorage AND starts continuous monitoring
+                        await activateCampus(result);
                       } catch (e) {}
                       navigation.navigate("MainTabs", { screen: "Map", params: { campusId: result._id } });
                     } else {
@@ -362,4 +431,20 @@ const s = StyleSheet.create({
     backgroundColor: "rgba(17,24,39,0.85)", padding: 14, borderRadius: 14, gap: 10,
   },
   infoText: { flex: 1, color: "#94a3b8", fontSize: 13, lineHeight: 18 },
+  // Geofence denial styles
+  deniedCard: {
+    flexDirection: "row", alignItems: "flex-start",
+    backgroundColor: "rgba(17,24,39,0.95)", borderRadius: 16,
+    padding: 16, marginBottom: 12,
+    borderWidth: 1.5, borderColor: "rgba(239,68,68,0.4)",
+  },
+  deniedIconWrap: {
+    width: 48, height: 48, borderRadius: 14,
+    backgroundColor: "rgba(239,68,68,0.15)", alignItems: "center", justifyContent: "center", marginRight: 14,
+  },
+  deniedTitle: { fontSize: 16, fontWeight: "800", color: "#ef4444", marginBottom: 4 },
+  deniedMessage: { fontSize: 13, color: "#94a3b8", lineHeight: 18, marginBottom: 8 },
+  deniedDistanceRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 4 },
+  deniedDistance: { fontSize: 12, color: "#f59e0b", fontWeight: "700" },
+  deniedCampusName: { fontSize: 11, color: "#4b5563", fontWeight: "600", marginTop: 2 },
 });

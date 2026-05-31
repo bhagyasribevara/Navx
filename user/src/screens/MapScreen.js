@@ -6,6 +6,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { WebView } from "react-native-webview";
 import { ThemeContext } from "../context/ThemeContext";
+import { useGeofence } from "../context/GeofenceContext";
 import { getMapData, getCampuses, getGeoJSONMapData, SOCKET_URL } from "../api";
 import { io } from "socket.io-client";
 import { SHADOWS, RADIUS, ROOM_COLORS } from "../theme/designSystem";
@@ -117,10 +118,11 @@ ${geoJSONData ? `window.updateGeoJSON(${JSON.stringify(geoJSONData)}, '${centerC
 
 export default function MapScreen({ navigation, route }) {
   const { colors } = useContext(ThemeContext);
+  const { activeCampusId: contextCampusId } = useGeofence();
   const [mapData, setMapData] = useState(null);
   const [loading, setLoading] = useState(true);
   
-  const [campusId, setCampusId] = useState(route.params?.campusId || null);
+  const [campusId, setCampusId] = useState(route.params?.campusId || contextCampusId || null);
   const [selectedBlock, setSelectedBlock] = useState(null);
   const [selectedFloor, setSelectedFloor] = useState(null);
   const [geoJSONData, setGeoJSONData] = useState(null);
@@ -136,13 +138,15 @@ export default function MapScreen({ navigation, route }) {
       setCampusId(route.params.campusId);
       setSelectedBlock(null);
       setSelectedFloor(null);
+    } else if (contextCampusId) {
+      setCampusId(contextCampusId);
     } else if (!campusId) {
       getCampuses().then(data => {
         if (data.length) setCampusId(data[0]._id);
         else setLoading(false);
       }).catch(() => setLoading(false));
     }
-  }, [route.params?.campusId]);
+  }, [route.params?.campusId, contextCampusId]);
 
   useEffect(() => {
     if (campusId) {

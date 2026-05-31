@@ -7,22 +7,13 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { ThemeContext } from "../context/ThemeContext";
+import { useGeofence } from "../context/GeofenceContext";
 import { getCampuses, cachedGet, downloadCampusOffline, getRoomsByCat } from "../api";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SHADOWS, RADIUS, QUICK_ACTIONS, ROOM_COLORS } from "../theme/designSystem";
 import WeatherWidget from "../components/WeatherWidget";
-import * as Location from "expo-location";
 
-const haversine = (lat1, lon1, lat2, lon2) => {
-  const R = 6371e3;
-  const φ1 = lat1 * Math.PI/180;
-  const φ2 = lat2 * Math.PI/180;
-  const Δφ = (lat2-lat1) * Math.PI/180;
-  const Δλ = (lon2-lon1) * Math.PI/180;
-  const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ/2) * Math.sin(Δλ/2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-  return R * c;
-};
+
 
 const { width: SW } = Dimensions.get("window");
 const HOUR = new Date().getHours();
@@ -76,9 +67,9 @@ const VENUE_ICONS_MAP = { campus: 'school', hospital: 'medkit', airport: 'airpla
 
 export default function HomeScreen({ navigation }) {
   const { colors, isDark } = useContext(ThemeContext);
+  const { activeCampusId } = useGeofence();
   const [campuses, setCampuses] = useState([]);
   const [recentRooms, setRecentRooms] = useState([]);
-  const [activeCampusId, setActiveCampusId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [downloadingCampus, setDownloadingCampus] = useState(false);
   const [downloadedStatus, setDownloadedStatus] = useState({});
@@ -93,16 +84,10 @@ export default function HomeScreen({ navigation }) {
     // Load real recent rooms
     AsyncStorage.getItem("navx_recent").then(stored => {
       if (stored) setRecentRooms(JSON.parse(stored));
-    }).catch(() => {});
-    // Load active campus
-    AsyncStorage.getItem("navx_active_campus").then(stored => {
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        setActiveCampusId(parsed.id);
-      }
+      else setRecentRooms([]);
     }).catch(() => {});
     return () => cardAnims.forEach(a => a.setValue(0));
-  }, []));
+  }, [activeCampusId]));
 
   useEffect(() => {
     Animated.timing(headerAnim, { toValue: 1, duration: 500, useNativeDriver: true }).start();
@@ -122,36 +107,8 @@ export default function HomeScreen({ navigation }) {
       AsyncStorage.getItem(`navx_offline_${activeCampusId}`).then(res => {
         if (res) setDownloadedStatus(prev => ({ ...prev, [activeCampusId]: true }));
       }).catch(() => {});
-      
-      let sub = null;
-      const checkGeofence = async () => {
-        let { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') return;
-        
-        const currentCampus = campuses.find(c => c._id === activeCampusId);
-        if (!currentCampus || !currentCampus.location?.lat) return;
-
-        sub = await Location.watchPositionAsync({
-          accuracy: Location.Accuracy.Balanced,
-          timeInterval: 10000,
-          distanceInterval: 50,
-        }, async (loc) => {
-          const dist = haversine(
-            loc.coords.latitude, loc.coords.longitude,
-            currentCampus.location.lat, currentCampus.location.lng
-          );
-          const radius = currentCampus.radius || 500;
-          if (dist > radius) {
-            await AsyncStorage.removeItem('navx_active_campus');
-            setActiveCampusId(null);
-            if (sub) sub.remove();
-          }
-        });
-      };
-      checkGeofence();
-      return () => { if (sub) sub.remove(); };
     }
-  }, [activeCampusId, campuses]);
+  }, [activeCampusId]);
 
   const [showNotifs, setShowNotifs] = useState(false);
   const MOCK_NOTIFS = [

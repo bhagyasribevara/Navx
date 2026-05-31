@@ -162,6 +162,8 @@ export const scanQRCode = (code) =>
   api.get(`/qrcodes/scan/${code}`).then((r) => r.data);
 export const getCampusByQR = (campusId) =>
   api.get(`/campus/qr/${campusId}`).then((r) => r.data);
+export const verifyCampusGeofence = (campusId, lat, lng) =>
+  api.post(`/campus/qr/${campusId}/verify`, { lat, lng }).then((r) => r.data);
 export const getBeaconsForFloor = (floorId) =>
   api.get(`/beacons/floor/${floorId}`).then((r) => r.data);
 export const logAnalytics = (data) =>

@@ -8,6 +8,7 @@ import { StatusBar } from "expo-status-bar";
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { ThemeContext } from "./src/context/ThemeContext";
+import { GeofenceProvider } from "./src/context/GeofenceContext";
 
 import HomeScreen from "./src/screens/HomeScreen";
 import MapScreen from "./src/screens/MapScreen";
@@ -20,6 +21,7 @@ import FavoritesScreen from "./src/screens/FavoritesScreen";
 import SplashScreen from "./src/screens/SplashScreen";
 import OfflineMapsScreen from "./src/screens/OfflineMapsScreen";
 import EmergencyOverlay from "./src/components/EmergencyOverlay";
+import GeofenceGuard from "./src/components/GeofenceGuard";
 
 const DARK = {
   bg: "#070B14",
@@ -141,35 +143,38 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <ThemeContext.Provider value={{ colors, isDark, setIsDark, language, setLanguage }}>
-        <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }} edges={['top']}>
-          <NavigationContainer theme={navTheme}>
-            <StatusBar style={isDark ? "light" : "dark"} />
-            <Stack.Navigator screenOptions={{ headerShown: false }}>
-              <Stack.Screen name="MainTabs" component={MainTabs} />
-              <Stack.Screen
-                name="Navigation"
-                component={NavigationScreen}
-                options={{ animation: "slide_from_bottom", gestureEnabled: true }}
-              />
-              <Stack.Screen
-                name="AR"
-                component={ARScreen}
-                options={{ animation: "slide_from_bottom", gestureEnabled: true }}
-              />
-              <Stack.Screen
-                name="QRScan"
-                component={QRScanScreen}
-                options={{ animation: "slide_from_bottom", gestureEnabled: true }}
-              />
-              <Stack.Screen
-                name="OfflineMaps"
-                component={OfflineMapsScreen}
-                options={{ animation: "slide_from_bottom", gestureEnabled: true }}
-              />
-            </Stack.Navigator>
-            <EmergencyOverlay />
-          </NavigationContainer>
-        </SafeAreaView>
+        <GeofenceProvider>
+          <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }} edges={['top']}>
+            <NavigationContainer theme={navTheme}>
+              <StatusBar style={isDark ? "light" : "dark"} />
+              <Stack.Navigator screenOptions={{ headerShown: false }}>
+                <Stack.Screen name="MainTabs" component={MainTabs} />
+                <Stack.Screen
+                  name="Navigation"
+                  component={NavigationScreen}
+                  options={{ animation: "slide_from_bottom", gestureEnabled: true }}
+                />
+                <Stack.Screen
+                  name="AR"
+                  component={ARScreen}
+                  options={{ animation: "slide_from_bottom", gestureEnabled: true }}
+                />
+                <Stack.Screen
+                  name="QRScan"
+                  component={QRScanScreen}
+                  options={{ animation: "slide_from_bottom", gestureEnabled: true }}
+                />
+                <Stack.Screen
+                  name="OfflineMaps"
+                  component={OfflineMapsScreen}
+                  options={{ animation: "slide_from_bottom", gestureEnabled: true }}
+                />
+              </Stack.Navigator>
+              <EmergencyOverlay />
+              <GeofenceGuard />
+            </NavigationContainer>
+          </SafeAreaView>
+        </GeofenceProvider>
       </ThemeContext.Provider>
     </SafeAreaProvider>
   );

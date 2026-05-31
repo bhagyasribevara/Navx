@@ -141,6 +141,76 @@ router.get('/qr/:campusId', async (req, res) => {
   }
 });
 
+// POST verify campus QR with geofence — location-based access control
+router.post('/qr/:campusId/verify', async (req, res) => {
+  try {
+    const { lat, lng } = req.body;
+    if (lat == null || lng == null) {
+      return res.status(400).json({ authorized: false, message: 'User location (lat, lng) is required.' });
+    }
+
+    const campus = await Campus.findById(req.params.campusId);
+    if (!campus || !campus.isActive) {
+      return res.status(404).json({ authorized: false, message: 'Campus not found or inactive.' });
+    }
+
+    // Campus must have a geofence configured (location + radius)
+    if (!campus.location?.lat || !campus.location?.lng || !campus.radius) {
+      // No geofence configured — allow access (admin hasn't drawn boundary yet)
+      return res.json({
+        authorized: true,
+        campus: {
+          _id: campus._id,
+          name: campus.name,
+          description: campus.description,
+          address: campus.address,
+          location: campus.location,
+          radius: campus.radius,
+          venueType: campus.venueType || 'campus',
+        },
+        message: 'No geofence configured — access granted.',
+      });
+    }
+
+    // Haversine distance calculation
+    const R = 6371e3; // Earth radius in meters
+    const φ1 = (lat * Math.PI) / 180;
+    const φ2 = (campus.location.lat * Math.PI) / 180;
+    const Δφ = ((campus.location.lat - lat) * Math.PI) / 180;
+    const Δλ = ((campus.location.lng - lng) * Math.PI) / 180;
+    const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+              Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    const distance = R * c; // distance in meters
+
+    if (distance <= campus.radius) {
+      return res.json({
+        authorized: true,
+        distance: Math.round(distance),
+        campus: {
+          _id: campus._id,
+          name: campus.name,
+          description: campus.description,
+          address: campus.address,
+          location: campus.location,
+          radius: campus.radius,
+          venueType: campus.venueType || 'campus',
+        },
+      });
+    } else {
+      return res.json({
+        authorized: false,
+        distance: Math.round(distance),
+        radius: campus.radius,
+        campusName: campus.name,
+        message: `You are ${Math.round(distance)}m away from ${campus.name}. You must be within ${campus.radius}m to access campus data.`,
+      });
+    }
+  } catch (err) {
+    res.status(400).json({ authorized: false, message: 'Invalid campus QR code.' });
+  }
+});
+
 // GET campus data as unified GeoJSON FeatureCollection
 router.get('/geojson/:id', async (req, res) => {
   try {
