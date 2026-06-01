@@ -115,7 +115,8 @@ export default function QRScanScreen({ navigation }) {
         }
       } else {
         console.log("Scanning standard QR:", data);
-        const qrData = await scanQRCode(data);
+        // Encode the data to prevent Express routing errors on URLs with slashes
+        const qrData = await scanQRCode(encodeURIComponent(data));
         console.log("Standard QR API response:", qrData);
         
         setResult(qrData);
