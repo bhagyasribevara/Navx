@@ -35,7 +35,7 @@ function buildCampusMapHTML(geoJSONData, centerCoords) {
 </head><body><div id="map"></div>
 <script>
 var map=L.map('map',{zoomControl:false}).setView([${center[0]},${center[1]}], 18);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:22}).addTo(map);
+L.tileLayer('${process.env.EXPO_PUBLIC_MAPBOX_URL}',{maxZoom:22}).addTo(map);
 
 var geojsonLayer = null;
 function styleFeature(feature) {
@@ -139,16 +139,11 @@ export default function MapScreen({ navigation, route }) {
       setCampusId(route.params.campusId);
       setSelectedBlock(null);
       setSelectedFloor(null);
-<<<<<<< HEAD
     } else if (contextCampusId) {
       setCampusId(contextCampusId);
     } else {
       // No QR scanned — do NOT auto-load any campus. Show the gate.
       setLoading(false);
-=======
-    } else {
-      setCampusId(contextCampusId || null);
->>>>>>> fbcc6188646aff018cca5754d3d88d7b038b9e6d
     }
   }, [route.params?.campusId, contextCampusId]);
 

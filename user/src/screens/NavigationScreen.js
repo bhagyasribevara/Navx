@@ -93,7 +93,7 @@ function buildNavMapHTML(geoJSONData, pathPoints, initialPos, targetRoom) {
 </head><body><div id="map"></div>
 <script>
 var map=L.map('map',{zoomControl:false}).setView([${center[0]},${center[1]}], 19);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:22}).addTo(map);
+L.tileLayer('${process.env.EXPO_PUBLIC_MAPBOX_URL}',{maxZoom:22}).addTo(map);
 
 var geojsonLayer = null;
 function styleFeature(feature) {

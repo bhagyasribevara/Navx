@@ -1066,7 +1066,7 @@ export default function GuidedMapBuilder() {
         )}
 
         <MapContainer center={GMRIT} zoom={17} style={{width:'100%', height:'100%', zIndex:0}} zoomControl={false} maxZoom={24} whenReady={() => setMapReady(true)}>
-          <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" maxZoom={24} maxNativeZoom={19} />
+          <TileLayer url={import.meta.env.VITE_MAPBOX_URL || ""} maxZoom={24} maxNativeZoom={19} />
           {campus?.location?.lat && campus?.location?.lng && <MapUpdater center={[campus.location.lat, campus.location.lng]} />}
           <GeomanController onShapeDraw={handleShapeDraw} activeMode={drawMode} mapReady={mapReady} />
           <ClickHandler onClick={handleMapClick} />
