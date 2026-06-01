@@ -20,8 +20,10 @@ import SettingsScreen from "./src/screens/SettingsScreen";
 import FavoritesScreen from "./src/screens/FavoritesScreen";
 import SplashScreen from "./src/screens/SplashScreen";
 import OfflineMapsScreen from "./src/screens/OfflineMapsScreen";
+import CampaignDetailScreen from "./src/screens/CampaignDetailScreen";
 import EmergencyOverlay from "./src/components/EmergencyOverlay";
 import GeofenceGuard from "./src/components/GeofenceGuard";
+import NotificationBanner from "./src/components/NotificationBanner";
 
 const DARK = {
   bg: "#070B14",
@@ -169,9 +171,15 @@ export default function App() {
                   component={OfflineMapsScreen}
                   options={{ animation: "slide_from_bottom", gestureEnabled: true }}
                 />
+                <Stack.Screen
+                  name="CampaignDetail"
+                  component={CampaignDetailScreen}
+                  options={{ animation: "slide_from_right" }}
+                />
               </Stack.Navigator>
               <EmergencyOverlay />
               <GeofenceGuard />
+              <NotificationBanner />
             </NavigationContainer>
           </SafeAreaView>
         </GeofenceProvider>

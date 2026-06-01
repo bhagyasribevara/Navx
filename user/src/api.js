@@ -122,6 +122,8 @@ export const searchRooms = (query, campusId) =>
   api.get(`/rooms/search/${query}?campusId=${campusId}`).then((r) => r.data);
 export const getCampaigns = (campusId) =>
   api.get(`/campaigns/campus/${campusId}?active=true`).then((r) => r.data);
+export const getSubCampaigns = (parentId) =>
+  api.get(`/campaigns/${parentId}/sub?active=true`).then((r) => r.data);
 
 export const getMapData = async (campusId) => {
   try {

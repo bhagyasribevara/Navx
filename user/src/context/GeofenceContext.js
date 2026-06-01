@@ -47,21 +47,54 @@ export function GeofenceProvider({ children }) {
   const [revokedCampusName, setRevokedCampusName] = useState(null);
   const watcherRef = useRef(null);
 
-  // Restore campus session from AsyncStorage on app launch
+  // Restore campus session from AsyncStorage on app launch — but VALIDATE location first
   useEffect(() => {
     const restoreSession = async () => {
       try {
         const stored = await AsyncStorage.getItem("navx_active_campus");
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          // We need location & radius to monitor — if stored data has it, use it
-          if (parsed.location && parsed.radius) {
-            setActiveCampus(parsed);
-          } else {
-            // Legacy format (only id + name) — set basic state, monitoring won't start
-            // until campus data with location is available
-            setActiveCampus(parsed);
+        if (!stored) return;
+
+        const parsed = JSON.parse(stored);
+
+        // STRICT: require location + radius in the stored record to even attempt restore
+        if (!parsed.location?.lat || !parsed.location?.lng || !parsed.radius) {
+          console.warn("Stored session has no location/radius — wiping for safety.");
+          await wipeAllCampusData(parsed.id);
+          return;
+        }
+
+        // Require location permission
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== "granted") {
+          console.warn("Location permission denied on restore — wiping session.");
+          await wipeAllCampusData(parsed.id);
+          return;
+        }
+
+        // Get current GPS position and verify user is still inside campus radius
+        try {
+          const loc = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+            timeout: 10000,
+          });
+          const dist = haversine(
+            loc.coords.latitude,
+            loc.coords.longitude,
+            parsed.location.lat,
+            parsed.location.lng
+          );
+          if (dist > parsed.radius) {
+            console.log(`🚫 Session restore blocked: ${Math.round(dist)}m outside ${parsed.radius}m radius. Wiping.`);
+            await wipeAllCampusData(parsed.id);
+            return;
           }
+          // ✅ User is inside — safe to restore
+          console.log(`✅ Session restored: ${parsed.name} (${Math.round(dist)}m from center)`);
+          setActiveCampus(parsed);
+        } catch (locErr) {
+          // GPS timeout or unavailable — play it safe and wipe
+          console.warn("GPS check failed on restore — wiping session:", locErr?.message);
+          await wipeAllCampusData(parsed.id);
         }
       } catch (e) {
         console.warn("Failed to restore geofence session:", e);

@@ -88,9 +88,12 @@ export const getHeatmap = (campusId, floorId) =>
 
 // Campaigns
 export const getCampaigns = (campusId) => api.get(`/campaigns/campus/${campusId}`);
+export const getCampaign = (id) => api.get(`/campaigns/${id}`);
+export const getSubCampaigns = (parentId) => api.get(`/campaigns/${parentId}/sub`);
 export const createCampaign = (data) => api.post("/campaigns", data);
 export const updateCampaign = (id, data) => api.put(`/campaigns/${id}`, data);
 export const deleteCampaign = (id) => api.delete(`/campaigns/${id}`);
+
 
 // Uploads
 export const uploadImage = (file) => {

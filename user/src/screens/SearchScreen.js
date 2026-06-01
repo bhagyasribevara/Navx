@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useContext, useRef } from "react";
 import {
   View, Text, TextInput, FlatList, TouchableOpacity,
-  StyleSheet, Animated, Platform, ScrollView,
+  StyleSheet, Animated, Platform, ScrollView, RefreshControl,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { ThemeContext } from "../context/ThemeContext";
-import { searchRooms, getRoomsByCat, getCampuses, cachedGet } from "../api";
+import { useGeofence } from "../context/GeofenceContext";
+import { searchRooms, getRoomsByCat } from "../api";
 import { SHADOWS, RADIUS, ROOM_COLORS, ROOM_ICONS } from "../theme/designSystem";
 
 const CATS = [
@@ -28,28 +29,19 @@ export default function SearchScreen({ navigation, route }) {
   const { colors } = useContext(ThemeContext);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
-  const [campusId, setCampusId] = useState(route.params?.campusId || null);
+  const { activeCampusId } = useGeofence();
+  const campusId = activeCampusId;
   const [activeCat, setActiveCat] = useState(route.params?.filter || null);
   const inputRef = useRef(null);
   const listAnim = useRef(new Animated.Value(0)).current;
   const [searchFocused, setSearchFocused] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
-    if (!campusId) {
-      AsyncStorage.getItem("navx_active_campus").then(stored => {
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          setCampusId(parsed.id);
-        } else {
-          // Fallback if no active campus
-          cachedGet("campuses", getCampuses).then(data => {
-            if (data.length) setCampusId(data[0]._id);
-          });
-        }
-      });
+    if (campusId) {
+      setTimeout(() => inputRef.current?.focus(), 200);
     }
-    setTimeout(() => inputRef.current?.focus(), 200);
-  }, []);
+  }, [campusId]);
 
   useEffect(() => {
     if (!campusId) return;
@@ -76,6 +68,26 @@ export default function SearchScreen({ navigation, route }) {
 
   const handleFocus = (focused) => {
     setSearchFocused(focused);
+  };
+
+  const onRefresh = async () => {
+    if (!campusId) return;
+    setRefreshing(true);
+    try {
+      let data = [];
+      if (query.length >= 2) {
+        data = await searchRooms(query, campusId);
+        if (activeCat) data = data.filter(r => r.type === activeCat);
+      } else if (activeCat) {
+        data = await getRoomsByCat(campusId, activeCat);
+      }
+      setResults(data);
+      Animated.spring(listAnim, { toValue: 1, tension: 100, friction: 12, useNativeDriver: true }).start();
+    } catch {
+      setResults([]);
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   const s = StyleSheet.create({
@@ -173,6 +185,18 @@ export default function SearchScreen({ navigation, route }) {
     );
   };
 
+  if (!campusId) {
+    return (
+      <View style={[s.container, { justifyContent: 'center', alignItems: 'center', padding: 20 }]}>
+        <Ionicons name="lock-closed" size={80} color={colors.textMuted} />
+        <Text style={{ marginTop: 24, fontSize: 22, fontWeight: '800', color: colors.text }}>Search Locked</Text>
+        <Text style={{ marginTop: 12, fontSize: 15, color: colors.textSec, textAlign: 'center', lineHeight: 22 }}>
+          You need to be inside a campus to search for its rooms and facilities. Please scan a QR code from the Home tab.
+        </Text>
+      </View>
+    );
+  }
+
   return (
     <View style={s.container}>
       <View style={s.header}>
@@ -226,6 +250,16 @@ export default function SearchScreen({ navigation, route }) {
             renderItem={renderItem}
             keyExtractor={item => item._id}
             showsVerticalScrollIndicator={false}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                colors={[colors.primary]}
+                tintColor={colors.primary}
+                title="Pull to refresh…"
+                titleColor={colors.textSec}
+              />
+            }
           />
         </>
       ) : query.length >= 2 ? (

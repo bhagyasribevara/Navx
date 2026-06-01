@@ -2,7 +2,7 @@ import React, { useState, useEffect, useContext, useRef, useCallback } from "rea
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
   Dimensions, ActivityIndicator, TextInput, Animated,
-  Platform, StatusBar, Image
+  Platform, StatusBar, Image, RefreshControl
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
@@ -67,11 +67,12 @@ const VENUE_ICONS_MAP = { campus: 'school', hospital: 'medkit', airport: 'airpla
 
 export default function HomeScreen({ navigation }) {
   const { colors, isDark } = useContext(ThemeContext);
-  const { activeCampusId } = useGeofence();
+  const { activeCampusId, deactivateCampus } = useGeofence();
   const [campuses, setCampuses] = useState([]);
   const [recentRooms, setRecentRooms] = useState([]);
   const [campaigns, setCampaigns] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [downloadingCampus, setDownloadingCampus] = useState(false);
   const [downloadedStatus, setDownloadedStatus] = useState({});
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -90,6 +91,51 @@ export default function HomeScreen({ navigation }) {
     return () => cardAnims.forEach(a => a.setValue(0));
   }, [activeCampusId]));
 
+  const fetchData = useCallback(async (force = false) => {
+    try {
+      // If force refresh, bypass cache by calling API directly
+      const campusData = force
+        ? await getCampuses()
+        : await cachedGet("campuses", getCampuses);
+      setCampuses(campusData);
+      // Also clear and refresh the campuses cache entry
+      if (force) {
+        try {
+          await AsyncStorage.setItem(
+            "campuses",
+            JSON.stringify({ data: campusData, timestamp: Date.now() })
+          );
+        } catch {}
+      }
+    } catch (e) {
+      console.log("Failed to fetch campuses:", e);
+    }
+  }, []);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      // Force fresh campus data
+      await fetchData(true);
+      // Force fresh campaigns if campus is active
+      if (activeCampusId) {
+        try {
+          const fresh = await getCampaigns(activeCampusId);
+          setCampaigns(fresh || []);
+        } catch (e) {
+          console.log("Failed to refresh campaigns:", e);
+        }
+      }
+      // Refresh recent rooms from AsyncStorage
+      try {
+        const stored = await AsyncStorage.getItem("navx_recent");
+        setRecentRooms(stored ? JSON.parse(stored) : []);
+      } catch {}
+    } finally {
+      setRefreshing(false);
+    }
+  }, [activeCampusId, fetchData]);
+
   useEffect(() => {
     Animated.timing(headerAnim, { toValue: 1, duration: 500, useNativeDriver: true }).start();
     Animated.loop(
@@ -98,9 +144,8 @@ export default function HomeScreen({ navigation }) {
         Animated.timing(pulseAnim, { toValue: 1, duration: 2000, useNativeDriver: true }),
       ])
     ).start();
-    cachedGet("campuses", getCampuses)
-      .then(d => { setCampuses(d); setLoading(false); })
-      .catch(() => setLoading(false));
+    fetchData(false)
+      .finally(() => setLoading(false));
   }, []);
 
   useEffect(() => {
@@ -276,11 +321,100 @@ export default function HomeScreen({ navigation }) {
     );
   }
 
+  // ── QR Gate: Block entire app until user scans a valid campus QR ──
+  if (!activeCampusId || !campuses.find(c => c._id === activeCampusId)) {
+    return (
+      <View style={[s.container, { justifyContent: "center", alignItems: "center", paddingHorizontal: 32 }]}>
+        {/* Pulsing NavX logo */}
+        <Animated.View style={{ transform: [{ scale: pulseAnim }], marginBottom: 28 }}>
+          <View style={{
+            width: 100, height: 100, borderRadius: 32,
+            backgroundColor: colors.primary + "20",
+            alignItems: "center", justifyContent: "center",
+            borderWidth: 2, borderColor: colors.primary + "35",
+          }}>
+            <Ionicons name="qr-code" size={48} color={colors.primary} />
+          </View>
+        </Animated.View>
+
+        <Text style={{ fontSize: 26, fontWeight: "900", color: colors.text, marginBottom: 10, letterSpacing: -0.5 }}>
+          Nav<Text style={{ color: colors.primary }}>X</Text>
+        </Text>
+        <Text style={{ fontSize: 16, fontWeight: "700", color: colors.text, marginBottom: 10, textAlign: "center" }}>
+          Scan Entrance QR to Begin
+        </Text>
+        <Text style={{ fontSize: 14, color: colors.textSec, textAlign: "center", lineHeight: 21, marginBottom: 36 }}>
+          Walk up to the venue entrance and scan the NavX QR code to unlock the campus map, navigation, and all indoor services.
+        </Text>
+
+        {/* Steps */}
+        {[
+          { icon: "walk", step: "1", label: "Go to the venue entrance" },
+          { icon: "qr-code-outline", step: "2", label: "Find the NavX QR code on the board" },
+          { icon: "navigate", step: "3", label: "Scan to unlock campus navigation" },
+        ].map(item => (
+          <View key={item.step} style={{
+            flexDirection: "row", alignItems: "center",
+            backgroundColor: colors.card,
+            borderRadius: 14, padding: 14,
+            borderWidth: 1, borderColor: colors.border,
+            marginBottom: 10, width: "100%",
+          }}>
+            <View style={{
+              width: 40, height: 40, borderRadius: 12,
+              backgroundColor: colors.primary + "18",
+              alignItems: "center", justifyContent: "center", marginRight: 14,
+            }}>
+              <Ionicons name={item.icon} size={20} color={colors.primary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 11, fontWeight: "800", color: colors.primary, marginBottom: 2, textTransform: "uppercase", letterSpacing: 0.8 }}>Step {item.step}</Text>
+              <Text style={{ fontSize: 14, fontWeight: "600", color: colors.text }}>{item.label}</Text>
+            </View>
+          </View>
+        ))}
+
+        <TouchableOpacity
+          style={{
+            marginTop: 12, backgroundColor: colors.primary,
+            paddingHorizontal: 32, paddingVertical: 16,
+            borderRadius: 16, flexDirection: "row", alignItems: "center", gap: 10,
+            width: "100%", justifyContent: "center",
+            shadowColor: colors.primary, shadowOpacity: 0.4, shadowRadius: 12, elevation: 6,
+          }}
+          onPress={() => navigation.navigate("QRScan")}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="qr-code" size={20} color="#fff" />
+          <Text style={{ color: "#fff", fontSize: 16, fontWeight: "800" }}>Scan QR Code</Text>
+        </TouchableOpacity>
+
+        <Text style={{ marginTop: 18, fontSize: 12, color: colors.textMuted, textAlign: "center" }}>
+          🔒  Access is restricted to the physical venue only
+        </Text>
+      </View>
+    );
+  }
+
   const GRAD_BARS = [["#6366f1", "#4f46e5"], ["#22c55e", "#16a34a"], ["#3b82f6", "#2563eb"]];
 
   return (
     <>
-      <ScrollView style={s.container} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
+      <ScrollView
+        style={s.container}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 100 }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[colors.primary]}
+            tintColor={colors.primary}
+            title="Pull to refresh…"
+            titleColor={colors.textSec}
+          />
+        }
+      >
         {/* Header */}
         <Animated.View style={[s.header, { opacity: headerAnim, transform: [{ translateY: headerAnim.interpolate({ inputRange: [0, 1], outputRange: [-16, 0] }) }] }]}>
           <View style={s.headerTop}>
@@ -360,7 +494,16 @@ export default function HomeScreen({ navigation }) {
                     <Text style={s.campaignTitle} numberOfLines={1}>{c.title}</Text>
                     <Text style={s.campaignDesc} numberOfLines={2}>{c.description}</Text>
                     
-                    {c.destination?.roomId && (
+                    {c.subCount > 0 ? (
+                      <TouchableOpacity 
+                        style={s.campaignNavBtn}
+                        activeOpacity={0.8}
+                        onPress={() => navigation.navigate("CampaignDetail", { campaign: c })}
+                      >
+                        <Ionicons name="list" size={16} color="#fff" />
+                        <Text style={s.campaignNavText}>View Events →</Text>
+                      </TouchableOpacity>
+                    ) : c.destination?.roomId ? (
                       <TouchableOpacity 
                         style={s.campaignNavBtn}
                         activeOpacity={0.8}
@@ -369,7 +512,7 @@ export default function HomeScreen({ navigation }) {
                         <Ionicons name="navigate" size={16} color="#fff" />
                         <Text style={s.campaignNavText}>Navigate Here</Text>
                       </TouchableOpacity>
-                    )}
+                    ) : null}
                   </View>
                 </View>
               ))}
@@ -464,57 +607,53 @@ export default function HomeScreen({ navigation }) {
           </View>
         )}
 
-        {/* Campuses */}
+        {/* Your Venue */}
         <View style={s.section}>
           <View style={s.secRow}>
-            <Text style={s.secTitle}>{activeCampusId ? "Your Venue" : "Unlock Your Venue"}</Text>
+            <Text style={s.secTitle}>Your Venue</Text>
             <Ionicons name={VENUE_ICONS_MAP[campuses.find(c => c._id === activeCampusId)?.venueType] || "business-outline"} size={18} color={colors.textMuted} />
           </View>
-          {(!activeCampusId || !campuses.find(c => c._id === activeCampusId)) ? (
-            <View style={s.empty}>
-              <View style={s.emptyIcon}>
-                <Ionicons name="qr-code-outline" size={30} color={colors.textMuted} />
-              </View>
-              <Text style={s.emptyTitle}>No Venue Unlocked</Text>
-              <Text style={s.emptyText}>Scan the venue QR code at the entrance{"\n"}to load the map and navigation.</Text>
-              <TouchableOpacity
-                style={{ marginTop: 16, backgroundColor: colors.primary, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8 }}
-                onPress={() => navigation.navigate("QRScan")}
-              >
-                <Text style={{ color: "#fff", fontWeight: "700" }}>Scan QR Code</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            campuses.filter(c => c._id === activeCampusId).map((campus, i) => {
-              const g = GRAD_BARS[i % GRAD_BARS.length];
-              return (
-                <TouchableOpacity key={campus._id} style={s.campusCard} activeOpacity={0.88} onPress={() => navigation.navigate("Map", { campusId: campus._id, campusName: campus.name })}>
-                  <View style={[s.campusBar, { backgroundColor: g[0] }]} />
-                  <View style={s.campusBody}>
-                    <Text style={s.campusName}>{campus.name}</Text>
-                    <Text style={s.campusDesc}>{campus.description || "Tap to explore campus map"}</Text>
-                    {campus.address && (
-                      <View style={s.campusAddr}>
-                        <Ionicons name="location" size={12} color={colors.textMuted} />
-                        <Text style={{ fontSize: 12, color: colors.textMuted, marginLeft: 4 }}>{campus.address}</Text>
-                      </View>
-                    )}
-                    <View style={s.campusActions}>
-                      <TouchableOpacity style={s.mapBtn} onPress={() => navigation.navigate("Map", { campusId: campus._id })}>
-                        <Ionicons name="map" size={16} color="#fff" />
-                        <Text style={{ color: "#fff", fontWeight: "700", fontSize: 13, marginLeft: 6 }}>Explore Map</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity style={s.arBtn} onPress={() => navigation.navigate("Search", { campusId: campus._id })}>
-                        <Ionicons name="search" size={16} color={colors.primary} />
-                        <Text style={{ color: colors.primary, fontWeight: "700", fontSize: 13, marginLeft: 6 }}>Search</Text>
-                      </TouchableOpacity>
+          {campuses.filter(c => c._id === activeCampusId).map((campus, i) => {
+            const g = GRAD_BARS[i % GRAD_BARS.length];
+            return (
+              <TouchableOpacity key={campus._id} style={s.campusCard} activeOpacity={0.88} onPress={() => navigation.navigate("Map", { campusId: campus._id, campusName: campus.name })}>
+                <View style={[s.campusBar, { backgroundColor: g[0] }]} />
+                <View style={s.campusBody}>
+                  <Text style={s.campusName}>{campus.name}</Text>
+                  <Text style={s.campusDesc}>{campus.description || "Tap to explore campus map"}</Text>
+                  {campus.address && (
+                    <View style={s.campusAddr}>
+                      <Ionicons name="location" size={12} color={colors.textMuted} />
+                      <Text style={{ fontSize: 12, color: colors.textMuted, marginLeft: 4 }}>{campus.address}</Text>
                     </View>
+                  )}
+                  <View style={s.campusActions}>
+                    <TouchableOpacity style={s.mapBtn} onPress={() => navigation.navigate("Map", { campusId: campus._id })}>
+                      <Ionicons name="map" size={16} color="#fff" />
+                      <Text style={{ color: "#fff", fontWeight: "700", fontSize: 13, marginLeft: 6 }}>Explore Map</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={s.arBtn} onPress={() => navigation.navigate("Search", { campusId: campus._id })}>
+                      <Ionicons name="search" size={16} color={colors.primary} />
+                      <Text style={{ color: colors.primary, fontWeight: "700", fontSize: 13, marginLeft: 6 }}>Search</Text>
+                    </TouchableOpacity>
                   </View>
-                </TouchableOpacity>
-              );
-            })
-          )}
+                </View>
+              </TouchableOpacity>
+            );
+          })}
         </View>
+
+        {activeCampusId && (
+          <TouchableOpacity 
+            style={{ marginHorizontal: 20, marginTop: 30, marginBottom: 10, padding: 14, backgroundColor: colors.card, borderRadius: 12, borderWidth: 1, borderColor: colors.danger, flexDirection: 'row', justifyContent: 'center', alignItems: 'center' }}
+            onPress={() => {
+              if (deactivateCampus) deactivateCampus();
+            }}
+          >
+            <Ionicons name="exit-outline" size={18} color={colors.danger} />
+            <Text style={{ marginLeft: 8, color: colors.danger, fontWeight: '700', fontSize: 14 }}>Exit Campus</Text>
+          </TouchableOpacity>
+        )}
       </ScrollView>
 
       {/* ── Notifications Panel ──────────────────────────────── */}

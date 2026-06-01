@@ -1,7 +1,7 @@
 import React, { useState, useContext, useRef, useEffect } from "react";
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  Animated, Platform, Alert,
+  Animated, Platform, Alert, RefreshControl,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { ThemeContext } from "../context/ThemeContext";
@@ -14,6 +14,7 @@ export default function FavoritesScreen({ navigation }) {
   const [favorites, setFavorites] = useState([]);
   const [recents, setRecents] = useState([]);
   const [activeTab, setActiveTab] = useState("recent");
+  const [refreshing, setRefreshing] = useState(false);
   const headerAnim = useRef(new Animated.Value(0)).current;
   const itemAnims = useRef(Array(20).fill(0).map(() => new Animated.Value(0))).current;
 
@@ -31,6 +32,25 @@ export default function FavoritesScreen({ navigation }) {
       }
     });
   }, []);
+
+  const loadRecents = async () => {
+    const stored = await AsyncStorage.getItem("navx_recent").catch(() => null);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      setRecents(parsed);
+      Animated.stagger(60, parsed.map((_, i) =>
+        Animated.spring(itemAnims[i], { toValue: 1, tension: 120, friction: 10, useNativeDriver: true })
+      )).start();
+    } else {
+      setRecents([]);
+    }
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadRecents();
+    setRefreshing(false);
+  };
 
   const removeFavorite = (id) => {
     Alert.alert("Remove Favorite", "Remove this location from favorites?", [
@@ -122,7 +142,20 @@ export default function FavoritesScreen({ navigation }) {
         </View>
       </Animated.View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.listContent}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={s.listContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[colors.primary]}
+            tintColor={colors.primary}
+            title="Pull to refresh…"
+            titleColor={colors.textSec}
+          />
+        }
+      >
         {data.length === 0 ? (
           <View style={s.empty}>
             <View style={s.emptyIcon}>

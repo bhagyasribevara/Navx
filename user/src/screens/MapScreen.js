@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useContext, useRef, useMemo } from "react";
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  ActivityIndicator, ScrollView, Platform, Dimensions, Animated, Easing
+  ActivityIndicator, ScrollView, Platform, Dimensions, Animated, Easing, RefreshControl
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { WebView } from "react-native-webview";
@@ -128,6 +128,7 @@ export default function MapScreen({ navigation, route }) {
   const [geoJSONData, setGeoJSONData] = useState(null);
   const [userPos, setUserPos] = useState(null);
   const [heading, setHeading] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
 
   const webViewRef = useRef(null);
   const socketRef = useRef(null);
@@ -140,11 +141,9 @@ export default function MapScreen({ navigation, route }) {
       setSelectedFloor(null);
     } else if (contextCampusId) {
       setCampusId(contextCampusId);
-    } else if (!campusId) {
-      getCampuses().then(data => {
-        if (data.length) setCampusId(data[0]._id);
-        else setLoading(false);
-      }).catch(() => setLoading(false));
+    } else {
+      // No QR scanned — do NOT auto-load any campus. Show the gate.
+      setLoading(false);
     }
   }, [route.params?.campusId, contextCampusId]);
 
@@ -169,6 +168,26 @@ export default function MapScreen({ navigation, route }) {
       return () => { if (socketRef.current) socketRef.current.disconnect(); };
     }
   }, [campusId]);
+
+  const onRefresh = async () => {
+    if (!campusId) return;
+    setRefreshing(true);
+    try {
+      const [hierarchy, geojson] = await Promise.all([
+        getMapData(campusId),
+        getGeoJSONMapData(campusId),
+      ]);
+      setMapData(hierarchy);
+      setGeoJSONData(geojson);
+      // Reset selections so directory reflects fresh data
+      setSelectedBlock(null);
+      setSelectedFloor(null);
+    } catch (e) {
+      console.log("Map refresh failed:", e);
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   // Inject GeoJSON when it changes or when floor changes
   useEffect(() => {
@@ -298,6 +317,43 @@ export default function MapScreen({ navigation, route }) {
     );
   }
 
+  // QR Gate — no campus unlocked
+  if (!campusId) {
+    return (
+      <View style={[s.container, { justifyContent: "center", alignItems: "center", paddingHorizontal: 32 }]}>
+        <View style={{
+          width: 88, height: 88, borderRadius: 28,
+          backgroundColor: colors.primary + "18",
+          alignItems: "center", justifyContent: "center", marginBottom: 24,
+          borderWidth: 2, borderColor: colors.primary + "30",
+        }}>
+          <Ionicons name="map-outline" size={42} color={colors.primary} />
+        </View>
+        <Text style={{ fontSize: 20, fontWeight: "800", color: colors.text, marginBottom: 8, textAlign: "center" }}>
+          No Campus Unlocked
+        </Text>
+        <Text style={{ fontSize: 14, color: colors.textSec, textAlign: "center", lineHeight: 21, marginBottom: 28 }}>
+          Scan the NavX QR code at the venue entrance to unlock the interactive campus map and navigation.
+        </Text>
+        <TouchableOpacity
+          style={{
+            backgroundColor: colors.primary, paddingHorizontal: 28, paddingVertical: 14,
+            borderRadius: 14, flexDirection: "row", alignItems: "center", gap: 8,
+            shadowColor: colors.primary, shadowOpacity: 0.4, shadowRadius: 10, elevation: 5,
+          }}
+          onPress={() => navigation.navigate("QRScan")}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="qr-code" size={18} color="#fff" />
+          <Text style={{ color: "#fff", fontSize: 15, fontWeight: "800" }}>Scan QR Code</Text>
+        </TouchableOpacity>
+        <Text style={{ marginTop: 16, fontSize: 12, color: colors.textMuted, textAlign: "center" }}>
+          🔒  Access is restricted to the physical venue
+        </Text>
+      </View>
+    );
+  }
+
   const renderContent = () => {
     if (selectedFloor) {
       const rooms = mapData?.rooms?.filter(r => r.floorId === selectedFloor._id) || [];
@@ -407,7 +463,20 @@ export default function MapScreen({ navigation, route }) {
             {selectedFloor ? selectedFloor.name : selectedBlock ? selectedBlock.name : "Campus Directory"}
           </Text>
         </View>
-        <ScrollView contentContainerStyle={s.list} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          contentContainerStyle={s.list}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={[colors.primary]}
+              tintColor={colors.primary}
+              title="Pull to refresh map…"
+              titleColor={colors.textSec}
+            />
+          }
+        >
           {renderContent()}
         </ScrollView>
       </Animated.View>
