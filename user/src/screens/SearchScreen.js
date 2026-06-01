@@ -6,7 +6,11 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { ThemeContext } from "../context/ThemeContext";
 import { useGeofence } from "../context/GeofenceContext";
+<<<<<<< HEAD
 import { searchRooms, getRoomsByCat } from "../api";
+=======
+import { searchRooms, getRoomsByCat, getCampuses, cachedGet } from "../api";
+>>>>>>> fbcc6188646aff018cca5754d3d88d7b038b9e6d
 import { SHADOWS, RADIUS, ROOM_COLORS, ROOM_ICONS } from "../theme/designSystem";
 
 const CATS = [
@@ -29,8 +33,13 @@ export default function SearchScreen({ navigation, route }) {
   const { colors } = useContext(ThemeContext);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
+<<<<<<< HEAD
   const { activeCampusId } = useGeofence();
   const campusId = activeCampusId;
+=======
+  const { activeCampusId: contextCampusId } = useGeofence();
+  const [campusId, setCampusId] = useState(route.params?.campusId || contextCampusId || null);
+>>>>>>> fbcc6188646aff018cca5754d3d88d7b038b9e6d
   const [activeCat, setActiveCat] = useState(route.params?.filter || null);
   const inputRef = useRef(null);
   const listAnim = useRef(new Animated.Value(0)).current;
@@ -38,10 +47,23 @@ export default function SearchScreen({ navigation, route }) {
   const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
+<<<<<<< HEAD
     if (campusId) {
       setTimeout(() => inputRef.current?.focus(), 200);
     }
   }, [campusId]);
+=======
+    if (route.params?.campusId) {
+      setCampusId(route.params.campusId);
+    } else {
+      setCampusId(contextCampusId || null);
+    }
+  }, [route.params?.campusId, contextCampusId]);
+
+  useEffect(() => {
+    setTimeout(() => inputRef.current?.focus(), 200);
+  }, []);
+>>>>>>> fbcc6188646aff018cca5754d3d88d7b038b9e6d
 
   useEffect(() => {
     if (!campusId) return;

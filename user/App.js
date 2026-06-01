@@ -17,7 +17,7 @@ import NavigationScreen from "./src/screens/NavigationScreen";
 import ARScreen from "./src/screens/ARScreen";
 import QRScanScreen from "./src/screens/QRScanScreen";
 import SettingsScreen from "./src/screens/SettingsScreen";
-import FavoritesScreen from "./src/screens/FavoritesScreen";
+
 import SplashScreen from "./src/screens/SplashScreen";
 import OfflineMapsScreen from "./src/screens/OfflineMapsScreen";
 import CampaignDetailScreen from "./src/screens/CampaignDetailScreen";
@@ -111,8 +111,6 @@ function MainTabs() {
     >
       <Tab.Screen name="Home" component={HomeScreen} options={{ title: "Home" }} />
       <Tab.Screen name="Map" component={MapScreen} options={{ title: "Map" }} />
-      <Tab.Screen name="Search" component={SearchScreen} options={{ title: "Search" }} />
-      <Tab.Screen name="Favorites" component={FavoritesScreen} options={{ title: "Saved" }} />
       <Tab.Screen name="Settings" component={SettingsScreen} options={{ title: "Settings" }} />
     </Tab.Navigator>
   );
@@ -172,9 +170,15 @@ export default function App() {
                   options={{ animation: "slide_from_bottom", gestureEnabled: true }}
                 />
                 <Stack.Screen
+<<<<<<< HEAD
                   name="CampaignDetail"
                   component={CampaignDetailScreen}
                   options={{ animation: "slide_from_right" }}
+=======
+                  name="Search"
+                  component={SearchScreen}
+                  options={{ animation: "slide_from_bottom", gestureEnabled: true }}
+>>>>>>> fbcc6188646aff018cca5754d3d88d7b038b9e6d
                 />
               </Stack.Navigator>
               <EmergencyOverlay />

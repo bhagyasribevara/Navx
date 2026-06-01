@@ -136,7 +136,7 @@ export default function WeatherWidget() {
     try {
       const [d, f] = await Promise.all([
         getWeatherForCurrentLocation(),
-        getForecastForCurrentLocation().catch(e => null) // Ignore forecast errors for now
+        getForecastForCurrentLocation().catch(e => e.message || 'Forecast failed')
       ]);
       setWeather(d);
       setForecast(f);
@@ -234,7 +234,6 @@ export default function WeatherWidget() {
                 </View>
               ) : weather ? (
                   <Animated.View style={{ flex: 1, opacity: cFade }}>
-                    {activeTab === 'weather' ? (
                       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 24, paddingTop: Platform.OS === 'ios' ? 60 : 48, paddingBottom: 40 }}>
                         {/* Header */}
                         <Animated.View style={[s.hdr, mkAnim(hdrA)]}>
@@ -281,31 +280,31 @@ export default function WeatherWidget() {
                       <StatCard icon="analytics-outline" label="Pressure" value={weather.pressure} unit=" hPa" theme={theme} delay={700} />
                     </View>
 
-                    {/* Sunrise / Sunset Card (Gradient) */}
-                    <LinearGradient
-                      colors={theme.cardGradient || ['#7C3AED', '#4F46E5']}
-                      start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-                      style={s.sunCard}
-                    >
-                      <View style={s.sunIt}>
-                        <Ionicons name="sunny" size={24} color="#FFF" style={{ marginBottom: 6 }} />
-                        <Text style={[s.sunLbl, { color: 'rgba(255,255,255,0.8)' }]}>Sunrise</Text>
-                        <Text style={[s.sunTm, { color: '#FFF' }]}>{weather.sunrise}</Text>
-                      </View>
-                      <View style={s.sunCenter}>
-                        <Ionicons name="partly-sunny" size={22} color="rgba(255,255,255,0.6)" />
-                      </View>
-                      <View style={s.sunIt}>
-                        <Ionicons name="moon" size={24} color="#FFF" style={{ marginBottom: 6 }} />
-                        <Text style={[s.sunLbl, { color: 'rgba(255,255,255,0.8)' }]}>Sunset</Text>
-                        <Text style={[s.sunTm, { color: '#FFF' }]}>{weather.sunset}</Text>
-                      </View>
-                    </LinearGradient>
-                  </ScrollView>
-                    ) : (
-                      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 24, paddingTop: Platform.OS === 'ios' ? 60 : 48, paddingBottom: 40 }}>
-                        <Text style={[s.locTxt, { color: theme.textPrimary, marginBottom: 20 }]}>5-Day Forecast</Text>
-                        {forecast && forecast.map((day, i) => (
+                        {/* Sunrise / Sunset Card (Gradient) */}
+                        <LinearGradient
+                          colors={theme.cardGradient || ['#7C3AED', '#4F46E5']}
+                          start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                          style={s.sunCard}
+                        >
+                          <View style={s.sunIt}>
+                            <Ionicons name="sunny" size={24} color="#FFF" style={{ marginBottom: 6 }} />
+                            <Text style={[s.sunLbl, { color: 'rgba(255,255,255,0.8)' }]}>Sunrise</Text>
+                            <Text style={[s.sunTm, { color: '#FFF' }]}>{weather.sunrise}</Text>
+                          </View>
+                          <View style={s.sunCenter}>
+                            <Ionicons name="partly-sunny" size={22} color="rgba(255,255,255,0.6)" />
+                          </View>
+                          <View style={s.sunIt}>
+                            <Ionicons name="moon" size={24} color="#FFF" style={{ marginBottom: 6 }} />
+                            <Text style={[s.sunLbl, { color: 'rgba(255,255,255,0.8)' }]}>Sunset</Text>
+                            <Text style={[s.sunTm, { color: '#FFF' }]}>{weather.sunset}</Text>
+                          </View>
+                        </LinearGradient>
+
+                        <Text style={[s.locTxt, { color: theme.textPrimary, marginTop: 12, marginBottom: 12 }]}>5-Day Forecast</Text>
+                        {typeof forecast === 'string' ? (
+                          <Text style={{ color: 'red', fontSize: 16 }}>{forecast}</Text>
+                        ) : forecast && Array.isArray(forecast) ? forecast.map((day, i) => (
                           <View key={i} style={[s.forecastCard, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}>
                             <Text style={[s.forecastDay, { color: theme.textPrimary }]}>{day.dayName}</Text>
                             <Image source={{ uri: getWeatherIconUrl(day.icon) }} style={s.forecastIcon} />
@@ -314,25 +313,12 @@ export default function WeatherWidget() {
                               <Text style={[s.forecastTempMin, { color: theme.textMuted }]}>{day.tempMin}°</Text>
                             </View>
                           </View>
-                        ))}
+                        )) : null}
                       </ScrollView>
-                    )}
                   </Animated.View>
               ) : null}
             </LinearGradient>
             </ImageBackground>
-            
-            {/* Bottom Tab Bar */}
-            <View style={[s.tabBar, { backgroundColor: theme.tabBg || '#FFF' }]}>
-              <TouchableOpacity style={s.tabItem} onPress={() => setActiveTab('weather')}>
-                <Ionicons name={activeTab === 'weather' ? "cloud" : "cloud-outline"} size={24} color={activeTab === 'weather' ? (theme.accentColor || '#8B5CF6') : (theme.tabIcon || '#94A3B8')} />
-                <Text style={[s.tabLabel, { color: activeTab === 'weather' ? (theme.accentColor || '#8B5CF6') : (theme.tabText || '#94A3B8') }]}>Weather</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={s.tabItem} onPress={() => setActiveTab('forecast')}>
-                <Ionicons name={activeTab === 'forecast' ? "calendar" : "calendar-outline"} size={24} color={activeTab === 'forecast' ? (theme.accentColor || '#8B5CF6') : (theme.tabIcon || '#94A3B8')} />
-                <Text style={[s.tabLabel, { color: activeTab === 'forecast' ? (theme.accentColor || '#8B5CF6') : (theme.tabText || '#94A3B8') }]}>Forecast</Text>
-              </TouchableOpacity>
-            </View>
           </Animated.View>
         </Animated.View>
       </Modal>
