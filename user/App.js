@@ -170,15 +170,14 @@ export default function App() {
                   options={{ animation: "slide_from_bottom", gestureEnabled: true }}
                 />
                 <Stack.Screen
-<<<<<<< HEAD
                   name="CampaignDetail"
                   component={CampaignDetailScreen}
                   options={{ animation: "slide_from_right" }}
-=======
+                />
+                <Stack.Screen
                   name="Search"
                   component={SearchScreen}
                   options={{ animation: "slide_from_bottom", gestureEnabled: true }}
->>>>>>> fbcc6188646aff018cca5754d3d88d7b038b9e6d
                 />
               </Stack.Navigator>
               <EmergencyOverlay />
