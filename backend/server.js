@@ -108,6 +108,8 @@ app.use('/api/campus', require('./routes/campus'));
 app.use('/api/blocks', require('./routes/blocks'));
 app.use('/api/floors', require('./routes/floors'));
 app.use('/api/rooms', require('./routes/rooms'));
+app.use('/api/upload', require('./routes/upload'));
+app.use('/api/campaigns', require('./routes/campaigns'));
 app.use('/api/nodes', require('./routes/nodes'));
 app.use('/api/paths', require('./routes/paths'));
 app.use('/api/qrcodes', require('./routes/qrcodes'));

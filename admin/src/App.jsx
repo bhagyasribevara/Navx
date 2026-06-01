@@ -10,6 +10,7 @@ import MapEditor from './pages/MapEditor';
 import PositioningSetup from './pages/PositioningSetup';
 import AnalyticsDashboard from './pages/AnalyticsDashboard';
 import EmergencyDashboard from './pages/EmergencyDashboard';
+import CampaignManager from './pages/CampaignManager';
 import Login from './pages/Login';
 import SuperAdminDashboard from './pages/SuperAdminDashboard';
 
@@ -64,6 +65,7 @@ function App() {
           <Route path="/campus" element={<CampusManager admin={admin} />} />
           <Route path="/editor/:campusId" element={<MapEditor />} />
           <Route path="/positioning/:campusId" element={<PositioningSetup />} />
+          <Route path="/campaigns" element={<CampaignManager admin={admin} />} />
           <Route path="/analytics" element={<AnalyticsDashboard admin={admin} />} />
           <Route path="/emergency" element={<EmergencyDashboard admin={admin} />} />
         </Routes>
@@ -93,6 +95,9 @@ function Sidebar({ admin, onLogout }) {
           <div className="nav-section-title">Management</div>
           <NavLink to="/campus" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
             <FiGrid /> Venues & Maps
+          </NavLink>
+          <NavLink to="/campaigns" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+            <FiAlertCircle /> Campaigns
           </NavLink>
         </div>
         <div className="nav-section">

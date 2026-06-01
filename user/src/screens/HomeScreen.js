@@ -2,13 +2,13 @@ import React, { useState, useEffect, useContext, useRef, useCallback } from "rea
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
   Dimensions, ActivityIndicator, TextInput, Animated,
-  Platform, StatusBar,
+  Platform, StatusBar, Image
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { ThemeContext } from "../context/ThemeContext";
 import { useGeofence } from "../context/GeofenceContext";
-import { getCampuses, cachedGet, downloadCampusOffline, getRoomsByCat } from "../api";
+import { getCampuses, cachedGet, downloadCampusOffline, getRoomsByCat, getCampaigns, SOCKET_URL } from "../api";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SHADOWS, RADIUS, QUICK_ACTIONS, ROOM_COLORS } from "../theme/designSystem";
 import WeatherWidget from "../components/WeatherWidget";
@@ -70,6 +70,7 @@ export default function HomeScreen({ navigation }) {
   const { activeCampusId } = useGeofence();
   const [campuses, setCampuses] = useState([]);
   const [recentRooms, setRecentRooms] = useState([]);
+  const [campaigns, setCampaigns] = useState([]);
   const [loading, setLoading] = useState(true);
   const [downloadingCampus, setDownloadingCampus] = useState(false);
   const [downloadedStatus, setDownloadedStatus] = useState({});
@@ -85,7 +86,7 @@ export default function HomeScreen({ navigation }) {
     AsyncStorage.getItem("navx_recent").then(stored => {
       if (stored) setRecentRooms(JSON.parse(stored));
       else setRecentRooms([]);
-    }).catch(() => {});
+    }).catch(() => { });
     return () => cardAnims.forEach(a => a.setValue(0));
   }, [activeCampusId]));
 
@@ -106,7 +107,13 @@ export default function HomeScreen({ navigation }) {
     if (activeCampusId) {
       AsyncStorage.getItem(`navx_offline_${activeCampusId}`).then(res => {
         if (res) setDownloadedStatus(prev => ({ ...prev, [activeCampusId]: true }));
-      }).catch(() => {});
+      }).catch(() => { });
+
+      getCampaigns(activeCampusId)
+        .then(d => setCampaigns(d || []))
+        .catch(e => console.log('Failed to fetch campaigns', e));
+    } else {
+      setCampaigns([]);
     }
   }, [activeCampusId]);
 
@@ -234,6 +241,26 @@ export default function HomeScreen({ navigation }) {
     },
     emptyTitle: { fontSize: 16, fontWeight: "700", color: colors.text, marginBottom: 6 },
     emptyText: { fontSize: 13, color: colors.textSec, textAlign: "center", lineHeight: 20 },
+    campaignCard: {
+      width: 280, backgroundColor: colors.card,
+      borderRadius: RADIUS.lg, marginRight: 16,
+      borderWidth: 1, borderColor: colors.border, ...SHADOWS.md, overflow: 'hidden'
+    },
+    campaignImg: { width: '100%', height: 120, backgroundColor: colors.border },
+    campaignContent: { padding: 16 },
+    campaignTitle: { fontSize: 16, fontWeight: "800", color: colors.text, marginBottom: 4 },
+    campaignDesc: { fontSize: 13, color: colors.textSec, lineHeight: 18, marginBottom: 12 },
+    campaignBadge: {
+      alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 4,
+      borderRadius: 4, backgroundColor: colors.primary + "15",
+      marginBottom: 8
+    },
+    campaignBadgeText: { fontSize: 10, fontWeight: "800", color: colors.primary, textTransform: 'uppercase' },
+    campaignNavBtn: {
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+      backgroundColor: colors.primary, paddingVertical: 10, borderRadius: RADIUS.sm
+    },
+    campaignNavText: { color: '#fff', fontSize: 13, fontWeight: "700", marginLeft: 6 }
   });
 
   if (loading) {
@@ -253,228 +280,267 @@ export default function HomeScreen({ navigation }) {
 
   return (
     <>
-    <ScrollView style={s.container} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
-      {/* Header */}
-      <Animated.View style={[s.header, { opacity: headerAnim, transform: [{ translateY: headerAnim.interpolate({ inputRange: [0, 1], outputRange: [-16, 0] }) }] }]}>
-        <View style={s.headerTop}>
-          <View>
-            <Text style={s.greetingText}>{GREETING} 👋</Text>
-            <Text style={s.appName}>Nav<Text style={s.appAccent}>X</Text></Text>
-          </View>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-            <WeatherWidget />
-            <TouchableOpacity style={[s.avatar, { width: 42, height: 42 }]} onPress={() => setShowNotifs(true)}>
-              <Ionicons name="notifications" size={20} color={colors.primary} />
-              <View style={s.notifDot} />
-            </TouchableOpacity>
-            <TouchableOpacity style={[s.avatar, { width: 42, height: 42 }]} onPress={() => navigation.navigate("Settings")}>
-              <Ionicons name="person" size={20} color={colors.primary} />
-            </TouchableOpacity>
-          </View>
-        </View>
-        <View style={s.searchRow}>
-          <Ionicons name="search" size={20} color={colors.textMuted} />
-          <TextInput
-            style={s.searchInput}
-            placeholder="Search rooms, labs, blocks…"
-            placeholderTextColor={colors.textMuted}
-            onFocus={() => navigation.navigate("Search")}
-          />
-          <TouchableOpacity style={s.qrBtn} onPress={() => navigation.navigate("QRScan")}>
-            <Ionicons name="qr-code" size={18} color="#fff" />
-          </TouchableOpacity>
-        </View>
-      </Animated.View>
-
-      {/* Quick Actions */}
-      <View style={s.section}>
-        <View style={s.secRow}>
-          <Text style={s.secTitle}>Quick Actions</Text>
-        </View>
-        <View style={s.quickRow}>
-          {QUICK_ACTIONS.map((a, i) => (
-            <Animated.View key={i} style={{
-              opacity: cardAnims[i],
-              transform: [
-                { scale: cardAnims[i] },
-                { translateY: cardAnims[i].interpolate({ inputRange: [0, 1], outputRange: [18, 0] }) }
-              ],
-            }}>
-              <TouchableOpacity style={s.quickCard} onPress={() => navigation.navigate(a.screen)} activeOpacity={0.78}>
-                <View style={[s.quickIcon, { backgroundColor: a.bg }]}>
-                  <Ionicons name={a.icon} size={24} color={a.color} />
-                </View>
-                <Text style={s.quickLabel}>{a.label}</Text>
+      <ScrollView style={s.container} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
+        {/* Header */}
+        <Animated.View style={[s.header, { opacity: headerAnim, transform: [{ translateY: headerAnim.interpolate({ inputRange: [0, 1], outputRange: [-16, 0] }) }] }]}>
+          <View style={s.headerTop}>
+            <View>
+              <Text style={s.greetingText}>{GREETING} 👋</Text>
+              <Text style={s.appName}>Nav<Text style={s.appAccent}>X</Text></Text>
+            </View>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+              <WeatherWidget />
+              <TouchableOpacity style={[s.avatar, { width: 42, height: 42 }]} onPress={() => setShowNotifs(true)}>
+                <Ionicons name="notifications" size={20} color={colors.primary} />
+                <View style={s.notifDot} />
               </TouchableOpacity>
-            </Animated.View>
-          ))}
-        </View>
-      </View>
-
-      {/* Banner */}
-      <TouchableOpacity style={s.banner} activeOpacity={0.9} onPress={() => navigation.navigate("Map", { campusId: activeCampusId })}>
-        <View style={[s.bannerInner, { backgroundColor: "#4f46e5" }]}>
-          <View style={[s.bannerInner, { padding: 0 }]}>
-            <View style={{ flexDirection: "row", position: "absolute", right: 20, top: -10, opacity: 0.15 }}>
-              <Ionicons name="map" size={100} color="#fff" />
+              <TouchableOpacity style={[s.avatar, { width: 42, height: 42 }]} onPress={() => navigation.navigate("Settings")}>
+                <Ionicons name="person" size={20} color={colors.primary} />
+              </TouchableOpacity>
             </View>
           </View>
-          <View style={s.bannerBadge}>
-            <Ionicons name="flash" size={10} color="#fff" />
-            <Text style={s.bannerBadgeText}>LIVE TRACKING</Text>
-          </View>
-          <Text style={s.bannerTitle}>Interactive Floor Map</Text>
-          <Text style={s.bannerSub}>Explore with real-time indoor positioning</Text>
-          <TouchableOpacity style={s.bannerBtn} onPress={() => navigation.navigate("Map", { campusId: activeCampusId })}>
-            <Ionicons name="map" size={16} color="#4f46e5" />
-            <Text style={s.bannerBtnText}>Open Map</Text>
-          </TouchableOpacity>
-        </View>
-      </TouchableOpacity>
-
-      {/* Categories */}
-      <View style={{ marginTop: 22 }}>
-        <View style={[s.secRow, { paddingHorizontal: 20 }]}>
-          <Text style={s.secTitle}>Browse by Category</Text>
-        </View>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20 }}>
-          {(VENUE_CATS[campuses.find(c => c._id === activeCampusId)?.venueType] || VENUE_CATS.campus).map((c, i) => (
-            <TouchableOpacity key={i} style={s.catChip} onPress={async () => {
-              if (c.filter === 'parking' && activeCampusId) {
-                try {
-                  const rooms = await getRoomsByCat(activeCampusId, 'parking');
-                  if (rooms && rooms.length > 0) {
-                    let closest = rooms[0];
-                    const storedScan = await AsyncStorage.getItem('navx_last_scan');
-                    if (storedScan) {
-                      const pos = JSON.parse(storedScan);
-                      let minD = Infinity;
-                      rooms.forEach(r => {
-                        let d = Math.hypot((r.shape?.x || 0) - pos.x, (r.shape?.y || 0) - pos.y);
-                        if (r.floorId !== pos.floorId) d += 1000;
-                        if (d < minD) { minD = d; closest = r; }
-                      });
-                    }
-                    navigation.navigate("Navigation", { room: closest, campusId: closest.campusId || activeCampusId });
-                    return;
-                  }
-                } catch(e) {}
-              }
-              navigation.navigate("Search", { filter: c.filter });
-            }} activeOpacity={0.78}>
-              <Ionicons name={c.icon} size={16} color={c.color} />
-              <Text style={s.catLabel}>{c.label}</Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-      </View>
-
-      {/* Recently Visited */}
-      {recentRooms.length > 0 && (
-      <View style={s.section}>
-        <View style={s.secRow}>
-          <Text style={s.secTitle}>Recently Visited</Text>
-          <TouchableOpacity onPress={() => navigation.navigate("Favorites")}>
-            <Text style={s.seeAll}>See All →</Text>
-          </TouchableOpacity>
-        </View>
-        {recentRooms.map(rm => {
-          const roomColor = ROOM_COLORS[rm.type] || colors.primary;
-          return (
-          <TouchableOpacity key={rm._id} style={s.recentCard} onPress={() => navigation.navigate("Navigation", { room: rm, campusId: rm.campusId })} activeOpacity={0.82}>
-            <View style={[s.recentIcon, { backgroundColor: roomColor + "20" }]}>
-              <Ionicons name="location" size={22} color={roomColor} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={s.recentName}>{rm.name}</Text>
-              <Text style={s.recentMeta}>{(rm.type || "room").toUpperCase()}{rm.roomNumber ? ` · Room ${rm.roomNumber}` : ""}</Text>
-            </View>
-            <View style={s.navBadge}>
-              <Ionicons name="navigate" size={18} color={colors.primary} />
-            </View>
-          </TouchableOpacity>
-          );
-        })}
-      </View>
-      )}
-
-      {/* Campuses */}
-      <View style={s.section}>
-        <View style={s.secRow}>
-          <Text style={s.secTitle}>{activeCampusId ? "Your Venue" : "Unlock Your Venue"}</Text>
-          <Ionicons name={VENUE_ICONS_MAP[campuses.find(c => c._id === activeCampusId)?.venueType] || "business-outline"} size={18} color={colors.textMuted} />
-        </View>
-        {(!activeCampusId || !campuses.find(c => c._id === activeCampusId)) ? (
-          <View style={s.empty}>
-            <View style={s.emptyIcon}>
-              <Ionicons name="qr-code-outline" size={30} color={colors.textMuted} />
-            </View>
-            <Text style={s.emptyTitle}>No Venue Unlocked</Text>
-            <Text style={s.emptyText}>Scan the venue QR code at the entrance{"\n"}to load the map and navigation.</Text>
-            <TouchableOpacity 
-              style={{ marginTop: 16, backgroundColor: colors.primary, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8 }}
-              onPress={() => navigation.navigate("QRScan")}
-            >
-              <Text style={{ color: "#fff", fontWeight: "700" }}>Scan QR Code</Text>
+          <View style={s.searchRow}>
+            <Ionicons name="search" size={20} color={colors.textMuted} />
+            <TextInput
+              style={s.searchInput}
+              placeholder="Search rooms, labs, blocks…"
+              placeholderTextColor={colors.textMuted}
+              onFocus={() => navigation.navigate("Search")}
+            />
+            <TouchableOpacity style={s.qrBtn} onPress={() => navigation.navigate("QRScan")}>
+              <Ionicons name="qr-code" size={18} color="#fff" />
             </TouchableOpacity>
           </View>
-        ) : (
-          campuses.filter(c => c._id === activeCampusId).map((campus, i) => {
-            const g = GRAD_BARS[i % GRAD_BARS.length];
-            return (
-              <TouchableOpacity key={campus._id} style={s.campusCard} activeOpacity={0.88} onPress={() => navigation.navigate("Map", { campusId: campus._id, campusName: campus.name })}>
-                <View style={[s.campusBar, { backgroundColor: g[0] }]} />
-                <View style={s.campusBody}>
-                  <Text style={s.campusName}>{campus.name}</Text>
-                  <Text style={s.campusDesc}>{campus.description || "Tap to explore campus map"}</Text>
-                  {campus.address && (
-                    <View style={s.campusAddr}>
-                      <Ionicons name="location" size={12} color={colors.textMuted} />
-                      <Text style={{ fontSize: 12, color: colors.textMuted, marginLeft: 4 }}>{campus.address}</Text>
-                    </View>
-                  )}
-                  <View style={s.campusActions}>
-                    <TouchableOpacity style={s.mapBtn} onPress={() => navigation.navigate("Map", { campusId: campus._id })}>
-                      <Ionicons name="map" size={16} color="#fff" />
-                      <Text style={{ color: "#fff", fontWeight: "700", fontSize: 13, marginLeft: 6 }}>Explore Map</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={s.arBtn} onPress={() => navigation.navigate("Search", { campusId: campus._id })}>
-                      <Ionicons name="search" size={16} color={colors.primary} />
-                      <Text style={{ color: colors.primary, fontWeight: "700", fontSize: 13, marginLeft: 6 }}>Search</Text>
-                    </TouchableOpacity>
+        </Animated.View>
+
+        {/* Quick Actions */}
+        <View style={s.section}>
+          <View style={s.secRow}>
+            <Text style={s.secTitle}>Quick Actions</Text>
+          </View>
+          <View style={s.quickRow}>
+            {QUICK_ACTIONS.map((a, i) => (
+              <Animated.View key={i} style={{
+                opacity: cardAnims[i],
+                transform: [
+                  { scale: cardAnims[i] },
+                  { translateY: cardAnims[i].interpolate({ inputRange: [0, 1], outputRange: [18, 0] }) }
+                ],
+              }}>
+                <TouchableOpacity style={s.quickCard} onPress={() => navigation.navigate(a.screen)} activeOpacity={0.78}>
+                  <View style={[s.quickIcon, { backgroundColor: a.bg }]}>
+                    <Ionicons name={a.icon} size={24} color={a.color} />
+                  </View>
+                  <Text style={s.quickLabel}>{a.label}</Text>
+                </TouchableOpacity>
+              </Animated.View>
+            ))}
+          </View>
+        </View>
+
+        {/* 🔥 Active Updates */}
+        {activeCampusId && campaigns.length > 0 && (
+          <View style={s.section}>
+            <View style={s.secRow}>
+              <View>
+                <Text style={s.secTitle}>Active Updates</Text>
+                <Text style={{ fontSize: 13, color: colors.textSec, marginTop: 2 }}>Latest announcements, events, and services</Text>
+              </View>
+            </View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingRight: 20 }}>
+              {campaigns.map(c => (
+                <View key={c._id} style={s.campaignCard}>
+                  {c.image && <Image source={{ uri: c.image.startsWith('http') ? c.image : `${SOCKET_URL}${c.image}` }} style={s.campaignImg} resizeMode="cover" />}
+                  <View style={s.campaignContent}>
+                    {c.category && (
+                      <View style={s.campaignBadge}>
+                        <Text style={s.campaignBadgeText}>{c.category}</Text>
+                      </View>
+                    )}
+                    <Text style={s.campaignTitle} numberOfLines={1}>{c.title}</Text>
+                    <Text style={s.campaignDesc} numberOfLines={2}>{c.description}</Text>
+                    
+                    {c.destination?.roomId && (
+                      <TouchableOpacity 
+                        style={s.campaignNavBtn}
+                        activeOpacity={0.8}
+                        onPress={() => navigation.navigate("Navigation", { room: { _id: c.destination.roomId._id, floorId: c.destination.floorId?._id, name: c.destination.roomId.name }, campusId: activeCampusId })}
+                      >
+                        <Ionicons name="navigate" size={16} color="#fff" />
+                        <Text style={s.campaignNavText}>Navigate Here</Text>
+                      </TouchableOpacity>
+                    )}
                   </View>
                 </View>
-              </TouchableOpacity>
-            );
-          })
+              ))}
+            </ScrollView>
+          </View>
         )}
-      </View>
-    </ScrollView>
 
-    {/* ── Notifications Panel ──────────────────────────────── */}
-    {showNotifs && (
-      <View style={{ position: "absolute", top: 0, bottom: 0, left: 0, right: 0, zIndex: 100 }}>
-        <TouchableOpacity style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.5)" }} activeOpacity={1} onPress={() => setShowNotifs(false)} />
-        <Animated.View style={{ position: "absolute", top: Platform.OS === "ios" ? 100 : 70, right: 20, width: SW * 0.85, backgroundColor: colors.card, borderRadius: RADIUS.lg, ...SHADOWS.lg, padding: 16 }}>
-          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-            <Text style={{ fontSize: 16, fontWeight: "800", color: colors.text }}>Notifications</Text>
-            <TouchableOpacity onPress={() => setShowNotifs(false)}>
-              <Ionicons name="close" size={20} color={colors.textSec} />
+        {/* Banner */}
+        <TouchableOpacity style={s.banner} activeOpacity={0.9} onPress={() => navigation.navigate("Map", { campusId: activeCampusId })}>
+          <View style={[s.bannerInner, { backgroundColor: "#4f46e5" }]}>
+            <View style={[s.bannerInner, { padding: 0 }]}>
+              <View style={{ flexDirection: "row", position: "absolute", right: 20, top: -10, opacity: 0.15 }}>
+                <Ionicons name="map" size={100} color="#fff" />
+              </View>
+            </View>
+            <View style={s.bannerBadge}>
+              <Ionicons name="flash" size={10} color="#fff" />
+              <Text style={s.bannerBadgeText}>LIVE TRACKING</Text>
+            </View>
+            <Text style={s.bannerTitle}>Interactive Floor Map</Text>
+            <Text style={s.bannerSub}>Explore with real-time indoor positioning</Text>
+            <TouchableOpacity style={s.bannerBtn} onPress={() => navigation.navigate("Map", { campusId: activeCampusId })}>
+              <Ionicons name="map" size={16} color="#4f46e5" />
+              <Text style={s.bannerBtnText}>Open Map</Text>
             </TouchableOpacity>
           </View>
-          {MOCK_NOTIFS.map(n => (
-            <View key={n.id} style={{ paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.border }}>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                {n.unread && <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: "#ef4444" }} />}
-                <Text style={{ fontSize: 14, fontWeight: "700", color: colors.text }}>{n.title}</Text>
-                <Text style={{ fontSize: 11, color: colors.textMuted, marginLeft: "auto" }}>{n.time}</Text>
-              </View>
-              <Text style={{ fontSize: 13, color: colors.textSec, lineHeight: 18 }}>{n.desc}</Text>
+        </TouchableOpacity>
+
+        {/* Categories */}
+        <View style={{ marginTop: 22 }}>
+          <View style={[s.secRow, { paddingHorizontal: 20 }]}>
+            <Text style={s.secTitle}>Browse by Category</Text>
+          </View>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20 }}>
+            {(VENUE_CATS[campuses.find(c => c._id === activeCampusId)?.venueType] || VENUE_CATS.campus).map((c, i) => (
+              <TouchableOpacity key={i} style={s.catChip} onPress={async () => {
+                if (c.filter === 'parking' && activeCampusId) {
+                  try {
+                    const rooms = await getRoomsByCat(activeCampusId, 'parking');
+                    if (rooms && rooms.length > 0) {
+                      let closest = rooms[0];
+                      const storedScan = await AsyncStorage.getItem('navx_last_scan');
+                      if (storedScan) {
+                        const pos = JSON.parse(storedScan);
+                        let minD = Infinity;
+                        rooms.forEach(r => {
+                          let d = Math.hypot((r.shape?.x || 0) - pos.x, (r.shape?.y || 0) - pos.y);
+                          if (r.floorId !== pos.floorId) d += 1000;
+                          if (d < minD) { minD = d; closest = r; }
+                        });
+                      }
+                      navigation.navigate("Navigation", { room: closest, campusId: closest.campusId || activeCampusId });
+                      return;
+                    }
+                  } catch (e) { }
+                }
+                navigation.navigate("Search", { filter: c.filter });
+              }} activeOpacity={0.78}>
+                <Ionicons name={c.icon} size={16} color={c.color} />
+                <Text style={s.catLabel}>{c.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+
+        {/* Recently Visited */}
+        {recentRooms.length > 0 && (
+          <View style={s.section}>
+            <View style={s.secRow}>
+              <Text style={s.secTitle}>Recently Visited</Text>
+              <TouchableOpacity onPress={() => navigation.navigate("Favorites")}>
+                <Text style={s.seeAll}>See All →</Text>
+              </TouchableOpacity>
             </View>
-          ))}
-        </Animated.View>
-      </View>
-    )}
-  </>
+            {recentRooms.map(rm => {
+              const roomColor = ROOM_COLORS[rm.type] || colors.primary;
+              return (
+                <TouchableOpacity key={rm._id} style={s.recentCard} onPress={() => navigation.navigate("Navigation", { room: rm, campusId: rm.campusId })} activeOpacity={0.82}>
+                  <View style={[s.recentIcon, { backgroundColor: roomColor + "20" }]}>
+                    <Ionicons name="location" size={22} color={roomColor} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.recentName}>{rm.name}</Text>
+                    <Text style={s.recentMeta}>{(rm.type || "room").toUpperCase()}{rm.roomNumber ? ` · Room ${rm.roomNumber}` : ""}</Text>
+                  </View>
+                  <View style={s.navBadge}>
+                    <Ionicons name="navigate" size={18} color={colors.primary} />
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        )}
+
+        {/* Campuses */}
+        <View style={s.section}>
+          <View style={s.secRow}>
+            <Text style={s.secTitle}>{activeCampusId ? "Your Venue" : "Unlock Your Venue"}</Text>
+            <Ionicons name={VENUE_ICONS_MAP[campuses.find(c => c._id === activeCampusId)?.venueType] || "business-outline"} size={18} color={colors.textMuted} />
+          </View>
+          {(!activeCampusId || !campuses.find(c => c._id === activeCampusId)) ? (
+            <View style={s.empty}>
+              <View style={s.emptyIcon}>
+                <Ionicons name="qr-code-outline" size={30} color={colors.textMuted} />
+              </View>
+              <Text style={s.emptyTitle}>No Venue Unlocked</Text>
+              <Text style={s.emptyText}>Scan the venue QR code at the entrance{"\n"}to load the map and navigation.</Text>
+              <TouchableOpacity
+                style={{ marginTop: 16, backgroundColor: colors.primary, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8 }}
+                onPress={() => navigation.navigate("QRScan")}
+              >
+                <Text style={{ color: "#fff", fontWeight: "700" }}>Scan QR Code</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            campuses.filter(c => c._id === activeCampusId).map((campus, i) => {
+              const g = GRAD_BARS[i % GRAD_BARS.length];
+              return (
+                <TouchableOpacity key={campus._id} style={s.campusCard} activeOpacity={0.88} onPress={() => navigation.navigate("Map", { campusId: campus._id, campusName: campus.name })}>
+                  <View style={[s.campusBar, { backgroundColor: g[0] }]} />
+                  <View style={s.campusBody}>
+                    <Text style={s.campusName}>{campus.name}</Text>
+                    <Text style={s.campusDesc}>{campus.description || "Tap to explore campus map"}</Text>
+                    {campus.address && (
+                      <View style={s.campusAddr}>
+                        <Ionicons name="location" size={12} color={colors.textMuted} />
+                        <Text style={{ fontSize: 12, color: colors.textMuted, marginLeft: 4 }}>{campus.address}</Text>
+                      </View>
+                    )}
+                    <View style={s.campusActions}>
+                      <TouchableOpacity style={s.mapBtn} onPress={() => navigation.navigate("Map", { campusId: campus._id })}>
+                        <Ionicons name="map" size={16} color="#fff" />
+                        <Text style={{ color: "#fff", fontWeight: "700", fontSize: 13, marginLeft: 6 }}>Explore Map</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={s.arBtn} onPress={() => navigation.navigate("Search", { campusId: campus._id })}>
+                        <Ionicons name="search" size={16} color={colors.primary} />
+                        <Text style={{ color: colors.primary, fontWeight: "700", fontSize: 13, marginLeft: 6 }}>Search</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              );
+            })
+          )}
+        </View>
+      </ScrollView>
+
+      {/* ── Notifications Panel ──────────────────────────────── */}
+      {showNotifs && (
+        <View style={{ position: "absolute", top: 0, bottom: 0, left: 0, right: 0, zIndex: 100 }}>
+          <TouchableOpacity style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.5)" }} activeOpacity={1} onPress={() => setShowNotifs(false)} />
+          <Animated.View style={{ position: "absolute", top: Platform.OS === "ios" ? 100 : 70, right: 20, width: SW * 0.85, backgroundColor: colors.card, borderRadius: RADIUS.lg, ...SHADOWS.lg, padding: 16 }}>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <Text style={{ fontSize: 16, fontWeight: "800", color: colors.text }}>Notifications</Text>
+              <TouchableOpacity onPress={() => setShowNotifs(false)}>
+                <Ionicons name="close" size={20} color={colors.textSec} />
+              </TouchableOpacity>
+            </View>
+            {MOCK_NOTIFS.map(n => (
+              <View key={n.id} style={{ paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                  {n.unread && <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: "#ef4444" }} />}
+                  <Text style={{ fontSize: 14, fontWeight: "700", color: colors.text }}>{n.title}</Text>
+                  <Text style={{ fontSize: 11, color: colors.textMuted, marginLeft: "auto" }}>{n.time}</Text>
+                </View>
+                <Text style={{ fontSize: 13, color: colors.textSec, lineHeight: 18 }}>{n.desc}</Text>
+              </View>
+            ))}
+          </Animated.View>
+        </View>
+      )}
+    </>
   );
 }

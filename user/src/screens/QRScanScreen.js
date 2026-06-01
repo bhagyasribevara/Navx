@@ -308,11 +308,9 @@ export default function QRScanScreen({ navigation }) {
                   onPress={async () => {
                     if (isCampusQR) {
                       try {
-                        // Activate campus session via GeofenceContext
-                        // This persists to AsyncStorage AND starts continuous monitoring
                         await activateCampus(result);
                       } catch (e) {}
-                      navigation.navigate("MainTabs", { screen: "Map", params: { campusId: result._id } });
+                      navigation.navigate("MainTabs", { screen: "Home", params: { campusId: result._id } });
                     } else {
                       try {
                         await AsyncStorage.setItem('navx_last_scan', JSON.stringify({

@@ -46,6 +46,7 @@ export const restoreStairsToFloor = (roomId, floorId) => api.put(`/rooms/${roomI
 export const getExcludedFloors = (roomId) => api.get(`/rooms/${roomId}/excluded-floors`);
 
 // Nav Nodes
+export const getAllRoomsByCampus = (campusId) => api.get(`/rooms?campusId=${campusId}`);
 export const getNodes = (floorId, blockId) => api.get(`/nodes?floorId=${floorId}${blockId ? `&blockId=${blockId}` : ''}`);
 export const getAllCampusNodes = (campusId) => api.get(`/nodes?campusId=${campusId}&floorId=null`);
 export const createNode = (data) => api.post("/nodes", data);
@@ -84,5 +85,20 @@ export const getAnalyticsSummary = (campusId) =>
   api.get(`/analytics/summary/${campusId}`);
 export const getHeatmap = (campusId, floorId) =>
   api.get(`/analytics/heatmap/${campusId}?floorId=${floorId}`);
+
+// Campaigns
+export const getCampaigns = (campusId) => api.get(`/campaigns/campus/${campusId}`);
+export const createCampaign = (data) => api.post("/campaigns", data);
+export const updateCampaign = (id, data) => api.put(`/campaigns/${id}`, data);
+export const deleteCampaign = (id) => api.delete(`/campaigns/${id}`);
+
+// Uploads
+export const uploadImage = (file) => {
+  const formData = new FormData();
+  formData.append("image", file);
+  return api.post("/upload", formData, {
+    headers: { "Content-Type": "multipart/form-data" }
+  });
+};
 
 export default api;

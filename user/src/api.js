@@ -11,9 +11,15 @@ if (Constants?.expoConfig?.hostUri) {
   devHost = Constants.expoConfig.hostUri.split(':')[0];
 }
 
-const API_BASE = process.env.EXPO_PUBLIC_API_BASE_URL || `https://navx-backend-f8wa.onrender.com/api`;
-export const SOCKET_URL = process.env.EXPO_PUBLIC_API_BASE_URL ? process.env.EXPO_PUBLIC_API_BASE_URL.replace('/api', '') : `https://navx-backend-f8wa.onrender.com`;
+let API_BASE = process.env.EXPO_PUBLIC_API_BASE_URL || `https://navx-backend-f8wa.onrender.com/api`;
+let SOCKET_URL = process.env.EXPO_PUBLIC_API_BASE_URL ? process.env.EXPO_PUBLIC_API_BASE_URL.replace('/api', '') : `https://navx-backend-f8wa.onrender.com`;
 
+if (__DEV__) {
+  API_BASE = `http://${devHost}:5001/api`;
+  SOCKET_URL = `http://${devHost}:5001`;
+}
+
+export { SOCKET_URL };
 const api = axios.create({
   baseURL: API_BASE,
   timeout: 30000,
@@ -114,6 +120,8 @@ export const getRoomsByCat = (campusId, type) =>
   api.get(`/rooms?campusId=${campusId}&type=${type}`).then((r) => r.data);
 export const searchRooms = (query, campusId) =>
   api.get(`/rooms/search/${query}?campusId=${campusId}`).then((r) => r.data);
+export const getCampaigns = (campusId) =>
+  api.get(`/campaigns/campus/${campusId}?active=true`).then((r) => r.data);
 
 export const getMapData = async (campusId) => {
   try {
