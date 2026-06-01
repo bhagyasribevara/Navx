@@ -107,7 +107,7 @@ const STEPS = [
   { id: 5, title: 'Custom Zones', desc: 'Colored Overlay Layers', icon: <FiMap/> },
 ];
 
-function GeomanController({ onShapeDraw, activeMode, mapReady }) {
+function GeomanController({ onShapeDraw, activeMode }) {
   const map = useMap();
   const onShapeDrawRef = useRef(onShapeDraw);
   useEffect(() => {
@@ -115,7 +115,7 @@ function GeomanController({ onShapeDraw, activeMode, mapReady }) {
   }, [onShapeDraw]);
 
   useEffect(() => {
-    if (!mapReady) return;
+    if (!map) return;
     map.pm.addControls({ drawMarker:false, drawCircleMarker:false, drawPolyline:false, drawRectangle:false, drawPolygon:false, drawCircle:false, editMode:false, dragMode:false, cutPolygon:false, removalMode:false, position:'bottomleft' });
     
     map.on('pm:create', (e) => {
@@ -123,10 +123,10 @@ function GeomanController({ onShapeDraw, activeMode, mapReady }) {
       map.removeLayer(e.layer);
     });
     return () => { map.pm.removeControls(); map.off('pm:create'); };
-  }, [map, mapReady]);
+  }, [map]);
 
   useEffect(() => {
-    if (!mapReady) return;
+    if (!map) return;
     map.pm.disableDraw();
 
     if (activeMode === 'rotate') map.pm.enableGlobalRotateMode();
@@ -140,7 +140,7 @@ function GeomanController({ onShapeDraw, activeMode, mapReady }) {
     if (activeMode === 'drawRoomRect') map.pm.enableDraw('Rectangle', { snappable: true, snapDistance: 15 });
     if (activeMode === 'drawRoomPoly') map.pm.enableDraw('Polygon', { snappable: true, snapDistance: 15 });
     if (activeMode === 'drawRadius') map.pm.enableDraw('Circle', { snappable: false });
-  }, [activeMode, map, mapReady]);
+  }, [activeMode, map]);
   return null;
 }
 
@@ -1068,7 +1068,7 @@ export default function GuidedMapBuilder() {
         <MapContainer center={GMRIT} zoom={17} style={{width:'100%', height:'100%', zIndex:0}} zoomControl={false} maxZoom={24} whenReady={() => setMapReady(true)}>
           <TileLayer url={import.meta.env.VITE_MAPBOX_URL || ""} maxZoom={24} maxNativeZoom={19} />
           {campus?.location?.lat && campus?.location?.lng && <MapUpdater center={[campus.location.lat, campus.location.lng]} />}
-          <GeomanController onShapeDraw={handleShapeDraw} activeMode={drawMode} mapReady={mapReady} />
+          <GeomanController onShapeDraw={handleShapeDraw} activeMode={drawMode} />
           <ClickHandler onClick={handleMapClick} />
 
           {/* === ALWAYS VISIBLE: Main Campus Pathway Nodes & Paths === */}
