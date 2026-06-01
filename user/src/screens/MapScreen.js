@@ -138,13 +138,8 @@ export default function MapScreen({ navigation, route }) {
       setCampusId(route.params.campusId);
       setSelectedBlock(null);
       setSelectedFloor(null);
-    } else if (contextCampusId) {
-      setCampusId(contextCampusId);
-    } else if (!campusId) {
-      getCampuses().then(data => {
-        if (data.length) setCampusId(data[0]._id);
-        else setLoading(false);
-      }).catch(() => setLoading(false));
+    } else {
+      setCampusId(contextCampusId || null);
     }
   }, [route.params?.campusId, contextCampusId]);
 
@@ -167,6 +162,10 @@ export default function MapScreen({ navigation, route }) {
       });
 
       return () => { if (socketRef.current) socketRef.current.disconnect(); };
+    } else {
+      setMapData(null);
+      setGeoJSONData(null);
+      setLoading(false);
     }
   }, [campusId]);
 
@@ -380,7 +379,7 @@ export default function MapScreen({ navigation, route }) {
     <View style={s.container}>
       {/* 🗺 FULL SCREEN MAP */}
       <View style={s.mapContainer}>
-        {geoJSONData && (
+        {geoJSONData ? (
           <WebView
             ref={webViewRef}
             source={{ html: mapHtml }}
@@ -391,6 +390,14 @@ export default function MapScreen({ navigation, route }) {
             showsVerticalScrollIndicator={false}
             originWhitelist={['*']}
           />
+        ) : (
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.bg }}>
+            <Ionicons name="map-outline" size={60} color={colors.textMuted} style={{ marginBottom: 16 }} />
+            <Text style={{ color: colors.text, fontSize: 18, fontWeight: '700', marginBottom: 8 }}>No Venue Found</Text>
+            <Text style={{ color: colors.textSec, fontSize: 14, textAlign: 'center', marginHorizontal: 30 }}>
+              You are currently outside any active campus. Scan a QR code to view a map.
+            </Text>
+          </View>
         )}
       </View>
 

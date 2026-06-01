@@ -8,8 +8,10 @@ let devHost = Platform.OS === 'android' ? '10.0.2.2' : 'localhost';
 if (Constants?.expoConfig?.hostUri) {
   devHost = Constants.expoConfig.hostUri.split(':')[0];
 }
-const API_BASE = process.env.EXPO_PUBLIC_API_BASE_URL || `http://${devHost}:5000/api`;
-
+let API_BASE = process.env.EXPO_PUBLIC_API_BASE_URL || `https://navx-backend-f8wa.onrender.com/api`;
+if (__DEV__) {
+  API_BASE = `http://${devHost}:5001/api`;
+}
 // ─── Weather Cache ──────────────────────────────────────────────────────
 let weatherCache = null;
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
@@ -80,35 +82,13 @@ function mapWMOCode(code) {
 
 export async function fetchForecastData(latitude, longitude) {
   try {
-    const response = await axios.get(`https://api.open-meteo.com/v1/forecast`, {
-      params: {
-        latitude: latitude,
-        longitude: longitude,
-        daily: 'weather_code,temperature_2m_max,temperature_2m_min',
-        timezone: 'auto'
-      },
+    const response = await axios.get(`${API_BASE}/weather/forecast`, {
+      params: { lat: latitude, lon: longitude },
       timeout: 10000,
     });
-    
-    const daily = response.data.daily;
-    const forecast = [];
-    
-    for (let i = 0; i < 5; i++) {
-      const dateObj = new Date(daily.time[i]);
-      const mapped = mapWMOCode(daily.weather_code[i]);
-      forecast.push({
-        id: daily.time[i],
-        dayName: dateObj.toLocaleDateString('en-US', { weekday: 'short' }),
-        tempMin: Math.round(daily.temperature_2m_min[i]),
-        tempMax: Math.round(daily.temperature_2m_max[i]),
-        weatherType: mapped.type,
-        icon: mapped.icon,
-        condition: mapped.condition
-      });
-    }
-    return forecast;
+    return response.data.forecast;
   } catch (error) {
-    console.error("Open-Meteo Error:", error);
+    console.error("Forecast Error:", error);
     throw new Error('Failed to fetch forecast');
   }
 }

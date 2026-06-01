@@ -436,13 +436,10 @@ export default function HomeScreen({ navigation }) {
         </View>
 
         {/* Recently Visited */}
-        {recentRooms.length > 0 && (
+        {activeCampusId && recentRooms.length > 0 && (
           <View style={s.section}>
             <View style={s.secRow}>
               <Text style={s.secTitle}>Recently Visited</Text>
-              <TouchableOpacity onPress={() => navigation.navigate("Favorites")}>
-                <Text style={s.seeAll}>See All →</Text>
-              </TouchableOpacity>
             </View>
             {recentRooms.map(rm => {
               const roomColor = ROOM_COLORS[rm.type] || colors.primary;

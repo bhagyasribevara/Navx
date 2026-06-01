@@ -5,6 +5,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { ThemeContext } from "../context/ThemeContext";
+import { useGeofence } from "../context/GeofenceContext";
 import { searchRooms, getRoomsByCat, getCampuses, cachedGet } from "../api";
 import { SHADOWS, RADIUS, ROOM_COLORS, ROOM_ICONS } from "../theme/designSystem";
 
@@ -28,26 +29,22 @@ export default function SearchScreen({ navigation, route }) {
   const { colors } = useContext(ThemeContext);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
-  const [campusId, setCampusId] = useState(route.params?.campusId || null);
+  const { activeCampusId: contextCampusId } = useGeofence();
+  const [campusId, setCampusId] = useState(route.params?.campusId || contextCampusId || null);
   const [activeCat, setActiveCat] = useState(route.params?.filter || null);
   const inputRef = useRef(null);
   const listAnim = useRef(new Animated.Value(0)).current;
   const [searchFocused, setSearchFocused] = useState(false);
 
   useEffect(() => {
-    if (!campusId) {
-      AsyncStorage.getItem("navx_active_campus").then(stored => {
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          setCampusId(parsed.id);
-        } else {
-          // Fallback if no active campus
-          cachedGet("campuses", getCampuses).then(data => {
-            if (data.length) setCampusId(data[0]._id);
-          });
-        }
-      });
+    if (route.params?.campusId) {
+      setCampusId(route.params.campusId);
+    } else {
+      setCampusId(contextCampusId || null);
     }
+  }, [route.params?.campusId, contextCampusId]);
+
+  useEffect(() => {
     setTimeout(() => inputRef.current?.focus(), 200);
   }, []);
 
