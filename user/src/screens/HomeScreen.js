@@ -322,7 +322,9 @@ export default function HomeScreen({ navigation }) {
   }
 
   // ── QR Gate: Block entire app until user scans a valid campus QR ──
-  if (!activeCampusId || !campuses.find(c => c._id === activeCampusId)) {
+  // Wait until campuses are loaded if we have an active ID but it's not in the list yet
+  const campusLoaded = campuses.length > 0;
+  if (!activeCampusId || (campusLoaded && !campuses.find(c => c._id === activeCampusId))) {
     return (
       <View style={[s.container, { justifyContent: "center", alignItems: "center", paddingHorizontal: 32 }]}>
         {/* Pulsing NavX logo */}
