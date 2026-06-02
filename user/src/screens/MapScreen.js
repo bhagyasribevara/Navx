@@ -61,6 +61,11 @@ window.updateGeoJSON = function(data, floorId) {
   geojsonLayer = L.geoJSON(data, {
     filter: function(f) {
       if (f.properties.type === 'path' || f.properties.type === 'node' || f.properties.type === 'block' || f.properties.type === 'room') return false;
+      
+      // Hide parking areas by default
+      if (f.properties.category === 'parking' || (f.properties.name && f.properties.name.toLowerCase().includes('parking'))) {
+        return false;
+      }
       return true;
     },
     style: styleFeature,

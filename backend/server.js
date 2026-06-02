@@ -137,7 +137,7 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Something went wrong!', message: err.message });
 });
 
-const PORT = process.env.PORT || 5000;
-server.listen(PORT, () => {
+const PORT = process.env.PORT || 5001;
+server.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 NavX Backend running on port ${PORT}`);
 });

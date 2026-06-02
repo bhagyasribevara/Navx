@@ -83,7 +83,8 @@ export function GeofenceProvider({ children }) {
             parsed.location.lat,
             parsed.location.lng
           );
-          if (dist > parsed.radius) {
+          // Add a 20m buffer for GPS inaccuracy during app restore
+          if (dist > parsed.radius + 20) {
             console.log(`🚫 Session restore blocked: ${Math.round(dist)}m outside ${parsed.radius}m radius. Wiping.`);
             await wipeAllCampusData(parsed.id);
             return;
@@ -135,7 +136,8 @@ export function GeofenceProvider({ children }) {
               activeCampus.location.lng
             );
 
-            if (dist > activeCampus.radius) {
+            // Add a 10m buffer for GPS drift during active monitoring
+            if (dist > activeCampus.radius + 10) {
               console.log(
                 `🚫 User exited campus boundary (${Math.round(dist)}m > ${activeCampus.radius}m)`
               );

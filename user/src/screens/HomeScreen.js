@@ -66,7 +66,7 @@ const VENUE_CATS = {
 const VENUE_ICONS_MAP = { campus: 'school', hospital: 'medkit', airport: 'airplane', mall: 'cart', building: 'business' };
 
 export default function HomeScreen({ navigation }) {
-  const { colors, isDark } = useContext(ThemeContext);
+  const { colors } = useContext(ThemeContext);
   const { activeCampusId, deactivateCampus } = useGeofence();
   const [campuses, setCampuses] = useState([]);
   const [recentRooms, setRecentRooms] = useState([]);
@@ -173,7 +173,7 @@ export default function HomeScreen({ navigation }) {
     header: {
       paddingTop: 16,
       paddingHorizontal: 20, paddingBottom: 24,
-      backgroundColor: isDark ? "#0d1526" : "#eef2ff",
+      backgroundColor: "#eef2ff",
       borderBottomLeftRadius: 28, borderBottomRightRadius: 28,
     },
     headerTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 18 },
@@ -322,7 +322,9 @@ export default function HomeScreen({ navigation }) {
   }
 
   // ── QR Gate: Block entire app until user scans a valid campus QR ──
-  if (!activeCampusId || !campuses.find(c => c._id === activeCampusId)) {
+  // Wait until campuses are loaded if we have an active ID but it's not in the list yet
+  const campusLoaded = campuses.length > 0;
+  if (!activeCampusId || (campusLoaded && !campuses.find(c => c._id === activeCampusId))) {
     return (
       <View style={[s.container, { justifyContent: "center", alignItems: "center", paddingHorizontal: 32 }]}>
         {/* Pulsing NavX logo */}
@@ -483,7 +485,7 @@ export default function HomeScreen({ navigation }) {
             </View>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingRight: 20 }}>
               {campaigns.map(c => (
-                <View key={c._id} style={s.campaignCard}>
+                <TouchableOpacity key={c._id} style={s.campaignCard} activeOpacity={0.85} onPress={() => navigation.navigate('CampaignDetail', { campaign: c })}>
                   {c.image && <Image source={{ uri: c.image.startsWith('http') ? c.image : `${SOCKET_URL}${c.image}` }} style={s.campaignImg} resizeMode="cover" />}
                   <View style={s.campaignContent}>
                     {c.category && (
@@ -493,28 +495,16 @@ export default function HomeScreen({ navigation }) {
                     )}
                     <Text style={s.campaignTitle} numberOfLines={1}>{c.title}</Text>
                     <Text style={s.campaignDesc} numberOfLines={2}>{c.description}</Text>
-                    
-                    {c.subCount > 0 ? (
-                      <TouchableOpacity 
-                        style={s.campaignNavBtn}
-                        activeOpacity={0.8}
-                        onPress={() => navigation.navigate("CampaignDetail", { campaign: c })}
-                      >
-                        <Ionicons name="list" size={16} color="#fff" />
-                        <Text style={s.campaignNavText}>View Events →</Text>
-                      </TouchableOpacity>
-                    ) : c.destination?.roomId ? (
-                      <TouchableOpacity 
-                        style={s.campaignNavBtn}
-                        activeOpacity={0.8}
-                        onPress={() => navigation.navigate("Navigation", { room: { _id: c.destination.roomId._id, floorId: c.destination.floorId?._id, name: c.destination.roomId.name }, campusId: activeCampusId })}
-                      >
-                        <Ionicons name="navigate" size={16} color="#fff" />
-                        <Text style={s.campaignNavText}>Navigate Here</Text>
-                      </TouchableOpacity>
-                    ) : null}
+                    <TouchableOpacity 
+                      style={s.campaignNavBtn}
+                      activeOpacity={0.8}
+                      onPress={() => navigation.navigate('CampaignDetail', { campaign: c })}
+                    >
+                      <Ionicons name="navigate" size={16} color="#fff" />
+                      <Text style={s.campaignNavText}>Navigate Here</Text>
+                    </TouchableOpacity>
                   </View>
-                </View>
+                </TouchableOpacity>
               ))}
             </ScrollView>
           </View>

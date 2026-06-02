@@ -9,7 +9,7 @@ import { SHADOWS, RADIUS } from "../theme/designSystem";
 
 
 export default function SettingsScreen({ navigation }) {
-  const { colors, isDark, setIsDark } = useContext(ThemeContext);
+  const { colors } = useContext(ThemeContext);
   const [voiceNav, setVoiceNav] = useState(true);
   const [highContrast, setHighContrast] = useState(false);
   const [largeText, setLargeText] = useState(false);
@@ -71,16 +71,6 @@ export default function SettingsScreen({ navigation }) {
     rowLabel: { flex: 1, fontSize: 15, fontWeight: "600", color: colors.text },
     rowValue: { fontSize: 13, color: colors.textMuted },
 
-    // Theme toggle
-    themeRow: {
-      flexDirection: "row", margin: 16, gap: 10,
-    },
-    themeBtn: {
-      flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center",
-      paddingVertical: 14, borderRadius: RADIUS.md,
-      borderWidth: 1.5, gap: 8,
-    },
-    themeBtnText: { fontSize: 14, fontWeight: "700" },
     // Version
     versionText: {
       textAlign: "center", color: colors.textMuted,
@@ -123,30 +113,7 @@ export default function SettingsScreen({ navigation }) {
         </TouchableOpacity>
       </View>
 
-      {/* Appearance */}
-      <Text style={s.secLabel}>Appearance</Text>
-      <View style={s.themeRow}>
-        <TouchableOpacity
-          style={[s.themeBtn, {
-            borderColor: !isDark ? colors.primary : colors.border,
-            backgroundColor: !isDark ? colors.primary + "12" : "transparent",
-          }]}
-          onPress={() => setIsDark(false)}
-        >
-          <Ionicons name="sunny" size={18} color={!isDark ? colors.primary : colors.textMuted} />
-          <Text style={[s.themeBtnText, { color: !isDark ? colors.primary : colors.textMuted }]}>Light</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[s.themeBtn, {
-            borderColor: isDark ? colors.primary : colors.border,
-            backgroundColor: isDark ? colors.primary + "12" : "transparent",
-          }]}
-          onPress={() => setIsDark(true)}
-        >
-          <Ionicons name="moon" size={18} color={isDark ? colors.primary : colors.textMuted} />
-          <Text style={[s.themeBtnText, { color: isDark ? colors.primary : colors.textMuted }]}>Dark</Text>
-        </TouchableOpacity>
-      </View>
+
 
 
 
