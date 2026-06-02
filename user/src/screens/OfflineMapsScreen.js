@@ -10,7 +10,7 @@ import { ThemeContext } from "../context/ThemeContext";
 import { SHADOWS, RADIUS } from "../theme/designSystem";
 
 export default function OfflineMapsScreen({ navigation }) {
-  const { colors, isDark } = useContext(ThemeContext);
+  const { colors } = useContext(ThemeContext);
   const [offlineCampuses, setOfflineCampuses] = useState([]);
   const [loading, setLoading] = useState(true);
 

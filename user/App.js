@@ -1,7 +1,7 @@
 import React, { useState, useContext, useCallback } from "react";
 import { View, Platform } from "react-native";
 import { NavigationContainer } from "@react-navigation/native";
-import { DefaultTheme, DarkTheme } from "@react-navigation/native";
+import { DefaultTheme } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { StatusBar } from "expo-status-bar";
@@ -24,26 +24,6 @@ import CampaignDetailScreen from "./src/screens/CampaignDetailScreen";
 import EmergencyOverlay from "./src/components/EmergencyOverlay";
 import GeofenceGuard from "./src/components/GeofenceGuard";
 import NotificationBanner from "./src/components/NotificationBanner";
-
-const DARK = {
-  bg: "#070B14",
-  card: "#111827",
-  cardElevated: "#1a2235",
-  surface: "#0e1520",
-  primary: "#6366f1",
-  primaryLight: "#818cf8",
-  primaryGlow: "rgba(99,102,241,0.25)",
-  secondary: "#8b5cf6",
-  accent: "#22c55e",
-  text: "#f1f5f9",
-  textSec: "#94a3b8",
-  textMuted: "#4b5563",
-  border: "#1e2d40",
-  danger: "#ef4444",
-  warning: "#f59e0b",
-  mapBg: "#060d1a",
-  mapGrid: "#0f1e33",
-};
 
 const LIGHT = {
   bg: "#f0f4ff",
@@ -117,11 +97,11 @@ function MainTabs() {
 }
 
 export default function App() {
-  const [isDark, setIsDark] = useState(true);
   const [language, setLanguage] = useState("en");
   const [showSplash, setShowSplash] = useState(true);
-  const colors = isDark ? DARK : LIGHT;
-  const baseTheme = isDark ? DarkTheme : DefaultTheme;
+  const colors = LIGHT;
+  const isDark = false;
+  const baseTheme = DefaultTheme;
 
   const navTheme = {
     ...baseTheme,
@@ -142,11 +122,11 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-      <ThemeContext.Provider value={{ colors, isDark, setIsDark, language, setLanguage }}>
+      <ThemeContext.Provider value={{ colors, isDark, language, setLanguage }}>
         <GeofenceProvider>
           <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }} edges={['top']}>
             <NavigationContainer theme={navTheme}>
-              <StatusBar style={isDark ? "light" : "dark"} />
+              <StatusBar style="dark" />
               <Stack.Navigator screenOptions={{ headerShown: false }}>
                 <Stack.Screen name="MainTabs" component={MainTabs} />
                 <Stack.Screen

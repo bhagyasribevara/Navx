@@ -235,8 +235,39 @@ router.get('/forecast', async (req, res) => {
 
     res.json({ forecast });
   } catch (error) {
-    console.error('Forecast API Error:', error.message);
-    res.status(500).json({ error: 'Failed to fetch forecast' });
+    console.error('❌ Forecast API Error:', error.message);
+
+    if (error.response) {
+      const status = error.response.status;
+      if (status === 401) {
+        return res.status(401).json({
+          error: 'API Key Invalid',
+          message: 'The OpenWeatherMap API key is invalid or expired',
+        });
+      }
+      if (status === 429) {
+        return res.status(429).json({
+          error: 'Rate Limited',
+          message: 'Too many requests to weather API. Please try again later.',
+        });
+      }
+      return res.status(status).json({
+        error: 'Weather API Error',
+        message: error.response.data?.message || 'Failed to fetch forecast data',
+      });
+    }
+
+    if (error.code === 'ECONNABORTED') {
+      return res.status(504).json({
+        error: 'Timeout',
+        message: 'Weather API request timed out',
+      });
+    }
+
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Failed to fetch forecast',
+    });
   }
 });
 

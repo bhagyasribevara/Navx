@@ -6,7 +6,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import '@geoman-io/leaflet-geoman-free';
 import '@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css';
-import { FiArrowLeft, FiPlus, FiTrash2, FiMap, FiLayers, FiSquare, FiNavigation, FiCheck, FiSettings, FiMove, FiInfo, FiCopy, FiRefreshCw, FiArrowRight, FiArrowLeftCircle, FiRepeat, FiMousePointer, FiUploadCloud, FiCrosshair } from 'react-icons/fi';
+import { FiArrowLeft, FiPlus, FiTrash2, FiMap, FiLayers, FiSquare, FiNavigation, FiCheck, FiSettings, FiMove, FiInfo, FiCopy, FiRefreshCw, FiArrowRight, FiArrowLeftCircle, FiRepeat, FiMousePointer, FiUploadCloud, FiCrosshair, FiEdit2 } from 'react-icons/fi';
 import { getBlocks, createBlock, updateBlock, deleteBlock, getFloors, createFloor, deleteFloor, getRooms, createRoom, updateRoom, deleteRoom, deleteStairsFromFloor, restoreStairsToFloor, getExcludedFloors, getNodes, createNode, getPaths, createPath, deletePath, updatePath, getCampus, updateCampus, getAllCampusNodes, getAllCampusPaths, getMapLayers, createMapLayer, updateMapLayer, deleteMapLayer, publishMap } from '../api';
 
 const GMRIT = [18.4665, 83.6629];
@@ -844,7 +844,7 @@ export default function GuidedMapBuilder() {
     setSaving(true);
     try {
       if (activeBlock) {
-        await updateBlock(activeBlock._id, { shape: activeBlock.shape, domain: blockForm.domain });
+        await updateBlock(activeBlock._id, { shape: activeBlock.shape, domain: blockForm.domain, name: blockForm.name });
         toast.success('Block Updated!');
         setStep(2);
       } else {
@@ -1232,7 +1232,10 @@ export default function GuidedMapBuilder() {
                         <div style={{ fontWeight: 600, color: '#fff' }}>{b.name}</div>
                         <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>{b.domain || 'Academic Blocks'}</div>
                       </div>
-                      <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); removeBlock(b._id); }} style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer' }}><FiTrash2/></button>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <button onClick={async (e) => { e.preventDefault(); e.stopPropagation(); const newName = window.prompt('Rename Block:', b.name); if (newName && newName.trim() && newName !== b.name) { try { await updateBlock(b._id, { name: newName.trim() }); toast.success('Block renamed!'); loadBlocks(); } catch(err) { toast.error('Failed to rename block'); } } }} style={{ background: 'transparent', border: 'none', color: '#6366f1', cursor: 'pointer', padding: 4 }} title="Rename Block"><FiEdit2 size={15}/></button>
+                        <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); removeBlock(b._id); }} style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', padding: 4 }} title="Delete Block"><FiTrash2 size={15}/></button>
+                      </div>
                     </div>
                   ))}
                   <button style={{...S.primaryBtn, background: '#1a2235', border: '1px solid #1e2d40'}} onClick={() => { setActiveBlock(null); setTempBlockShape(null); setBlockForm({name:'', domain: 'Academic Blocks', id:''}); }}>+ Draw New Block</button>
@@ -1260,7 +1263,8 @@ export default function GuidedMapBuilder() {
               {activeBlock && (
                 <>
                   <div style={S.formGroup}>
-                    <label style={S.label}>Editing Block: {activeBlock.name}</label>
+                    <label style={S.label}>Block Name</label>
+                    <input style={S.input} value={blockForm.name} onChange={e => setBlockForm({ ...blockForm, name: e.target.value })} placeholder="Block name" />
                   </div>
                   <div style={S.formGroup}>
                     <label style={S.label}>Domain / Category</label>
