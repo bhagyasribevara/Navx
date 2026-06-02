@@ -859,8 +859,16 @@ export default function NavigationScreen({ navigation, route }) {
           ref={webViewRef}
           source={{ html: mapHtml }}
           style={{ flex: 1, backgroundColor: 'transparent' }}
-          javaScriptEnabled
           scrollEnabled={false}
+          bounces={false}
+          showsHorizontalScrollIndicator={false}
+          showsVerticalScrollIndicator={false}
+          originWhitelist={['*']}
+          javaScriptEnabled={true}
+          domStorageEnabled={true}
+          mixedContentMode="always"
+          allowsInlineMediaPlayback={true}
+          startInLoadingState={true}
         />
 
         {/* Direction card */}

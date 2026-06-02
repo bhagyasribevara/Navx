@@ -86,11 +86,11 @@ router.post('/route-to-exit', async (req, res) => {
 
       if (withDists.length > 0) {
         const virtualStartId = 'user_gps_start';
-        graph[virtualStartId] = { id: virtualStartId, x: startX, y: startY, edges: [], type: 'user' };
+        graph[virtualStartId] = { id: virtualStartId, x: startX, y: startY, neighbors: [], type: 'user' };
         
         const kNearest = withDists.slice(0, Math.min(3, withDists.length));
         kNearest.forEach(n => {
-          graph[virtualStartId].edges.push({ node: n.node.id, distance: n.dist, weight: n.dist, pathType: 'street' });
+          graph[virtualStartId].neighbors.push({ nodeId: n.node.id, distance: n.dist, weight: n.dist, pathType: 'street' });
         });
         startNodeId = virtualStartId;
       }
@@ -186,11 +186,11 @@ router.post('/route-to-room', async (req, res) => {
       }
 
       const virtualStartId = 'user_gps_start';
-      graph[virtualStartId] = { id: virtualStartId, x: startX, y: startY, edges: [], type: 'user' };
+      graph[virtualStartId] = { id: virtualStartId, x: startX, y: startY, neighbors: [], type: 'user' };
       
       const kNearest = withDists.slice(0, Math.min(3, withDists.length));
       kNearest.forEach(n => {
-        graph[virtualStartId].edges.push({ node: n.node.id, distance: n.dist, weight: n.dist, pathType: 'street' });
+        graph[virtualStartId].neighbors.push({ nodeId: n.node.id, distance: n.dist, weight: n.dist, pathType: 'street' });
       });
 
       startId = virtualStartId;

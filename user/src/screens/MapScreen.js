@@ -455,6 +455,11 @@ export default function MapScreen({ navigation, route }) {
             showsHorizontalScrollIndicator={false}
             showsVerticalScrollIndicator={false}
             originWhitelist={['*']}
+            javaScriptEnabled={true}
+            domStorageEnabled={true}
+            mixedContentMode="always"
+            allowsInlineMediaPlayback={true}
+            startInLoadingState={true}
           />
         ) : (
           <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.bg }}>
