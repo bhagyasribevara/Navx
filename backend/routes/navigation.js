@@ -60,7 +60,9 @@ function invalidateGraphCache(campusId) {
 router.post('/route-to-exit', async (req, res) => {
   try {
     const { startX, startY, campusId } = req.body;
-    const { graph, nodes } = await getCachedGraph(campusId);
+    const cached = await getCachedGraph(campusId);
+    const graph = { ...cached.graph };
+    const nodes = cached.nodes;
 
     if (Object.keys(graph).length === 0) {
       return res.status(400).json({ error: 'No nodes found' });
@@ -74,9 +76,24 @@ router.post('/route-to-exit', async (req, res) => {
     if (exits.length === 0) return res.status(404).json({ error: 'No exit found on campus' });
 
     let startNodeId = req.body.startNodeId;
-    if (!startNodeId && startX && startY) {
-      const nearestStart = findNearestNode(graph, startX, startY, null);
-      if (nearestStart) startNodeId = nearestStart.id;
+    if (!startNodeId && startX != null && startY != null) {
+      const allNodes = Object.values(graph);
+      const withDists = allNodes.map(n => ({
+        node: n,
+        dist: haversineDistMeters(startX, startY, n.x, n.y)
+      }));
+      withDists.sort((a, b) => a.dist - b.dist);
+
+      if (withDists.length > 0) {
+        const virtualStartId = 'user_gps_start';
+        graph[virtualStartId] = { id: virtualStartId, x: startX, y: startY, edges: [], type: 'user' };
+        
+        const kNearest = withDists.slice(0, Math.min(3, withDists.length));
+        kNearest.forEach(n => {
+          graph[virtualStartId].edges.push({ node: n.node.id, distance: n.dist, weight: n.dist, pathType: 'street' });
+        });
+        startNodeId = virtualStartId;
+      }
     }
     if (!startNodeId) return res.status(404).json({ error: 'Could not find starting point' });
 
@@ -147,7 +164,8 @@ router.post('/route-to-room', async (req, res) => {
   try {
     const { startNodeId, startX, startY, roomId, campusId, accessible = false } = req.body;
 
-    const { graph } = await getCachedGraph(campusId);
+    const cached = await getCachedGraph(campusId);
+    const graph = { ...cached.graph };
 
     if (Object.keys(graph).length === 0) {
       return res.status(400).json({ error: 'No navigation nodes have been placed on this campus yet.' });
@@ -156,12 +174,27 @@ router.post('/route-to-room', async (req, res) => {
     // --- Resolve start node from GPS coordinates if provided ---
     let startId;
     if (startX != null && startY != null) {
-      const nearestStart = findNearestNode(graph, startX, startY, null);
-      if (!nearestStart) {
+      const allNodes = Object.values(graph);
+      const withDists = allNodes.map(n => ({
+        node: n,
+        dist: haversineDistMeters(startX, startY, n.x, n.y)
+      }));
+      withDists.sort((a, b) => a.dist - b.dist);
+
+      if (withDists.length === 0) {
         return res.status(400).json({ error: 'No navigation node found near your location.' });
       }
-      startId = nearestStart.id;
-      console.log(`[Navigation] GPS start (${startX.toFixed(6)}, ${startY.toFixed(6)}) → nearest node ${startId} (${haversineDistMeters(startX, startY, nearestStart.x, nearestStart.y).toFixed(1)}m away)`);
+
+      const virtualStartId = 'user_gps_start';
+      graph[virtualStartId] = { id: virtualStartId, x: startX, y: startY, edges: [], type: 'user' };
+      
+      const kNearest = withDists.slice(0, Math.min(3, withDists.length));
+      kNearest.forEach(n => {
+        graph[virtualStartId].edges.push({ node: n.node.id, distance: n.dist, weight: n.dist, pathType: 'street' });
+      });
+
+      startId = virtualStartId;
+      console.log(`[Navigation] GPS start (${startX.toFixed(6)}, ${startY.toFixed(6)}) → virtual node connected to top ${kNearest.length} nodes`);
     } else if (startNodeId) {
       startId = startNodeId.toString();
     } else {

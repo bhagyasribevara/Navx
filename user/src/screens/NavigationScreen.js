@@ -120,6 +120,12 @@ window.updateGeoJSON = function(data, floorId) {
   geojsonLayer = L.geoJSON(data, {
     filter: function(f) {
       if (f.properties.type === 'path' || f.properties.type === 'node') return false;
+      
+      // Hide parking areas unless it's the target destination
+      if (f.properties.category === 'parking' || (f.properties.name && f.properties.name.toLowerCase().includes('parking'))) {
+        if (f.properties.id !== '${targetRoom?._id || ''}') return false;
+      }
+
       if (f.properties.type === 'room' && f.properties.floorId) {
         if (floorId && f.properties.floorId !== floorId) return false;
       }
@@ -196,6 +202,7 @@ export default function NavigationScreen({ navigation, route }) {
   const [liveStepDist, setLiveStepDist] = useState(0);
   const [totalSteps, setTotalSteps] = useState(0);
   const [routeInfo, setRouteInfo] = useState(null);
+  const [offRoute, setOffRoute] = useState(false);
 
   const [locationPerm, setLocationPerm] = useState(null);
   const [gpsLoading, setGpsLoading] = useState(false);
@@ -505,16 +512,28 @@ export default function NavigationScreen({ navigation, route }) {
             const activeLng = posEngine.position.y;
 
             if (rData && rData.path && !isArrived) {
+              const prevNode = rData.path[cStep];
               const targetNode = rData.path[cStep + 1] || rData.path[cStep];
-              if (targetNode) {
+              if (targetNode && prevNode) {
                 // Haversine distance to end of current segment
                 const distToNextNodeMeters = haversine(activeLat, activeLng, targetNode.x, targetNode.y);
+                const distToPrevNodeMeters = haversine(activeLat, activeLng, prevNode.x, prevNode.y);
+                const segmentLength = haversine(prevNode.x, prevNode.y, targetNode.x, targetNode.y);
+
                 setLiveStepDist(Math.round(distToNextNodeMeters * 10) / 10);
                 
                 // Sum distances of all SUBSEQUENT segments
                 const remainingPathMeters = rData.directions?.slice(cStep + 1).reduce((s,d)=>s+(d.distance||0), 0) || 0;
                 
                 setLiveDistance(Math.max(0, Math.round((distToNextNodeMeters + remainingPathMeters) * 10) / 10));
+
+                // Off-route detection: 
+                // Using the triangle inequality, if sum of distances to both endpoints is much larger 
+                // than the segment length, the user is far off the line segment.
+                // 25m allowance for GPS drift
+                if (distToNextNodeMeters + distToPrevNodeMeters > segmentLength + 25) {
+                   setOffRoute(true);
+                }
               }
             }
           }
@@ -609,6 +628,53 @@ export default function NavigationScreen({ navigation, route }) {
       }
     }
   }, [userPos, isNavigating, arrived]);
+
+  useEffect(() => {
+    if (offRoute && isNavigating && userPos) {
+      console.log("[NavX] User is off route! Recalculating from new position...");
+      setOffRoute(false);
+      recalculateRouteFromGPS(userPos.x, userPos.y);
+    }
+  }, [offRoute]);
+
+  const recalculateRouteFromGPS = async (lat, lng) => {
+    try {
+      setGpsLoading(true);
+      let result;
+      if (route.params?.emergencyMode) {
+        result = await findRouteToExit({ startX: lat, startY: lng, campusId: String(campusId) });
+        if (result.targetExit) {
+          setTargetRoom({ name: result.targetExit.label || result.targetExit.name || "Emergency Exit", _id: result.targetExit._id, floorId: result.targetExit.floorId });
+        }
+      } else {
+        result = await findRouteToRoom({ startX: lat, startY: lng, roomId: String(targetRoom?._id), campusId: String(campusId) });
+      }
+
+      if (result.path && result.path.length > 0) {
+        // Just directly connect GPS to the new route without OSRM fallback to prevent dual paths
+        result.path.unshift({ nodeId: 'user_start', x: lat, y: lng, floorId: targetRoom?.floorId || null, type: 'user' });
+        
+        setRouteData(result);
+        routeDataStableRef.current = result;
+        setCurrentStep(0);
+        
+        // Reset floor tracking for new route
+        setTotalFloorTransitions(result.totalFloorTransitions || 0);
+        setCompletedFloorTransitions(0);
+        if (result.path?.[0]?.floorId) {
+          setCurrentFloor(result.path[0].floorId);
+        }
+
+        if (voiceEnabled) {
+          Speech.speak("Rerouting. Please follow the new path.", { language: "en-US", rate: 0.9 });
+        }
+      }
+    } catch (err) {
+      console.warn("Reroute error:", err);
+    } finally {
+      setGpsLoading(false);
+    }
+  };
 
   const startNavigation = async () => {
     if (!mapData || (!targetRoom && !route.params?.emergencyMode)) return;
