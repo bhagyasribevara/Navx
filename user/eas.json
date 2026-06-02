@@ -6,19 +6,31 @@
   "build": {
     "development": {
       "developmentClient": true,
-      "distribution": "internal"
+      "distribution": "internal",
+      "channel": "development"
     },
     "preview": {
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "https://navx-backend-f8wa.onrender.com/api"
-      }
+        "EXPO_PUBLIC_API_BASE_URL": "https://navx-backend-f8wa.onrender.com/api",
+        "EXPO_PUBLIC_MAPBOX_URL": "https://api.mapbox.com/styles/v1/mapbox/streets-v11/tiles/256/{z}/{x}/{y}@2x?access_token=pk.eyJ1IjoidmVua2F0YS1rcmlzaG5hIiwiYSI6ImNtZnYycHN0bTAzY28yanFxeG4wOXVsenAifQ.w1yd6XuvWvarYj33rP1LkA"
+      },
+      "channel": "preview"
     },
     "production": {
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "https://navx-backend-f8wa.onrender.com/api"
-      }
+        "EXPO_PUBLIC_API_BASE_URL": "https://navx-backend-f8wa.onrender.com/api",
+        "EXPO_PUBLIC_MAPBOX_URL": "https://api.mapbox.com/styles/v1/mapbox/streets-v11/tiles/256/{z}/{x}/{y}@2x?access_token=pk.eyJ1IjoidmVua2F0YS1rcmlzaG5hIiwiYSI6ImNtZnYycHN0bTAzY28yanFxeG4wOXVsenAifQ.w1yd6XuvWvarYj33rP1LkA"
+      },
+      "channel": "production"
+    },
+    "apk": {
+      "extends": "production",
+      "android": {
+        "buildType": "apk"
+      },
+      "channel": "apk"
     }
   },
   "submit": {
