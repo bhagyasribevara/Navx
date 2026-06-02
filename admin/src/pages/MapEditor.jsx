@@ -115,15 +115,9 @@ function GeomanController({ onShapeDraw, activeMode }) {
   }, [onShapeDraw]);
 
   useEffect(() => {
-<<<<<<< HEAD
-    if (!mapReady) return;
-    map.pm.addControls({ drawMarker: false, drawCircleMarker: false, drawPolyline: false, drawRectangle: false, drawPolygon: false, drawCircle: false, editMode: false, dragMode: false, cutPolygon: false, removalMode: false, position: 'bottomleft' });
-
-=======
     if (!map) return;
     map.pm.addControls({ drawMarker:false, drawCircleMarker:false, drawPolyline:false, drawRectangle:false, drawPolygon:false, drawCircle:false, editMode:false, dragMode:false, cutPolygon:false, removalMode:false, position:'bottomleft' });
-    
->>>>>>> 60e775971f549fe6a06834f162180056a27387cd
+
     map.on('pm:create', (e) => {
       onShapeDrawRef.current(e.layer, e.shape);
       map.removeLayer(e.layer);
@@ -1238,14 +1232,10 @@ export default function GuidedMapBuilder() {
                         <div style={{ fontWeight: 600, color: '#fff' }}>{b.name}</div>
                         <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>{b.domain || 'Academic Blocks'}</div>
                       </div>
-<<<<<<< HEAD
-                      <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); removeBlock(b._id); }} style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer' }}><FiTrash2 /></button>
-=======
                       <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                         <button onClick={async (e) => { e.preventDefault(); e.stopPropagation(); const newName = window.prompt('Rename Block:', b.name); if (newName && newName.trim() && newName !== b.name) { try { await updateBlock(b._id, { name: newName.trim() }); toast.success('Block renamed!'); loadBlocks(); } catch(err) { toast.error('Failed to rename block'); } } }} style={{ background: 'transparent', border: 'none', color: '#6366f1', cursor: 'pointer', padding: 4 }} title="Rename Block"><FiEdit2 size={15}/></button>
                         <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); removeBlock(b._id); }} style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', padding: 4 }} title="Delete Block"><FiTrash2 size={15}/></button>
                       </div>
->>>>>>> 60e775971f549fe6a06834f162180056a27387cd
                     </div>
                   ))}
                   <button style={{ ...S.primaryBtn, background: '#1a2235', border: '1px solid #1e2d40' }} onClick={() => { setActiveBlock(null); setTempBlockShape(null); setBlockForm({ name: '', domain: 'Academic Blocks', id: '' }); }}>+ Draw New Block</button>
