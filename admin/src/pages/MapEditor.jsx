@@ -10,19 +10,19 @@ import { FiArrowLeft, FiPlus, FiTrash2, FiMap, FiLayers, FiSquare, FiNavigation,
 import { getBlocks, createBlock, updateBlock, deleteBlock, getFloors, createFloor, deleteFloor, getRooms, createRoom, updateRoom, deleteRoom, deleteStairsFromFloor, restoreStairsToFloor, getExcludedFloors, getNodes, createNode, getPaths, createPath, deletePath, updatePath, getCampus, updateCampus, getAllCampusNodes, getAllCampusPaths, getMapLayers, createMapLayer, updateMapLayer, deleteMapLayer, publishMap } from '../api';
 
 const GMRIT = [18.4665, 83.6629];
-const RC = { 
+const RC = {
   // Campus
-  classroom:'#3b82f6', office:'#8b5cf6', lab:'#22c55e', restroom:'#f59e0b', cafeteria:'#ef4444', library:'#06b6d4', auditorium:'#ec4899', elevator:'#6366f1', stairs:'#f97316', corridor:'#64748b', entrance:'#10b981', exit:'#ef4444', other:'#94a3b8',
+  classroom: '#3b82f6', office: '#8b5cf6', lab: '#22c55e', restroom: '#f59e0b', cafeteria: '#ef4444', library: '#06b6d4', auditorium: '#ec4899', elevator: '#6366f1', stairs: '#f97316', corridor: '#64748b', entrance: '#10b981', exit: '#ef4444', other: '#94a3b8',
   // Hospital
-  ward:'#3b82f6', icu:'#ef4444', ot:'#dc2626', pharmacy:'#22c55e', reception:'#8b5cf6', emergency:'#ef4444', radiology:'#f59e0b', pathology:'#06b6d4', blood_bank:'#dc2626', consultation:'#6366f1', waiting_area:'#94a3b8', nursing_station:'#ec4899',
+  ward: '#3b82f6', icu: '#ef4444', ot: '#dc2626', pharmacy: '#22c55e', reception: '#8b5cf6', emergency: '#ef4444', radiology: '#f59e0b', pathology: '#06b6d4', blood_bank: '#dc2626', consultation: '#6366f1', waiting_area: '#94a3b8', nursing_station: '#ec4899',
   // Airport
-  gate:'#3b82f6', terminal:'#6366f1', check_in:'#22c55e', security:'#ef4444', lounge:'#8b5cf6', baggage_claim:'#f59e0b', immigration:'#f97316', duty_free:'#ec4899', boarding:'#06b6d4', customs:'#64748b',
+  gate: '#3b82f6', terminal: '#6366f1', check_in: '#22c55e', security: '#ef4444', lounge: '#8b5cf6', baggage_claim: '#f59e0b', immigration: '#f97316', duty_free: '#ec4899', boarding: '#06b6d4', customs: '#64748b',
   // Mall
-  store:'#3b82f6', food_court:'#ef4444', anchor_store:'#6366f1', kiosk:'#f59e0b', parking:'#64748b', entertainment:'#ec4899', atm:'#22c55e', customer_service:'#8b5cf6', fitting_room:'#94a3b8',
+  store: '#3b82f6', food_court: '#ef4444', anchor_store: '#6366f1', kiosk: '#f59e0b', parking: '#64748b', entertainment: '#ec4899', atm: '#22c55e', customer_service: '#8b5cf6', fitting_room: '#94a3b8',
   // Building
-  conference:'#3b82f6', server_room:'#ef4444', lobby:'#6366f1', mail_room:'#f59e0b', gym:'#22c55e', rooftop:'#06b6d4', storage:'#64748b', utility:'#94a3b8', break_room:'#ec4899', reception_desk:'#8b5cf6'
+  conference: '#3b82f6', server_room: '#ef4444', lobby: '#6366f1', mail_room: '#f59e0b', gym: '#22c55e', rooftop: '#06b6d4', storage: '#64748b', utility: '#94a3b8', break_room: '#ec4899', reception_desk: '#8b5cf6'
 };
-const NC = { waypoint:'#94a3b8', entrance:'#10b981', exit:'#ef4444', elevator:'#6366f1', stairs:'#f97316', room_entry:'#3b82f6', intersection:'#f59e0b', connector:'#8b5cf6' };
+const NC = { waypoint: '#94a3b8', entrance: '#10b981', exit: '#ef4444', elevator: '#6366f1', stairs: '#f97316', room_entry: '#3b82f6', intersection: '#f59e0b', connector: '#8b5cf6' };
 
 // Venue-specific room types
 const VENUE_ROOM_TYPES = {
@@ -37,44 +37,44 @@ const VENUE_ROOM_TYPES = {
 // Venue-specific block domain categories (comprehensive real-world sections)
 const VENUE_DOMAINS = {
   campus: [
-    'Academic Blocks', 'Administrative Block', 'Boys Hostels', 'Girls Hostels', 
-    'Faculty Quarters', 'Main Gates', 'Libraries', 'Cafeteria & Dining', 
-    'Sports & Recreation', 'Auditorium & Convention', 'Workshop & Labs', 
-    'Research Center', 'Placement Cell', 'Health Center', 'Bank & ATM', 
+    'Academic Blocks', 'Administrative Block', 'Boys Hostels', 'Girls Hostels',
+    'Faculty Quarters', 'Main Gates', 'Libraries', 'Cafeteria & Dining',
+    'Sports & Recreation', 'Auditorium & Convention', 'Workshop & Labs',
+    'Research Center', 'Placement Cell', 'Health Center', 'Bank & ATM',
     'Transport Hub', 'Parking Area', 'Gardens & Open Areas', 'Other Facilities'
   ],
   hospital: [
-    'Main Building', 'OPD Block (Out-Patient)', 'IPD Block (In-Patient)', 
-    'Emergency & Trauma Wing', 'ICU & Critical Care', 'Surgical Block (OT)', 
-    'Maternity & Gynecology Wing', 'Pediatrics Wing', 'Orthopedic Wing', 
-    'Cardiology Wing', 'Neurology Wing', 'Oncology Wing', 'ENT Department', 
+    'Main Building', 'OPD Block (Out-Patient)', 'IPD Block (In-Patient)',
+    'Emergency & Trauma Wing', 'ICU & Critical Care', 'Surgical Block (OT)',
+    'Maternity & Gynecology Wing', 'Pediatrics Wing', 'Orthopedic Wing',
+    'Cardiology Wing', 'Neurology Wing', 'Oncology Wing', 'ENT Department',
     'Eye (Ophthalmology) Dept', 'Dental Wing', 'Dermatology Wing',
-    'Radiology & Imaging Center', 'Pathology & Lab Block', 'Blood Bank', 
+    'Radiology & Imaging Center', 'Pathology & Lab Block', 'Blood Bank',
     'Pharmacy Block', 'Physiotherapy & Rehab', 'Dialysis Center',
-    'Mortuary & Forensic', 'Administrative Block', 'Billing & Insurance', 
-    'Canteen & Cafeteria', 'Ambulance Bay', 'Medical Store', 
-    'Staff Quarters', 'Visitors Lounge', 'Parking Area', 
+    'Mortuary & Forensic', 'Administrative Block', 'Billing & Insurance',
+    'Canteen & Cafeteria', 'Ambulance Bay', 'Medical Store',
+    'Staff Quarters', 'Visitors Lounge', 'Parking Area',
     'Waste Management', 'Power & Utilities', 'Other'
   ],
   airport: [
-    'Domestic Terminal', 'International Terminal', 'Terminal 1', 'Terminal 2', 
+    'Domestic Terminal', 'International Terminal', 'Terminal 1', 'Terminal 2',
     'Terminal 3', 'VIP Terminal', 'Cargo Terminal', 'General Aviation Terminal',
-    'Departure Hall', 'Arrival Hall', 'Transit Area', 
-    'Check-in Zone', 'Security & Screening', 'Immigration & Passport Control', 
-    'Customs Area', 'Baggage Handling Area', 'Duty Free Zone', 
+    'Departure Hall', 'Arrival Hall', 'Transit Area',
+    'Check-in Zone', 'Security & Screening', 'Immigration & Passport Control',
+    'Customs Area', 'Baggage Handling Area', 'Duty Free Zone',
     'Food Court & Restaurants', 'Airline Lounges', 'Business Center',
-    'Control Tower (ATC)', 'Hangar Area', 'Runway & Taxiway', 
+    'Control Tower (ATC)', 'Hangar Area', 'Runway & Taxiway',
     'Fuel Farm', 'Maintenance & Engineering', 'Fire Station',
-    'Multi-Level Parking', 'Bus & Taxi Stand', 'Metro / Rail Link', 
+    'Multi-Level Parking', 'Bus & Taxi Stand', 'Metro / Rail Link',
     'Airport Hotel', 'Medical Center', 'Prayer Room & Chapel',
     'Administrative Block', 'Police & Security Office', 'Lost & Found', 'Other'
   ],
   mall: [
     'Anchor Store Zone', 'Fashion & Apparel Wing', 'Electronics & Gadgets Wing',
     'Jewelry & Accessories Wing', 'Home & Living Wing', 'Beauty & Cosmetics',
-    'Kids & Toys Zone', 'Supermarket / Hypermarket', 'Food Court', 
-    'Fine Dining Floor', 'Café & Bakery Zone', 'Entertainment Zone', 
-    'Multiplex / Cinema', 'Gaming Arcade', 'Bowling & Sports', 
+    'Kids & Toys Zone', 'Supermarket / Hypermarket', 'Food Court',
+    'Fine Dining Floor', 'Café & Bakery Zone', 'Entertainment Zone',
+    'Multiplex / Cinema', 'Gaming Arcade', 'Bowling & Sports',
     'Fitness & Gym', 'Spa & Salon', 'Event Plaza / Atrium',
     'Admin & Management Office', 'Customer Service Center', 'ATM & Banking',
     'Basement Parking 1', 'Basement Parking 2', 'Rooftop Parking',
@@ -83,7 +83,7 @@ const VENUE_DOMAINS = {
   building: [
     'Main Lobby & Reception', 'East Wing', 'West Wing', 'North Wing', 'South Wing',
     'Executive Floor', 'Conference & Meeting Zone', 'Co-Working Space',
-    'IT & Server Room', 'Finance Department', 'HR Department', 
+    'IT & Server Room', 'Finance Department', 'HR Department',
     'Marketing Department', 'Sales Department', 'Legal Department',
     'R&D / Innovation Lab', 'Training Center', 'Board Room Floor',
     'Cafeteria & Break Room', 'Gym & Wellness', 'Rooftop / Terrace',
@@ -92,19 +92,19 @@ const VENUE_DOMAINS = {
     'Security & Reception', 'Visitor Lounge', 'Medical Room', 'Other'
   ],
   other: [
-    'Section A', 'Section B', 'Section C', 'Section D', 
-    'Main Building', 'Annex Building', 'Parking Area', 
+    'Section A', 'Section B', 'Section C', 'Section D',
+    'Main Building', 'Annex Building', 'Parking Area',
     'Administrative Zone', 'Public Area', 'Restricted Zone', 'Other'
   ]
 };
 
 const STEPS = [
-  { id: 0, title: 'Main Pathway', desc: 'Campus Roads & Walkways', icon: <FiNavigation/> },
-  { id: 1, title: 'Block Design', desc: 'Outer Structure', icon: <FiMap/> },
-  { id: 2, title: 'Floor Setup', desc: 'Level Generation', icon: <FiLayers/> },
-  { id: 3, title: 'Interior Design', desc: 'Rooms & Facilities', icon: <FiSquare/> },
-  { id: 4, title: 'Block Navigation', desc: 'Interior Paths & Nodes', icon: <FiNavigation/> },
-  { id: 5, title: 'Custom Zones', desc: 'Colored Overlay Layers', icon: <FiMap/> },
+  { id: 0, title: 'Main Pathway', desc: 'Campus Roads & Walkways', icon: <FiNavigation /> },
+  { id: 1, title: 'Block Design', desc: 'Outer Structure', icon: <FiMap /> },
+  { id: 2, title: 'Floor Setup', desc: 'Level Generation', icon: <FiLayers /> },
+  { id: 3, title: 'Interior Design', desc: 'Rooms & Facilities', icon: <FiSquare /> },
+  { id: 4, title: 'Block Navigation', desc: 'Interior Paths & Nodes', icon: <FiNavigation /> },
+  { id: 5, title: 'Custom Zones', desc: 'Colored Overlay Layers', icon: <FiMap /> },
 ];
 
 function GeomanController({ onShapeDraw, activeMode }) {
@@ -117,7 +117,7 @@ function GeomanController({ onShapeDraw, activeMode }) {
   useEffect(() => {
     if (!map) return;
     map.pm.addControls({ drawMarker:false, drawCircleMarker:false, drawPolyline:false, drawRectangle:false, drawPolygon:false, drawCircle:false, editMode:false, dragMode:false, cutPolygon:false, removalMode:false, position:'bottomleft' });
-    
+
     map.on('pm:create', (e) => {
       onShapeDrawRef.current(e.layer, e.shape);
       map.removeLayer(e.layer);
@@ -131,7 +131,7 @@ function GeomanController({ onShapeDraw, activeMode }) {
 
     if (activeMode === 'rotate') map.pm.enableGlobalRotateMode();
     else map.pm.disableGlobalRotateMode();
-    
+
     if (activeMode === 'drag') map.pm.enableGlobalDragMode();
     else map.pm.disableGlobalDragMode();
 
@@ -159,17 +159,17 @@ const EditablePolygon = ({ r, isSelected, isLocked, onUpdate, onClick, activeMod
   const onUpdateRef = useRef(onUpdate);
   const s = r.shape || { points: [] };
   const c = r.color || r.shape?.fill || RC[r.type] || (r.isBlock ? '#64748b' : '#94a3b8');
-  
+
   // NEVER pass inline array to positions prop directly.
   const initialBounds = useRef(
     s.points && s.points.length > 0
       ? s.points.map(p => [p.x, p.y])
       : [
-          [s.x, s.y], 
-          [s.x, s.y + (s.width || 0.00015)], 
-          [s.x + (s.height || 0.0001), s.y + (s.width || 0.00015)], 
-          [s.x + (s.height || 0.0001), s.y]
-        ]
+        [s.x, s.y],
+        [s.x, s.y + (s.width || 0.00015)],
+        [s.x + (s.height || 0.0001), s.y + (s.width || 0.00015)],
+        [s.x + (s.height || 0.0001), s.y]
+      ]
   );
 
   useEffect(() => {
@@ -201,22 +201,22 @@ const EditablePolygon = ({ r, isSelected, isLocked, onUpdate, onClick, activeMod
     const shouldBeEnabled = isSelected && !isLocked && (!activeMode || activeMode === 'select');
 
     if (shouldBeEnabled) {
-      layer.pm.enable({ 
-        allowSelfIntersection: false, 
-        preventMarkerRemoval: true, 
-        snappable: true, 
+      layer.pm.enable({
+        allowSelfIntersection: false,
+        preventMarkerRemoval: true,
+        snappable: true,
         draggable: true // Re-enable draggable so user can drag in Select mode
       });
     } else {
       layer.pm.disable();
     }
-    
-    return () => { 
-      layer.off('pm:markerdragend', handleEdit); 
-      layer.off('pm:dragend', handleEdit); 
-      layer.off('pm:rotateend', handleEdit); 
+
+    return () => {
+      layer.off('pm:markerdragend', handleEdit);
+      layer.off('pm:dragend', handleEdit);
+      layer.off('pm:rotateend', handleEdit);
       layer.off('pm:cut', handleEdit);
-      layer.pm.disable(); 
+      layer.pm.disable();
     };
   }, [isSelected, isLocked, activeMode]); // Run when selection/mode changes
 
@@ -224,10 +224,10 @@ const EditablePolygon = ({ r, isSelected, isLocked, onUpdate, onClick, activeMod
   useEffect(() => {
     const layer = polyRef.current;
     if (!layer || !s.points || s.points.length === 0) return;
-    
+
     const ll = layer.getLatLngs();
     if (!ll || ll.length === 0) return;
-    
+
     const arr = Array.isArray(ll[0]) ? (Array.isArray(ll[0][0]) ? ll[0][0] : ll[0]) : ll;
     if (arr.length > 0 && s.points.length > 0) {
       const dist = Math.hypot(arr[0].lat - s.points[0].x, arr[0].lng - s.points[0].y);
@@ -243,10 +243,10 @@ const EditablePolygon = ({ r, isSelected, isLocked, onUpdate, onClick, activeMod
   }, [s.points]); // Run when shape updates
 
   // Memoize pathOptions to prevent react-leaflet from calling setStyle on every re-render
-  const pathOpts = React.useMemo(() => ({ 
-    color: isSelected ? '#fff' : c, 
-    fillColor: c, 
-    fillOpacity: r.isBlock ? 0.1 : (isSelected ? 0.6 : 0.3), 
+  const pathOpts = React.useMemo(() => ({
+    color: isSelected ? '#fff' : c,
+    fillColor: c,
+    fillOpacity: r.isBlock ? 0.1 : (isSelected ? 0.6 : 0.3),
     weight: isSelected ? 3 : (r.isBlock ? 2 : 1.5),
     dashArray: r.isBlock ? '5, 5' : null
   }), [isSelected, c, r.isBlock]);
@@ -254,14 +254,14 @@ const EditablePolygon = ({ r, isSelected, isLocked, onUpdate, onClick, activeMod
   // Memoize event handlers to prevent react-leaflet re-binds which can disrupt Geoman
   const rRef = useRef(r);
   const onClickRef = useRef(onClick);
-  useEffect(() => { 
-    rRef.current = r; 
+  useEffect(() => {
+    rRef.current = r;
     onClickRef.current = onClick;
   }, [r, onClick]);
 
   const eventHandlers = React.useMemo(() => ({
     click: (e) => {
-      if(!isLocked) {
+      if (!isLocked) {
         L.DomEvent.stopPropagation(e);
         onClickRef.current(rRef.current);
       }
@@ -269,12 +269,12 @@ const EditablePolygon = ({ r, isSelected, isLocked, onUpdate, onClick, activeMod
   }), [isLocked]); // ONLY recreate if isLocked changes!
 
   return (
-    <Polygon ref={polyRef} positions={initialBounds.current} 
-      pathOptions={pathOpts} 
+    <Polygon ref={polyRef} positions={initialBounds.current}
+      pathOptions={pathOpts}
       eventHandlers={eventHandlers}>
       {!r.isBlock && (
         <Tooltip permanent direction="center" className="room-label">
-          <span style={{fontSize:10,fontWeight:700,color:'#fff',textShadow:'0 1px 2px rgba(0,0,0,0.8)'}}>{r.name}</span>
+          <span style={{ fontSize: 10, fontWeight: 700, color: '#fff', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}>{r.name}</span>
         </Tooltip>
       )}
     </Polygon>
@@ -317,19 +317,19 @@ const EditableNode = ({ n, stepMode, onUpdate, onDelete, isMain }) => {
   return (
     <Circle ref={ref} center={[n.x, n.y]} radius={stepMode === 0 ? 2 : 1}
       pathOptions={{ color: isMain ? '#f59e0b' : (NC[n.type] || '#94a3b8'), fillColor: isMain ? '#f59e0b' : (NC[n.type] || '#94a3b8'), fillOpacity: isMain ? 1 : 0.8, weight: isMain ? 3 : 2 }}
-      eventHandlers={{ 
-        click: (e) => { 
-          if(stepMode !== 0 && stepMode !== 4) return;
-          L.DomEvent.stopPropagation(e); 
+      eventHandlers={{
+        click: (e) => {
+          if (stepMode !== 0 && stepMode !== 4) return;
+          L.DomEvent.stopPropagation(e);
           const act = window.prompt(`Node options:\n1 = Delete Node\n2 = Change Type (Current: ${n.type || 'waypoint'})`, '1');
           if (act === '1') {
-            if(window.confirm('Delete this node?')) onDeleteRef.current(n._id);
+            if (window.confirm('Delete this node?')) onDeleteRef.current(n._id);
           } else if (act === '2') {
             const newType = window.prompt(`Enter new type (waypoint, entrance, exit, elevator, stairs, room_entry, intersection, connector):`, n.type || 'waypoint');
-            if(newType) onUpdateRef.current(n._id, { type: newType });
+            if (newType) onUpdateRef.current(n._id, { type: newType });
           }
-        } 
-      }} 
+        }
+      }}
     />
   );
 };
@@ -341,27 +341,27 @@ const EditablePath = ({ p, a, b, stepMode, onUpdate, onDelete }) => {
 
   return (
     <React.Fragment>
-      <Polyline positions={[[a.x,a.y],[b.x,b.y]]} pathOptions={{color, weight: stepMode === 0 ? 4 : 3, dashArray: p.bidirectional ? null : (stepMode===0?'8,4':'6,6'), opacity: stepMode === 0 ? 0.9 : 0.8}}
-        eventHandlers={{ 
-          click: (e) => { 
-            if(stepMode !== 0 && stepMode !== 4) return;
+      <Polyline positions={[[a.x, a.y], [b.x, b.y]]} pathOptions={{ color, weight: stepMode === 0 ? 4 : 3, dashArray: p.bidirectional ? null : (stepMode === 0 ? '8,4' : '6,6'), opacity: stepMode === 0 ? 0.9 : 0.8 }}
+        eventHandlers={{
+          click: (e) => {
+            if (stepMode !== 0 && stepMode !== 4) return;
             L.DomEvent.stopPropagation(e);
             const action = window.prompt('Path options:\n1 = Outgoing (→)\n2 = Incoming (←)\n3 = Both Ways (↔)\n4 = Delete Path', p.bidirectional ? '3' : '1');
             if (action === '1') onUpdate(p._id, { bidirectional: false, nodeA: a._id, nodeB: b._id });
             else if (action === '2') onUpdate(p._id, { bidirectional: false, nodeA: b._id, nodeB: a._id });
             else if (action === '3') onUpdate(p._id, { bidirectional: true });
-            else if (action === '4') { if(window.confirm('Delete this path?')) onDelete(p._id); }
-          } 
-        }} 
+            else if (action === '4') { if (window.confirm('Delete this path?')) onDelete(p._id); }
+          }
+        }}
       />
       {!p.bidirectional && (
-        <Circle center={[midX, midY]} radius={0.8} pathOptions={{color:'#ef4444', fillColor:'#ef4444', fillOpacity:1, weight:1}}>
-          <Tooltip permanent direction="center" className="room-label"><span style={{fontSize:9,color:'#ef4444',fontWeight:800}}>→</span></Tooltip>
+        <Circle center={[midX, midY]} radius={0.8} pathOptions={{ color: '#ef4444', fillColor: '#ef4444', fillOpacity: 1, weight: 1 }}>
+          <Tooltip permanent direction="center" className="room-label"><span style={{ fontSize: 9, color: '#ef4444', fontWeight: 800 }}>→</span></Tooltip>
         </Circle>
       )}
       {p.bidirectional && (
-        <Circle center={[midX, midY]} radius={0.5} pathOptions={{color:'#f59e0b', fillColor:'#f59e0b', fillOpacity:0.6, weight:1}}>
-          <Tooltip permanent direction="center" className="room-label"><span style={{fontSize:8,color:'#f59e0b',fontWeight:800}}>↔</span></Tooltip>
+        <Circle center={[midX, midY]} radius={0.5} pathOptions={{ color: '#f59e0b', fillColor: '#f59e0b', fillOpacity: 0.6, weight: 1 }}>
+          <Tooltip permanent direction="center" className="room-label"><span style={{ fontSize: 8, color: '#f59e0b', fontWeight: 800 }}>↔</span></Tooltip>
         </Circle>
       )}
     </React.Fragment>
@@ -380,7 +380,7 @@ export default function GuidedMapBuilder() {
   const [showMainPathway, setShowMainPathway] = useState(true);
   const [step, setStep] = useState(0);
   const [mapReady, setMapReady] = useState(false);
-  
+
   // Data State
   const [campus, setCampus] = useState(null);
   const [blocks, setBlocks] = useState([]);
@@ -396,7 +396,7 @@ export default function GuidedMapBuilder() {
   const [activeRoom, setActiveRoom] = useState(null);
   const [activeNode, setActiveNode] = useState(null);
   const [activeLayer, setActiveLayer] = useState(null);
-  
+
   // Builder Tools
   const [drawMode, setDrawMode] = useState('select');
   const [pathStart, setPathStart] = useState(null);
@@ -408,10 +408,10 @@ export default function GuidedMapBuilder() {
   const [tempBlockShape, setTempBlockShape] = useState(null);
   const venueType = campus?.venueType || 'campus';
   const [blockForm, setBlockForm] = useState({ name: '', domain: (VENUE_DOMAINS[venueType] || VENUE_DOMAINS.campus)[0], id: '' });
-  
+
   // Clipboard for copy/paste
   const [clipboard, setClipboard] = useState(null);
-  
+
   // Step 2 State
   const [floorCount, setFloorCount] = useState(1);
 
@@ -420,9 +420,9 @@ export default function GuidedMapBuilder() {
   const [excludedFloorsMap, setExcludedFloorsMap] = useState({});
   const [stairsLoading, setStairsLoading] = useState(false);
 
-  useEffect(() => { 
-    getCampus(campusId).then(r => setCampus(r.data)).catch(() => {}); 
-    loadBlocks(); 
+  useEffect(() => {
+    getCampus(campusId).then(r => setCampus(r.data)).catch(() => { });
+    loadBlocks();
     loadMainPathway();
   }, [campusId]);
 
@@ -440,7 +440,7 @@ export default function GuidedMapBuilder() {
       setMainPaths(p.data);
       setAllNodes(all.data || []);
       setMapLayers(ml.data || []);
-    } catch(e) { console.warn('Failed to load main pathway', e); }
+    } catch (e) { console.warn('Failed to load main pathway', e); }
   };
 
   const loadBlocks = async () => {
@@ -450,10 +450,10 @@ export default function GuidedMapBuilder() {
   const loadFloors = async (bid) => {
     const r = await getFloors(bid).catch(() => ({ data: [] }));
     setFloors(r.data);
-    if(r.data.length && !activeFloor) setActiveFloor(r.data[0]);
+    if (r.data.length && !activeFloor) setActiveFloor(r.data[0]);
   };
   const loadFloorData = async (fid) => {
-    if(!fid) return;
+    if (!fid) return;
     const [a, b, c] = await Promise.all([getRooms(fid, activeBlock?._id), getNodes(fid, activeBlock?._id), getPaths(fid)].map(p => p.catch(() => ({ data: [] }))));
     setRooms(a.data); setNodes(b.data); setPaths(c.data);
   };
@@ -489,7 +489,7 @@ export default function GuidedMapBuilder() {
         if (activeFloor) await loadFloorData(activeFloor._id);
         toast.info('Undo: Removed Room');
       }
-    } catch(err) { toast.error('Undo failed'); }
+    } catch (err) { toast.error('Undo failed'); }
   };
 
   const handleRedo = async () => {
@@ -511,7 +511,7 @@ export default function GuidedMapBuilder() {
         if (activeFloor) await loadFloorData(activeFloor._id);
         toast.info('Redo: Restored Room');
       }
-    } catch(err) { toast.error('Redo failed'); }
+    } catch (err) { toast.error('Redo failed'); }
   };
 
   // ── Keyboard Shortcuts ──────────────────────────────────────────────────
@@ -576,7 +576,7 @@ export default function GuidedMapBuilder() {
             if (activeFloor) await loadFloorData(activeFloor._id);
             toast.info('Undo: Removed Room');
           }
-        } catch(err) { toast.error('Undo failed'); }
+        } catch (err) { toast.error('Undo failed'); }
         return;
       }
 
@@ -600,7 +600,7 @@ export default function GuidedMapBuilder() {
             if (activeFloor) await loadFloorData(activeFloor._id);
             toast.info('Redo: Restored Room');
           }
-        } catch(err) { toast.error('Redo failed'); }
+        } catch (err) { toast.error('Redo failed'); }
         return;
       }
 
@@ -639,7 +639,7 @@ export default function GuidedMapBuilder() {
             pushUndo({ type: 'PASTE_BLOCK', id: res.data._id, blockData });
             await loadBlocks();
             setActiveBlock({ ...res.data, shape: newShape });
-          } catch(err) { toast.error('Failed to paste block'); }
+          } catch (err) { toast.error('Failed to paste block'); }
           setSaving(false);
         } else if (step === 3 && clipboard.type === 'room' && activeFloor) {
           const offset = 0.00005;
@@ -655,7 +655,7 @@ export default function GuidedMapBuilder() {
             pushUndo({ type: 'PASTE_ROOM', id: res.data._id, roomData });
             await loadFloorData(activeFloor._id);
             setActiveRoom(res.data);
-          } catch(err) { toast.error('Failed to paste room'); }
+          } catch (err) { toast.error('Failed to paste room'); }
           setSaving(false);
         } else {
           toast.warn('Wrong step or clipboard type mismatch');
@@ -681,7 +681,7 @@ export default function GuidedMapBuilder() {
             pushUndo({ type: 'DUPLICATE_BLOCK', id: res.data._id, blockData });
             await loadBlocks();
             setActiveBlock({ ...res.data, shape: newShape });
-          } catch(err) { toast.error('Failed to duplicate block'); }
+          } catch (err) { toast.error('Failed to duplicate block'); }
           setSaving(false);
         } else if (step === 3 && activeRoom && activeFloor) {
           const offset = 0.00005;
@@ -697,7 +697,7 @@ export default function GuidedMapBuilder() {
             pushUndo({ type: 'DUPLICATE_ROOM', id: res.data._id, roomData });
             await loadFloorData(activeFloor._id);
             setActiveRoom(res.data);
-          } catch(err) { toast.error('Failed to duplicate room'); }
+          } catch (err) { toast.error('Failed to duplicate room'); }
           setSaving(false);
         } else {
           toast.warn('Select a block (Step 1) or room (Step 3) to duplicate');
@@ -741,7 +741,7 @@ export default function GuidedMapBuilder() {
       ];
     }
     const newShape = { points: latlngs, type: shapeType === 'Rectangle' ? 'rectangle' : 'polygon' };
-    
+
     if (step === 1) {
       setTempBlockShape(newShape);
       setDrawMode('select');
@@ -752,7 +752,7 @@ export default function GuidedMapBuilder() {
         setActiveRoom(res.data);
         loadFloorData(activeFloor._id);
         setDrawMode('select');
-      } catch(e) { toast.error('Failed to create room'); }
+      } catch (e) { toast.error('Failed to create room'); }
     } else if (step === 5) {
       setTempBlockShape(newShape);
       setActiveLayer(null);
@@ -768,10 +768,10 @@ export default function GuidedMapBuilder() {
           await createNode({ campusId, x: ll.lat, y: ll.lng, type: 'waypoint', label: 'Main Path' });
           toast.success('Main pathway node added');
           loadMainPathway();
-        } catch(e) { toast.error('Failed to add node'); }
+        } catch (e) { toast.error('Failed to add node'); }
       } else if (drawMode === 'addPath') {
         const allNodes = mainNodes;
-        const nearest = allNodes.reduce((b, n) => { const d = Math.hypot(n.x-ll.lat, n.y-ll.lng); return (!b||d<b.d)?{node:n,d}:b; }, null);
+        const nearest = allNodes.reduce((b, n) => { const d = Math.hypot(n.x - ll.lat, n.y - ll.lng); return (!b || d < b.d) ? { node: n, d } : b; }, null);
         if (!nearest || nearest.d > 0.0005) return toast.warn('Click near a node');
         if (!mainPathStart) { setMainPathStart(nearest.node); toast.info('Now click the end node'); }
         else {
@@ -790,7 +790,7 @@ export default function GuidedMapBuilder() {
       } else if (drawMode === 'addPath') {
         // Combine floor nodes + main nodes for snapping
         const allNodes = [...nodes, ...mainNodes];
-        const nearest = allNodes.reduce((b, n) => { const d = Math.hypot(n.x-ll.lat, n.y-ll.lng); return (!b||d<b.d)?{node:n,d}:b; }, null);
+        const nearest = allNodes.reduce((b, n) => { const d = Math.hypot(n.x - ll.lat, n.y - ll.lng); return (!b || d < b.d) ? { node: n, d } : b; }, null);
         if (!nearest || nearest.d > 0.0005) return toast.warn('Click near a node');
         if (!pathStart) { setPathStart(nearest.node); toast.info('Click end node'); }
         else {
@@ -814,7 +814,7 @@ export default function GuidedMapBuilder() {
       setPendingPath(null);
       loadMainPathway();
       if (pendingPath.floorId) loadFloorData(pendingPath.floorId);
-    } catch(e) { toast.error('Failed to save path'); }
+    } catch (e) { toast.error('Failed to save path'); }
   };
 
   // Clear all main pathway nodes and paths
@@ -825,7 +825,7 @@ export default function GuidedMapBuilder() {
       for (const n of mainNodes) { await import('../api').then(m => m.deleteNode(n._id)); }
       toast.success('All main pathway data cleared');
       loadMainPathway();
-    } catch(e) { toast.error('Failed to clear paths'); }
+    } catch (e) { toast.error('Failed to clear paths'); }
   };
 
   // Toggle path direction (bidirectional/one-way)
@@ -835,7 +835,7 @@ export default function GuidedMapBuilder() {
       toast.success(pathObj.bidirectional ? 'Set to one-way' : 'Set to bidirectional');
       loadMainPathway();
       if (activeFloor) loadFloorData(activeFloor._id);
-    } catch(e) { toast.error('Failed to update path'); }
+    } catch (e) { toast.error('Failed to update path'); }
   };
 
   // STEP 1 ACTIONS
@@ -854,11 +854,11 @@ export default function GuidedMapBuilder() {
         await loadBlocks();
         setStep(2);
       }
-    } catch(e) { toast.error('Failed to save block'); }
+    } catch (e) { toast.error('Failed to save block'); }
     setSaving(false);
   };
   const removeBlock = async (id) => {
-    if(window.confirm('Delete this entire block?')) {
+    if (window.confirm('Delete this entire block?')) {
       await deleteBlock(id); toast.success('Block deleted'); setActiveBlock(null); loadBlocks();
     }
   };
@@ -872,11 +872,11 @@ export default function GuidedMapBuilder() {
       }
       toast.success(`${floorCount} Floors Generated!`);
       await loadFloors(activeBlock._id);
-    } catch(e) { toast.error('Error generating floors'); }
+    } catch (e) { toast.error('Error generating floors'); }
     setSaving(false);
   };
   const removeFloor = async (id) => {
-    if(window.confirm('Delete this floor?')) {
+    if (window.confirm('Delete this floor?')) {
       await deleteFloor(id); toast.success('Floor deleted'); loadFloors(activeBlock._id);
     }
   };
@@ -888,10 +888,10 @@ export default function GuidedMapBuilder() {
     try {
       await updateRoom(activeRoom._id, { name: activeRoom.name, type: activeRoom.type, shape: activeRoom.shape });
       toast.success('Room updated'); loadFloorData(activeFloor._id);
-    } catch(e) { toast.error('Update failed'); }
+    } catch (e) { toast.error('Update failed'); }
     setSaving(false);
   };
-  
+
   const handlePropChange = (key, val) => setActiveRoom(p => ({ ...p, [key]: val }));
 
   // Load excluded floors when a stairs/elevator room is selected
@@ -900,7 +900,7 @@ export default function GuidedMapBuilder() {
       const res = await getExcludedFloors(roomId);
       const excIds = (res.data.excludedFloors || []).map(f => f._id || f);
       setExcludedFloorsMap(prev => ({ ...prev, [roomId]: excIds }));
-    } catch(e) { console.warn('Failed to load excluded floors', e); }
+    } catch (e) { console.warn('Failed to load excluded floors', e); }
   };
 
   // Handle per-floor stairs delete/restore
@@ -916,7 +916,7 @@ export default function GuidedMapBuilder() {
       }
       await loadExcludedFloors(roomId);
       if (activeFloor) await loadFloorData(activeFloor._id);
-    } catch(e) { toast.error('Failed to update stairs visibility'); }
+    } catch (e) { toast.error('Failed to update stairs visibility'); }
     setStairsLoading(false);
   };
 
@@ -970,17 +970,17 @@ export default function GuidedMapBuilder() {
         </div>
         <div style={S.stepsContainer}>
           {STEPS.map((s, i) => (
-            <div key={s.id} onClick={() => setStep(s.id)} style={{...S.stepBox(step === s.id, step > s.id), cursor: 'pointer'}}>
-              <div style={S.stepNum(step === s.id, step > s.id)}>{step > s.id ? <FiCheck/> : s.id}</div>
+            <div key={s.id} onClick={() => setStep(s.id)} style={{ ...S.stepBox(step === s.id, step > s.id), cursor: 'pointer' }}>
+              <div style={S.stepNum(step === s.id, step > s.id)}>{step > s.id ? <FiCheck /> : s.id}</div>
               <div>
-                <h3 style={{ margin: '0 0 4px', fontSize: 15, fontWeight: 700, color: step===s.id?'#fff':'#94a3b8' }}>{s.title}</h3>
+                <h3 style={{ margin: '0 0 4px', fontSize: 15, fontWeight: 700, color: step === s.id ? '#fff' : '#94a3b8' }}>{s.title}</h3>
                 <p style={{ margin: 0, fontSize: 12, color: '#64748b' }}>{s.desc}</p>
               </div>
             </div>
           ))}
 
           <div style={{ marginTop: 30, padding: 16, borderRadius: 12, backgroundColor: '#1a2235', border: '1px solid #1e2d40' }}>
-            <h4 style={{ margin: '0 0 10px', fontSize: 13, color: '#f1f5f9', display: 'flex', alignItems: 'center', gap: 6 }}><FiInfo size={14} color="#6366f1"/> Shortcuts</h4>
+            <h4 style={{ margin: '0 0 10px', fontSize: 13, color: '#f1f5f9', display: 'flex', alignItems: 'center', gap: 6 }}><FiInfo size={14} color="#6366f1" /> Shortcuts</h4>
             <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '8px 12px', fontSize: 12, color: '#94a3b8' }}>
               <span style={{ color: '#fff', fontWeight: 600, background: '#111827', padding: '2px 6px', borderRadius: 4, border: '1px solid #2a3352', textAlign: 'center' }}>Ctrl+C</span>
               <span style={{ alignSelf: 'center' }}>Copy Selected</span>
@@ -1007,10 +1007,10 @@ export default function GuidedMapBuilder() {
         <div style={S.topToolbar}>
           {step === 0 && (
             <>
-              <button style={S.toolBtn(drawMode === 'select')} onClick={() => setDrawMode('select')}><FiMove/> Select</button>
-              <button style={S.toolBtn(drawMode === 'addNode')} onClick={() => setDrawMode('addNode')}><FiMap/> Add Node</button>
-              <button style={S.toolBtn(drawMode === 'addPath')} onClick={() => { setDrawMode('addPath'); setMainPathStart(null); }}><FiNavigation/> Draw Path</button>
-              <button style={S.toolBtn(drawMode === 'drawRadius')} onClick={() => setDrawMode('drawRadius')}><FiCrosshair/> Draw Campus Radius</button>
+              <button style={S.toolBtn(drawMode === 'select')} onClick={() => setDrawMode('select')}><FiMove /> Select</button>
+              <button style={S.toolBtn(drawMode === 'addNode')} onClick={() => setDrawMode('addNode')}><FiMap /> Add Node</button>
+              <button style={S.toolBtn(drawMode === 'addPath')} onClick={() => { setDrawMode('addPath'); setMainPathStart(null); }}><FiNavigation /> Draw Path</button>
+              <button style={S.toolBtn(drawMode === 'drawRadius')} onClick={() => setDrawMode('drawRadius')}><FiCrosshair /> Draw Campus Radius</button>
               <div style={{ width: 1, height: 24, background: '#1e2d40' }} />
               <button style={S.toolBtn(false)} onClick={() => setShowMainPathway(!showMainPathway)}>
                 {showMainPathway ? '👁 Hide' : '👁‍🗨 Show'} Main Path
@@ -1019,34 +1019,34 @@ export default function GuidedMapBuilder() {
           )}
           {step === 1 && (
             <>
-              <button style={S.toolBtn(drawMode === 'select')} onClick={() => handleModeChange('select')}><FiMousePointer/> Select</button>
-              <button style={S.toolBtn(drawMode === 'drag')} onClick={() => handleModeChange('drag')}><FiMove/> Drag</button>
-              <button style={S.toolBtn(drawMode === 'rotate')} onClick={() => handleModeChange('rotate')}><FiRefreshCw/> Rotate</button>
-              <button style={S.toolBtn(drawMode === 'drawBlockRect')} onClick={() => handleModeChange('drawBlockRect')}><FiSquare/> Draw Outer Block</button>
+              <button style={S.toolBtn(drawMode === 'select')} onClick={() => handleModeChange('select')}><FiMousePointer /> Select</button>
+              <button style={S.toolBtn(drawMode === 'drag')} onClick={() => handleModeChange('drag')}><FiMove /> Drag</button>
+              <button style={S.toolBtn(drawMode === 'rotate')} onClick={() => handleModeChange('rotate')}><FiRefreshCw /> Rotate</button>
+              <button style={S.toolBtn(drawMode === 'drawBlockRect')} onClick={() => handleModeChange('drawBlockRect')}><FiSquare /> Draw Outer Block</button>
             </>
           )}
           {step === 3 && (
             <>
-              <button style={S.toolBtn(drawMode === 'select')} onClick={() => handleModeChange('select')}><FiMousePointer/> Select Room</button>
-              <button style={S.toolBtn(drawMode === 'drag')} onClick={() => handleModeChange('drag')}><FiMove/> Drag Room</button>
-              <button style={S.toolBtn(drawMode === 'rotate')} onClick={() => handleModeChange('rotate')}><FiRefreshCw/> Rotate</button>
-              <button style={S.toolBtn(drawMode === 'drawRoomRect')} onClick={() => handleModeChange('drawRoomRect')}><FiSquare/> Draw Room</button>
+              <button style={S.toolBtn(drawMode === 'select')} onClick={() => handleModeChange('select')}><FiMousePointer /> Select Room</button>
+              <button style={S.toolBtn(drawMode === 'drag')} onClick={() => handleModeChange('drag')}><FiMove /> Drag Room</button>
+              <button style={S.toolBtn(drawMode === 'rotate')} onClick={() => handleModeChange('rotate')}><FiRefreshCw /> Rotate</button>
+              <button style={S.toolBtn(drawMode === 'drawRoomRect')} onClick={() => handleModeChange('drawRoomRect')}><FiSquare /> Draw Room</button>
             </>
           )}
           {step === 4 && (
             <>
-              <button style={S.toolBtn(drawMode === 'select')} onClick={() => setDrawMode('select')}><FiMousePointer/> Select</button>
-              <button style={S.toolBtn(drawMode === 'drag')} onClick={() => setDrawMode('drag')}><FiMove/> Drag Node</button>
-              <button style={S.toolBtn(drawMode === 'addNode')} onClick={() => setDrawMode('addNode')}><FiMap/> Add Node</button>
-              <button style={S.toolBtn(drawMode === 'addPath')} onClick={() => { setDrawMode('addPath'); setPathStart(null); }}><FiNavigation/> Draw Path</button>
+              <button style={S.toolBtn(drawMode === 'select')} onClick={() => setDrawMode('select')}><FiMousePointer /> Select</button>
+              <button style={S.toolBtn(drawMode === 'drag')} onClick={() => setDrawMode('drag')}><FiMove /> Drag Node</button>
+              <button style={S.toolBtn(drawMode === 'addNode')} onClick={() => setDrawMode('addNode')}><FiMap /> Add Node</button>
+              <button style={S.toolBtn(drawMode === 'addPath')} onClick={() => { setDrawMode('addPath'); setPathStart(null); }}><FiNavigation /> Draw Path</button>
             </>
           )}
           {step === 5 && (
             <>
-              <button style={S.toolBtn(drawMode === 'select')} onClick={() => handleModeChange('select')}><FiMousePointer/> Select Zone</button>
-              <button style={S.toolBtn(drawMode === 'drag')} onClick={() => handleModeChange('drag')}><FiMove/> Drag Zone</button>
-              <button style={S.toolBtn(drawMode === 'rotate')} onClick={() => handleModeChange('rotate')}><FiRefreshCw/> Rotate</button>
-              <button style={S.toolBtn(drawMode === 'drawBlockPoly')} onClick={() => handleModeChange('drawBlockPoly')}><FiSquare/> Draw Polygon Zone</button>
+              <button style={S.toolBtn(drawMode === 'select')} onClick={() => handleModeChange('select')}><FiMousePointer /> Select Zone</button>
+              <button style={S.toolBtn(drawMode === 'drag')} onClick={() => handleModeChange('drag')}><FiMove /> Drag Zone</button>
+              <button style={S.toolBtn(drawMode === 'rotate')} onClick={() => handleModeChange('rotate')}><FiRefreshCw /> Rotate</button>
+              <button style={S.toolBtn(drawMode === 'drawBlockPoly')} onClick={() => handleModeChange('drawBlockPoly')}><FiSquare /> Draw Polygon Zone</button>
             </>
           )}
         </div>
@@ -1065,7 +1065,7 @@ export default function GuidedMapBuilder() {
           </div>
         )}
 
-        <MapContainer center={GMRIT} zoom={17} style={{width:'100%', height:'100%', zIndex:0}} zoomControl={false} maxZoom={24} whenReady={() => setMapReady(true)}>
+        <MapContainer center={GMRIT} zoom={17} style={{ width: '100%', height: '100%', zIndex: 0 }} zoomControl={false} maxZoom={24} whenReady={() => setMapReady(true)}>
           <TileLayer url={import.meta.env.VITE_MAPBOX_URL || ""} maxZoom={24} maxNativeZoom={19} />
           {campus?.location?.lat && campus?.location?.lng && <MapUpdater center={[campus.location.lat, campus.location.lng]} />}
           <GeomanController onShapeDraw={handleShapeDraw} activeMode={drawMode} />
@@ -1073,86 +1073,86 @@ export default function GuidedMapBuilder() {
 
           {/* === ALWAYS VISIBLE: Main Campus Pathway Nodes & Paths === */}
           {showMainPathway && mainNodes.map(n => (
-            <EditableNode key={n._id} n={n} stepMode={step} isMain={true} 
+            <EditableNode key={n._id} n={n} stepMode={step} isMain={true}
               onUpdate={async (id, data) => { await import('../api').then(m => m.updateNode(id, data)); loadMainPathway(); }}
-              onDelete={async (id) => { await import('../api').then(m => m.deleteNode(id)); loadMainPathway(); }} 
+              onDelete={async (id) => { await import('../api').then(m => m.deleteNode(id)); loadMainPathway(); }}
             />
           ))}
           {showMainPathway && mainPaths.map(p => {
             const a = allNodes.find(n => n._id === p.nodeA);
             const b = allNodes.find(n => n._id === p.nodeB);
             if (!a || !b) return null;
-            return <EditablePath key={p._id} p={p} a={a} b={b} stepMode={step} 
+            return <EditablePath key={p._id} p={p} a={a} b={b} stepMode={step}
               onUpdate={async (id, data) => { await updatePath(id, data); loadMainPathway(); }}
-              onDelete={async (id) => { await deletePath(id); loadMainPathway(); }} 
+              onDelete={async (id) => { await deletePath(id); loadMainPathway(); }}
             />;
           })}
-          {step === 0 && mainPathStart && <Circle center={[mainPathStart.x,mainPathStart.y]} radius={3} pathOptions={{color:'#22c55e',fillOpacity:1}} />}
+          {step === 0 && mainPathStart && <Circle center={[mainPathStart.x, mainPathStart.y]} radius={3} pathOptions={{ color: '#22c55e', fillOpacity: 1 }} />}
           {step === 0 && campus?.location?.lat && campus?.radius && (
-            <Circle 
-              center={[campus.location.lat, campus.location.lng]} 
-              radius={campus.radius} 
-              pathOptions={{ color: '#ef4444', fillColor: '#ef4444', fillOpacity: 0.1, weight: 2, dashArray: '10, 10' }} 
+            <Circle
+              center={[campus.location.lat, campus.location.lng]}
+              radius={campus.radius}
+              pathOptions={{ color: '#ef4444', fillColor: '#ef4444', fillOpacity: 0.1, weight: 2, dashArray: '10, 10' }}
             />
           )}
 
           {/* Render Active Block Outline */}
           {activeBlock?.shape && (
-            <EditablePolygon key={`block-${activeBlock._id}`} r={{ ...activeBlock, isBlock: true }} isSelected={step === 1} isLocked={step > 1} onUpdate={(id, s) => setActiveBlock(p => ({...p, shape: s}))} onClick={()=>{}} activeMode={drawMode} />
+            <EditablePolygon key={`block-${activeBlock._id}`} r={{ ...activeBlock, isBlock: true }} isSelected={step === 1} isLocked={step > 1} onUpdate={(id, s) => setActiveBlock(p => ({ ...p, shape: s }))} onClick={() => { }} activeMode={drawMode} />
           )}
           {step === 1 && !activeBlock && tempBlockShape && (
-            <EditablePolygon key="temp-block" r={{ _id: 'temp', shape: tempBlockShape, type: 'other', name: 'New Block' }} isSelected={true} isLocked={false} onUpdate={(_, s) => setTempBlockShape(s)} onClick={()=>{}} activeMode={drawMode} />
+            <EditablePolygon key="temp-block" r={{ _id: 'temp', shape: tempBlockShape, type: 'other', name: 'New Block' }} isSelected={true} isLocked={false} onUpdate={(_, s) => setTempBlockShape(s)} onClick={() => { }} activeMode={drawMode} />
           )}
 
           {/* Render Rooms (Step 3 & 4) */}
           {(step === 3 || step === 4) && rooms.map(r => {
             const currentRoom = activeRoom?._id === r._id ? activeRoom : r;
-            return <EditablePolygon key={r._id} r={currentRoom} isSelected={activeRoom?._id === r._id} isLocked={step !== 3} 
+            return <EditablePolygon key={r._id} r={currentRoom} isSelected={activeRoom?._id === r._id} isLocked={step !== 3}
               onUpdate={(id, s) => {
                 setRooms(prev => prev.map(x => x._id === id ? { ...x, shape: s } : x));
                 setActiveRoom(p => p?._id === id ? { ...p, shape: s } : { ...r, shape: s });
-              }} 
-              onClick={(roomData) => { if (step===3) setActiveRoom(p => p?._id === roomData._id ? p : roomData); }} 
+              }}
+              onClick={(roomData) => { if (step === 3) setActiveRoom(p => p?._id === roomData._id ? p : roomData); }}
               activeMode={drawMode} />;
           })}
 
           {/* Render Interior Nodes & Paths (Step 4) */}
           {step === 4 && nodes.map(n => (
-            <EditableNode key={n._id} n={n} stepMode={step} isMain={false} 
+            <EditableNode key={n._id} n={n} stepMode={step} isMain={false}
               onUpdate={async (id, data) => { await import('../api').then(m => m.updateNode(id, data)); loadFloorData(activeFloor._id); }}
-              onDelete={async (id) => { await import('../api').then(m => m.deleteNode(id)); loadFloorData(activeFloor._id); }} 
+              onDelete={async (id) => { await import('../api').then(m => m.deleteNode(id)); loadFloorData(activeFloor._id); }}
             />
           ))}
           {step === 4 && paths.map(p => {
-            const a=allNodes.find(n=>n._id===p.nodeA);
-            const b=allNodes.find(n=>n._id===p.nodeB);
-            if(!a || !b) return null;
-            return <EditablePath key={p._id} p={p} a={a} b={b} stepMode={step} 
+            const a = allNodes.find(n => n._id === p.nodeA);
+            const b = allNodes.find(n => n._id === p.nodeB);
+            if (!a || !b) return null;
+            return <EditablePath key={p._id} p={p} a={a} b={b} stepMode={step}
               onUpdate={async (id, data) => { await updatePath(id, data); loadFloorData(activeFloor._id); }}
-              onDelete={async (id) => { await deletePath(id); loadFloorData(activeFloor._id); }} 
+              onDelete={async (id) => { await deletePath(id); loadFloorData(activeFloor._id); }}
             />;
           })}
-          {step === 4 && pathStart && <Circle center={[pathStart.x,pathStart.y]} radius={3} pathOptions={{color:'#f59e0b',fillOpacity:1}} />}
+          {step === 4 && pathStart && <Circle center={[pathStart.x, pathStart.y]} radius={3} pathOptions={{ color: '#f59e0b', fillOpacity: 1 }} />}
 
           {/* Render Map Layers (Step 5) */}
           {(step === 5 || step === 0) && mapLayers.map(l => {
             const currentLayer = activeLayer?._id === l._id ? activeLayer : l;
             if (l.geometry?.type === 'Polygon') {
-              const polyShape = { points: l.geometry.coordinates[0].map(c => ({x: c[1], y: c[0]})) };
-              return <EditablePolygon key={l._id} r={{...currentLayer, shape: polyShape}} 
-                isSelected={activeLayer?._id === l._id} isLocked={step !== 5} 
+              const polyShape = { points: l.geometry.coordinates[0].map(c => ({ x: c[1], y: c[0] })) };
+              return <EditablePolygon key={l._id} r={{ ...currentLayer, shape: polyShape }}
+                isSelected={activeLayer?._id === l._id} isLocked={step !== 5}
                 onUpdate={(id, s) => {
                   const newGeo = { type: 'Polygon', coordinates: [s.points.map(p => [p.y, p.x])] };
                   setMapLayers(prev => prev.map(x => x._id === id ? { ...x, geometry: newGeo } : x));
                   setActiveLayer(p => p?._id === id ? { ...p, geometry: newGeo } : { ...l, geometry: newGeo });
-                }} 
-                onClick={(layerData) => { if (step===5) setActiveLayer(p => p?._id === layerData._id ? p : layerData); }} 
+                }}
+                onClick={(layerData) => { if (step === 5) setActiveLayer(p => p?._id === layerData._id ? p : layerData); }}
                 activeMode={drawMode} />;
             }
             return null;
           })}
           {step === 5 && !activeLayer && tempBlockShape && (
-            <EditablePolygon key="temp-layer" r={{ _id: 'temp', shape: tempBlockShape, type: 'other', name: 'New Zone', color: blockForm.color }} isSelected={true} isLocked={false} onUpdate={(_, s) => setTempBlockShape(s)} onClick={()=>{}} activeMode={drawMode} />
+            <EditablePolygon key="temp-layer" r={{ _id: 'temp', shape: tempBlockShape, type: 'other', name: 'New Zone', color: blockForm.color }} isSelected={true} isLocked={false} onUpdate={(_, s) => setTempBlockShape(s)} onClick={() => { }} activeMode={drawMode} />
           )}
         </MapContainer>
       </div>
@@ -1160,12 +1160,12 @@ export default function GuidedMapBuilder() {
       {/* RIGHT PANEL: CONTEXT PROPERTIES */}
       <div style={S.rightPanel}>
         <div style={S.panelHeader}>
-          {step === 0 && <><FiNavigation color="#f59e0b"/> Main Campus Pathway</>}
-          {step === 1 && <><FiMap color="#6366f1"/> Block Definition</>}
-          {step === 2 && <><FiLayers color="#6366f1"/> Floor Generation</>}
-          {step === 3 && <><FiSquare color="#6366f1"/> Interior Elements</>}
-          {step === 4 && <><FiNavigation color="#6366f1"/> Route Network</>}
-          {step === 5 && <><FiMap color="#ef4444"/> Custom Map Zones</>}
+          {step === 0 && <><FiNavigation color="#f59e0b" /> Main Campus Pathway</>}
+          {step === 1 && <><FiMap color="#6366f1" /> Block Definition</>}
+          {step === 2 && <><FiLayers color="#6366f1" /> Floor Generation</>}
+          {step === 3 && <><FiSquare color="#6366f1" /> Interior Elements</>}
+          {step === 4 && <><FiNavigation color="#6366f1" /> Route Network</>}
+          {step === 5 && <><FiMap color="#ef4444" /> Custom Map Zones</>}
         </div>
 
         <div style={S.panelBody}>
@@ -1173,10 +1173,10 @@ export default function GuidedMapBuilder() {
           {step === 0 && (
             <>
               <div style={{ background: '#1a2235', padding: 16, borderRadius: 12, marginBottom: 20, border: '1px solid #f59e0b30', fontSize: 13, color: '#94a3b8' }}>
-                <FiInfo style={{marginBottom: 8}} color="#f59e0b" size={20}/>
-                <p style={{margin:0}}>Draw the <strong style={{color:'#f59e0b'}}>main campus walkway</strong> connecting all areas. Click on the map with <strong>"Add Node"</strong> to place waypoints along roads, then link them with <strong>"Draw Path"</strong>.</p>
+                <FiInfo style={{ marginBottom: 8 }} color="#f59e0b" size={20} />
+                <p style={{ margin: 0 }}>Draw the <strong style={{ color: '#f59e0b' }}>main campus walkway</strong> connecting all areas. Click on the map with <strong>"Add Node"</strong> to place waypoints along roads, then link them with <strong>"Draw Path"</strong>.</p>
               </div>
-              
+
               <div style={{ padding: 16, background: '#0a0e1a', borderRadius: 12, border: '1px solid #1e2d40', marginBottom: 20 }}>
                 <h4 style={{ margin: '0 0 12px', fontSize: 13, color: '#f1f5f9' }}>Main Pathway Stats</h4>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, fontSize: 12, color: '#94a3b8' }}><span>Nodes:</span> <span style={{ color: '#f59e0b', fontWeight: 800 }}>{mainNodes.length}</span></div>
@@ -1184,31 +1184,31 @@ export default function GuidedMapBuilder() {
               </div>
 
               <div style={{ background: '#1a2235', padding: 16, borderRadius: 12, marginBottom: 20, border: '1px solid #2a3352', fontSize: 12, color: '#94a3b8' }}>
-                <h4 style={{ margin: '0 0 8px', fontSize: 13, color: '#f1f5f9' }}><FiRepeat size={14} style={{marginRight:6}}/> Direction Toggle</h4>
-                <p style={{margin:'0 0 8px'}}>Click on any <strong style={{color:'#f59e0b'}}>path line</strong> to toggle between:</p>
-                <div style={{display:'flex', gap:8, marginBottom:4}}>
-                  <span style={{color:'#f59e0b', fontWeight:700}}>↔</span>
+                <h4 style={{ margin: '0 0 8px', fontSize: 13, color: '#f1f5f9' }}><FiRepeat size={14} style={{ marginRight: 6 }} /> Direction Toggle</h4>
+                <p style={{ margin: '0 0 8px' }}>Click on any <strong style={{ color: '#f59e0b' }}>path line</strong> to toggle between:</p>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 4 }}>
+                  <span style={{ color: '#f59e0b', fontWeight: 700 }}>↔</span>
                   <span>Bidirectional (two-way)</span>
                 </div>
-                <div style={{display:'flex', gap:8}}>
-                  <span style={{color:'#ef4444', fontWeight:700}}>→</span>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <span style={{ color: '#ef4444', fontWeight: 700 }}>→</span>
                   <span>One-way (incoming/outgoing)</span>
                 </div>
               </div>
 
               {(mainNodes.length > 0 || mainPaths.length > 0) && (
-                <button style={{...S.primaryBtn, background:'#1a2235', color:'#ef4444', border:'1px solid #ef444450', marginBottom: 10}} onClick={clearAllMainPaths}>
-                  <FiTrash2 style={{marginRight:6}}/> Clear All Paths & Nodes
+                <button style={{ ...S.primaryBtn, background: '#1a2235', color: '#ef4444', border: '1px solid #ef444450', marginBottom: 10 }} onClick={clearAllMainPaths}>
+                  <FiTrash2 style={{ marginRight: 6 }} /> Clear All Paths & Nodes
                 </button>
               )}
 
               {mainNodes.length > 0 && (
-                <button style={{...S.successBtn, background:'#f59e0b', marginBottom: 10}} onClick={() => { toast.success('Main pathway saved!'); setStep(1); }}>
+                <button style={{ ...S.successBtn, background: '#f59e0b', marginBottom: 10 }} onClick={() => { toast.success('Main pathway saved!'); setStep(1); }}>
                   Save Main Pathway & Add Blocks →
                 </button>
               )}
               {mainNodes.length === 0 && (
-                <button style={{...S.primaryBtn, opacity: 0.5}} disabled>
+                <button style={{ ...S.primaryBtn, opacity: 0.5 }} disabled>
                   Add nodes to proceed
                 </button>
               )}
@@ -1219,15 +1219,15 @@ export default function GuidedMapBuilder() {
           {step === 1 && (
             <>
               <div style={{ background: '#1a2235', padding: 16, borderRadius: 12, marginBottom: 20, border: '1px solid #2a3352', fontSize: 13, color: '#94a3b8' }}>
-                <FiInfo style={{marginBottom: 8}} color="#6366f1" size={20}/>
-                <p style={{margin:0}}>Draw the outer bounding box of your building on the map. The <span style={{color:'#f59e0b'}}>main pathway</span> is shown in the background for reference.</p>
+                <FiInfo style={{ marginBottom: 8 }} color="#6366f1" size={20} />
+                <p style={{ margin: 0 }}>Draw the outer bounding box of your building on the map. The <span style={{ color: '#f59e0b' }}>main pathway</span> is shown in the background for reference.</p>
               </div>
-              
+
               {blocks.length > 0 && !activeBlock && (
                 <div style={{ marginBottom: 20 }}>
                   <label style={S.label}>Existing Blocks</label>
                   {blocks.map(b => (
-                    <div key={b._id} style={{ display: 'flex', justifyContent: 'space-between', padding: 12, background: '#1a2235', borderRadius: 8, marginBottom: 8, border: '1px solid #2a3352', cursor: 'pointer' }} onClick={() => { setActiveBlock(b); setTempBlockShape(null); setBlockForm({name: b.name, domain: b.domain || 'Academic Blocks', id: b._id}); }}>
+                    <div key={b._id} style={{ display: 'flex', justifyContent: 'space-between', padding: 12, background: '#1a2235', borderRadius: 8, marginBottom: 8, border: '1px solid #2a3352', cursor: 'pointer' }} onClick={() => { setActiveBlock(b); setTempBlockShape(null); setBlockForm({ name: b.name, domain: b.domain || 'Academic Blocks', id: b._id }); }}>
                       <div>
                         <div style={{ fontWeight: 600, color: '#fff' }}>{b.name}</div>
                         <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>{b.domain || 'Academic Blocks'}</div>
@@ -1238,7 +1238,7 @@ export default function GuidedMapBuilder() {
                       </div>
                     </div>
                   ))}
-                  <button style={{...S.primaryBtn, background: '#1a2235', border: '1px solid #1e2d40'}} onClick={() => { setActiveBlock(null); setTempBlockShape(null); setBlockForm({name:'', domain: 'Academic Blocks', id:''}); }}>+ Draw New Block</button>
+                  <button style={{ ...S.primaryBtn, background: '#1a2235', border: '1px solid #1e2d40' }} onClick={() => { setActiveBlock(null); setTempBlockShape(null); setBlockForm({ name: '', domain: 'Academic Blocks', id: '' }); }}>+ Draw New Block</button>
                 </div>
               )}
 
@@ -1288,9 +1288,9 @@ export default function GuidedMapBuilder() {
           {step === 2 && (
             <>
               <div style={{ background: '#1a2235', padding: 16, borderRadius: 12, marginBottom: 20, border: '1px solid #2a3352', fontSize: 13, color: '#94a3b8' }}>
-                <p style={{margin:0}}>The block shape is locked. Manage floors for <strong>{activeBlock?.name}</strong>.</p>
+                <p style={{ margin: 0 }}>The block shape is locked. Manage floors for <strong>{activeBlock?.name}</strong>.</p>
               </div>
-              
+
               {floors.length > 0 && (
                 <div style={{ marginBottom: 20 }}>
                   <label style={S.label}>Existing Floors</label>
@@ -1300,13 +1300,13 @@ export default function GuidedMapBuilder() {
                       <div style={{ display: 'flex' }}>
                         <button onClick={() => {
                           const newName = window.prompt('Rename Floor:', f.name);
-                          if(newName) { import('../api').then(m => m.updateFloor(f._id, {name: newName}).then(() => loadFloors(activeBlock._id))); }
-                        }} style={{ background: 'transparent', border: 'none', color: '#6366f1', cursor: 'pointer', marginRight: 8 }}><FiSettings/></button>
-                        <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); removeFloor(f._id); }} style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer' }}><FiTrash2/></button>
+                          if (newName) { import('../api').then(m => m.updateFloor(f._id, { name: newName }).then(() => loadFloors(activeBlock._id))); }
+                        }} style={{ background: 'transparent', border: 'none', color: '#6366f1', cursor: 'pointer', marginRight: 8 }}><FiSettings /></button>
+                        <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); removeFloor(f._id); }} style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer' }}><FiTrash2 /></button>
                       </div>
                     </div>
                   ))}
-                  <button style={{...S.primaryBtn, background: '#1a2235', border: '1px solid #1e2d40', marginTop: 10}} onClick={() => setStep(3)}>Proceed to Interior Design</button>
+                  <button style={{ ...S.primaryBtn, background: '#1a2235', border: '1px solid #1e2d40', marginTop: 10 }} onClick={() => setStep(3)}>Proceed to Interior Design</button>
                 </div>
               )}
 
@@ -1341,20 +1341,20 @@ export default function GuidedMapBuilder() {
                     </select>
                   </div>
                   <div style={{ display: 'flex', gap: 10, marginTop: 24 }}>
-                    <button style={{ ...S.primaryBtn, marginTop: 0, flex: 1, background: '#1a2235', color: '#ef4444', border: '1px solid #ef444450' }} onClick={(e) => { e.preventDefault(); if(window.confirm('Delete from all floors?')) deleteRoom(activeRoom._id).then(()=>{setActiveRoom(null);loadFloorData(activeFloor._id);}); }}>Delete All</button>
+                    <button style={{ ...S.primaryBtn, marginTop: 0, flex: 1, background: '#1a2235', color: '#ef4444', border: '1px solid #ef444450' }} onClick={(e) => { e.preventDefault(); if (window.confirm('Delete from all floors?')) deleteRoom(activeRoom._id).then(() => { setActiveRoom(null); loadFloorData(activeFloor._id); }); }}>Delete All</button>
                     <button style={{ ...S.successBtn, marginTop: 0, flex: 2 }} onClick={updateRoomProps} disabled={saving}>{saving ? 'Saving...' : 'Save Room'}</button>
                   </div>
 
                   {/* Per-Floor Stairs Management Panel */}
                   {['stairs', 'elevator'].includes(activeRoom.type) && stairsFloorPanel && floors.length > 0 && (
                     <div style={{ marginTop: 24, background: '#0a0e1a', borderRadius: 14, border: '1px solid #f9731640', overflow: 'hidden' }}>
-                      <div 
+                      <div
                         onClick={() => setStairsFloorPanel(prev => !prev)}
-                        style={{ 
-                          padding: '14px 16px', 
-                          background: 'linear-gradient(135deg, #f9731615, #f9731608)', 
-                          display: 'flex', 
-                          alignItems: 'center', 
+                        style={{
+                          padding: '14px 16px',
+                          background: 'linear-gradient(135deg, #f9731615, #f9731608)',
+                          display: 'flex',
+                          alignItems: 'center',
                           justifyContent: 'space-between',
                           cursor: 'pointer',
                           borderBottom: '1px solid #f9731620'
@@ -1376,7 +1376,7 @@ export default function GuidedMapBuilder() {
 
                       <div style={{ padding: '12px 14px' }}>
                         <p style={{ margin: '0 0 12px', fontSize: 11, color: '#94a3b8', lineHeight: 1.5 }}>
-                          Toggle visibility of this <strong style={{ color: '#f97316' }}>{activeRoom.type}</strong> on each floor. 
+                          Toggle visibility of this <strong style={{ color: '#f97316' }}>{activeRoom.type}</strong> on each floor.
                           Disabled floors will not show this {activeRoom.type} in the interior map.
                         </p>
 
@@ -1388,19 +1388,19 @@ export default function GuidedMapBuilder() {
                             const isCurrentFloor = activeFloor?._id === f._id;
 
                             return (
-                              <div key={f._id} style={{ 
-                                display: 'flex', 
-                                alignItems: 'center', 
-                                justifyContent: 'space-between', 
-                                padding: '10px 12px', 
-                                borderRadius: 10, 
+                              <div key={f._id} style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                padding: '10px 12px',
+                                borderRadius: 10,
                                 background: isCurrentFloor ? '#22c55e08' : '#1a2235',
                                 border: `1px solid ${isCurrentFloor ? '#22c55e30' : '#1e2d40'}`,
                                 transition: 'all 0.2s'
                               }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                  <div style={{ 
-                                    width: 8, height: 8, borderRadius: 4, 
+                                  <div style={{
+                                    width: 8, height: 8, borderRadius: 4,
                                     background: isExcluded ? '#ef4444' : '#22c55e',
                                     boxShadow: isExcluded ? '0 0 6px #ef444460' : '0 0 6px #22c55e60'
                                   }} />
@@ -1415,15 +1415,15 @@ export default function GuidedMapBuilder() {
                                   </div>
                                 </div>
 
-                                <button 
+                                <button
                                   onClick={() => handleStairsFloorToggle(activeRoom._id, f._id, isExcluded)}
                                   disabled={stairsLoading}
-                                  style={{ 
-                                    padding: '6px 14px', 
-                                    borderRadius: 8, 
-                                    border: 'none', 
+                                  style={{
+                                    padding: '6px 14px',
+                                    borderRadius: 8,
+                                    border: 'none',
                                     cursor: stairsLoading ? 'wait' : 'pointer',
-                                    fontWeight: 700, 
+                                    fontWeight: 700,
                                     fontSize: 11,
                                     background: isExcluded ? '#22c55e20' : '#ef444420',
                                     color: isExcluded ? '#22c55e' : '#ef4444',
@@ -1451,7 +1451,7 @@ export default function GuidedMapBuilder() {
                 </>
               )}
               {rooms.length > 0 && (
-                 <button style={{ ...S.primaryBtn, background: '#1a2235', border: '1px solid #1e2d40', marginTop: 40 }} onClick={() => setStep(4)}>Proceed to Navigation Setup</button>
+                <button style={{ ...S.primaryBtn, background: '#1a2235', border: '1px solid #1e2d40', marginTop: 40 }} onClick={() => setStep(4)}>Proceed to Navigation Setup</button>
               )}
             </>
           )}
@@ -1460,7 +1460,7 @@ export default function GuidedMapBuilder() {
           {step === 4 && (
             <>
               <div style={{ background: '#1a2235', padding: 16, borderRadius: 12, marginBottom: 20, border: '1px solid #2a3352', fontSize: 13, color: '#94a3b8' }}>
-                <p style={{margin:0}}>Rooms are locked. Add nodes and link them to create the walkable navigation graph.</p>
+                <p style={{ margin: 0 }}>Rooms are locked. Add nodes and link them to create the walkable navigation graph.</p>
               </div>
               <div style={{ padding: 16, background: '#0a0e1a', borderRadius: 12, border: '1px solid #1e2d40' }}>
                 <h4 style={{ margin: '0 0 12px', fontSize: 13, color: '#f1f5f9' }}>Graph Stats</h4>
@@ -1475,8 +1475,8 @@ export default function GuidedMapBuilder() {
           {step === 5 && (
             <>
               <div style={{ background: '#1a2235', padding: 16, borderRadius: 12, marginBottom: 20, border: '1px solid #2a3352', fontSize: 13, color: '#94a3b8' }}>
-                <FiInfo style={{marginBottom: 8}} color="#ef4444" size={20}/>
-                <p style={{margin:0}}>Draw generic custom zones (parking, gardens, restricted areas). These override default map styling.</p>
+                <FiInfo style={{ marginBottom: 8 }} color="#ef4444" size={20} />
+                <p style={{ margin: 0 }}>Draw generic custom zones (parking, gardens, restricted areas). These override default map styling.</p>
               </div>
 
               {mapLayers.length > 0 && !activeLayer && (
@@ -1488,10 +1488,10 @@ export default function GuidedMapBuilder() {
                         <div style={{ fontWeight: 600, color: '#fff' }}>{l.name}</div>
                         <div style={{ fontSize: 11, color: l.color || '#3b82f6', marginTop: 2 }}>{l.category}</div>
                       </div>
-                      <button onClick={async (e) => { e.preventDefault(); e.stopPropagation(); if(window.confirm('Delete zone?')) { await deleteMapLayer(l._id); loadMainPathway(); } }} style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer' }}><FiTrash2/></button>
+                      <button onClick={async (e) => { e.preventDefault(); e.stopPropagation(); if (window.confirm('Delete zone?')) { await deleteMapLayer(l._id); loadMainPathway(); } }} style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer' }}><FiTrash2 /></button>
                     </div>
                   ))}
-                  <button style={{...S.primaryBtn, background: '#1a2235', border: '1px solid #1e2d40'}} onClick={() => { setActiveLayer(null); setTempBlockShape(null); }}>+ Draw New Zone</button>
+                  <button style={{ ...S.primaryBtn, background: '#1a2235', border: '1px solid #1e2d40' }} onClick={() => { setActiveLayer(null); setTempBlockShape(null); }}>+ Draw New Zone</button>
                 </div>
               )}
 
@@ -1503,14 +1503,14 @@ export default function GuidedMapBuilder() {
                   </div>
                   <div style={S.formGroup}>
                     <label style={S.label}>Color</label>
-                    <input type="color" style={{...S.input, padding: 0, height: 40}} value={blockForm.color || '#3b82f6'} onChange={e => setBlockForm({ ...blockForm, color: e.target.value })} />
+                    <input type="color" style={{ ...S.input, padding: 0, height: 40 }} value={blockForm.color || '#3b82f6'} onChange={e => setBlockForm({ ...blockForm, color: e.target.value })} />
                   </div>
                   {!tempBlockShape && (
                     <div style={{ background: '#1a2235', padding: 12, borderRadius: 8, marginBottom: 12, border: '1px dashed #f59e0b50', fontSize: 12, color: '#f59e0b' }}>
                       👆 Select <strong>"Draw Polygon Zone"</strong> tool above and draw a shape on the map, then come back here to save.
                     </div>
                   )}
-                  <button style={{...S.successBtn, opacity: tempBlockShape ? 1 : 0.5}} disabled={saving || !tempBlockShape} onClick={async () => {
+                  <button style={{ ...S.successBtn, opacity: tempBlockShape ? 1 : 0.5 }} disabled={saving || !tempBlockShape} onClick={async () => {
                     if (!tempBlockShape) return toast.warn('Draw shape first');
                     setSaving(true);
                     try {
@@ -1520,7 +1520,7 @@ export default function GuidedMapBuilder() {
                       setActiveLayer(res.data);
                       setTempBlockShape(null);
                       loadMainPathway();
-                    } catch(e) { toast.error('Failed to create zone'); }
+                    } catch (e) { toast.error('Failed to create zone'); }
                     setSaving(false);
                   }}>{saving ? 'Saving...' : (tempBlockShape ? 'Save Zone Shape' : 'Draw a shape first')}</button>
                 </>
@@ -1533,17 +1533,17 @@ export default function GuidedMapBuilder() {
                   </div>
                   <div style={S.formGroup}>
                     <label style={S.label}>Color</label>
-                    <input type="color" style={{...S.input, padding: 0, height: 40}} value={activeLayer.color || '#3b82f6'} onChange={e => setActiveLayer({ ...activeLayer, color: e.target.value })} />
+                    <input type="color" style={{ ...S.input, padding: 0, height: 40 }} value={activeLayer.color || '#3b82f6'} onChange={e => setActiveLayer({ ...activeLayer, color: e.target.value })} />
                   </div>
                   <div style={{ display: 'flex', gap: 10 }}>
-                    <button style={{ ...S.primaryBtn, flex: 1, background: '#1a2235', color: '#ef4444', border: '1px solid #ef444450' }} onClick={async (e) => { e.preventDefault(); if(window.confirm('Delete zone?')) { await deleteMapLayer(activeLayer._id); setActiveLayer(null); loadMainPathway(); } }}>Delete</button>
+                    <button style={{ ...S.primaryBtn, flex: 1, background: '#1a2235', color: '#ef4444', border: '1px solid #ef444450' }} onClick={async (e) => { e.preventDefault(); if (window.confirm('Delete zone?')) { await deleteMapLayer(activeLayer._id); setActiveLayer(null); loadMainPathway(); } }}>Delete</button>
                     <button style={{ ...S.successBtn, flex: 2 }} disabled={saving} onClick={async () => {
                       setSaving(true);
                       try {
                         await updateMapLayer(activeLayer._id, { geometry: activeLayer.geometry, color: activeLayer.color });
                         toast.success('Zone Updated!');
                         loadMainPathway();
-                      } catch(e) { toast.error('Update failed'); }
+                      } catch (e) { toast.error('Update failed'); }
                       setSaving(false);
                     }}>Save Shape</button>
                   </div>
@@ -1568,13 +1568,13 @@ export default function GuidedMapBuilder() {
                   Edits are saved as drafts. Click publish to push the final design to the mobile app.
                 </p>
               </div>
-              
+
               <button style={{ ...S.successBtn, marginTop: 40 }} onClick={() => { toast.success('Building Map Published Successfully!'); nav('/campus'); }}>Finish & Publish Map</button>
             </>
           )}
         </div>
       </div>
-      
+
       {/* Global CSS overrides */}
       <style>{`
         .leaflet-pm-toolbar { display: none !important; }
@@ -1587,61 +1587,61 @@ export default function GuidedMapBuilder() {
 
       {/* DIRECTION PICKER POPUP */}
       {pendingPath && (
-        <div style={{ position:'fixed', inset:0, zIndex:9999, display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(0,0,0,0.7)', backdropFilter:'blur(4px)' }}
+        <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}
           onClick={() => setPendingPath(null)}>
-          <div style={{ background:'#111827', border:'1px solid #1e2d40', borderRadius:20, padding:28, width:340, boxShadow:'0 20px 60px rgba(0,0,0,0.8)' }}
+          <div style={{ background: '#111827', border: '1px solid #1e2d40', borderRadius: 20, padding: 28, width: 340, boxShadow: '0 20px 60px rgba(0,0,0,0.8)' }}
             onClick={e => e.stopPropagation()}>
-            <h3 style={{ margin:'0 0 6px', fontSize:18, fontWeight:800, color:'#fff' }}>Choose Direction</h3>
-            <p style={{ margin:'0 0 20px', fontSize:12, color:'#94a3b8' }}>Select the traffic direction for this path segment.</p>
+            <h3 style={{ margin: '0 0 6px', fontSize: 18, fontWeight: 800, color: '#fff' }}>Choose Direction</h3>
+            <p style={{ margin: '0 0 20px', fontSize: 12, color: '#94a3b8' }}>Select the traffic direction for this path segment.</p>
 
             {/* Outgoing: A → B */}
             <button onClick={() => savePendingPath('outgoing')} style={{
-              width:'100%', padding:'14px 16px', borderRadius:12, border:'2px solid #3b82f630',
-              background:'#1a2235', color:'#fff', cursor:'pointer', marginBottom:10,
-              display:'flex', alignItems:'center', gap:12, textAlign:'left'
+              width: '100%', padding: '14px 16px', borderRadius: 12, border: '2px solid #3b82f630',
+              background: '#1a2235', color: '#fff', cursor: 'pointer', marginBottom: 10,
+              display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left'
             }}>
-              <div style={{ width:40, height:40, borderRadius:10, background:'#3b82f620', display:'flex', alignItems:'center', justifyContent:'center' }}>
-                <span style={{ fontSize:20 }}>→</span>
+              <div style={{ width: 40, height: 40, borderRadius: 10, background: '#3b82f620', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <span style={{ fontSize: 20 }}>→</span>
               </div>
               <div>
-                <div style={{ fontWeight:700, fontSize:14, color:'#3b82f6' }}>Outgoing (A → B)</div>
-                <div style={{ fontSize:11, color:'#64748b', marginTop:2 }}>One-way from start to end node</div>
+                <div style={{ fontWeight: 700, fontSize: 14, color: '#3b82f6' }}>Outgoing (A → B)</div>
+                <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>One-way from start to end node</div>
               </div>
             </button>
 
             {/* Incoming: B → A */}
             <button onClick={() => savePendingPath('incoming')} style={{
-              width:'100%', padding:'14px 16px', borderRadius:12, border:'2px solid #f59e0b30',
-              background:'#1a2235', color:'#fff', cursor:'pointer', marginBottom:10,
-              display:'flex', alignItems:'center', gap:12, textAlign:'left'
+              width: '100%', padding: '14px 16px', borderRadius: 12, border: '2px solid #f59e0b30',
+              background: '#1a2235', color: '#fff', cursor: 'pointer', marginBottom: 10,
+              display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left'
             }}>
-              <div style={{ width:40, height:40, borderRadius:10, background:'#f59e0b20', display:'flex', alignItems:'center', justifyContent:'center' }}>
-                <span style={{ fontSize:20 }}>←</span>
+              <div style={{ width: 40, height: 40, borderRadius: 10, background: '#f59e0b20', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <span style={{ fontSize: 20 }}>←</span>
               </div>
               <div>
-                <div style={{ fontWeight:700, fontSize:14, color:'#f59e0b' }}>Incoming (B → A)</div>
-                <div style={{ fontSize:11, color:'#64748b', marginTop:2 }}>One-way from end to start node</div>
+                <div style={{ fontWeight: 700, fontSize: 14, color: '#f59e0b' }}>Incoming (B → A)</div>
+                <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>One-way from end to start node</div>
               </div>
             </button>
 
             {/* Both: A ↔ B */}
             <button onClick={() => savePendingPath('both')} style={{
-              width:'100%', padding:'14px 16px', borderRadius:12, border:'2px solid #22c55e30',
-              background:'#1a2235', color:'#fff', cursor:'pointer', marginBottom:10,
-              display:'flex', alignItems:'center', gap:12, textAlign:'left'
+              width: '100%', padding: '14px 16px', borderRadius: 12, border: '2px solid #22c55e30',
+              background: '#1a2235', color: '#fff', cursor: 'pointer', marginBottom: 10,
+              display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left'
             }}>
-              <div style={{ width:40, height:40, borderRadius:10, background:'#22c55e20', display:'flex', alignItems:'center', justifyContent:'center' }}>
-                <span style={{ fontSize:20 }}>↔</span>
+              <div style={{ width: 40, height: 40, borderRadius: 10, background: '#22c55e20', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <span style={{ fontSize: 20 }}>↔</span>
               </div>
               <div>
-                <div style={{ fontWeight:700, fontSize:14, color:'#22c55e' }}>Both Ways (A ↔ B)</div>
-                <div style={{ fontSize:11, color:'#64748b', marginTop:2 }}>Bidirectional, two-way traffic</div>
+                <div style={{ fontWeight: 700, fontSize: 14, color: '#22c55e' }}>Both Ways (A ↔ B)</div>
+                <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>Bidirectional, two-way traffic</div>
               </div>
             </button>
 
             <button onClick={() => setPendingPath(null)} style={{
-              width:'100%', padding:10, borderRadius:10, background:'transparent',
-              color:'#64748b', border:'1px solid #1e2d40', cursor:'pointer', marginTop:6, fontWeight:600, fontSize:13
+              width: '100%', padding: 10, borderRadius: 10, background: 'transparent',
+              color: '#64748b', border: '1px solid #1e2d40', cursor: 'pointer', marginTop: 6, fontWeight: 600, fontSize: 13
             }}>Cancel</button>
           </div>
         </div>
