@@ -127,30 +127,42 @@ function buildARPathHTML() {
 var c = document.getElementById('c');
 var ctx = c.getContext('2d');
 var W, H;
+var dirType    = 'straight';
+var isNearTurn = false;
+var pitchDeg   = 20;
+var bearingDiff = 0;
+var animOffset = 0;
+
+var VPX = 0;
+var VPY = 0;
+var FLOOR_Y = 0;
+
 function resize() {
   W = c.width  = window.innerWidth;
   H = c.height = window.innerHeight;
+  VPX = W * 0.5;
+  FLOOR_Y = H;
 }
 resize();
 window.addEventListener('resize', resize);
 
-var dirType    = 'straight';
-var isNearTurn = false;
-var pitchDeg   = 20;
-var animOffset = 0;
-
-var VPX = W * 0.5;
-var VPY = H * 0.40;
-var FLOOR_Y = H;
-
 function floorPt(t) {
   var depth = Math.pow(t, 0.60);
   var y = FLOOR_Y + (VPY - FLOOR_Y) * depth;
+  
+  // Pan the vanishing point based on bearingDiff
+  // 35 degrees off-center shifts the vanishing point to the edge of the screen
+  var shiftedVPX = (W * 0.5) + (bearingDiff / 35) * (W * 0.5);
+  
+  // Base X starts at center-bottom (W*0.5) and linearly goes to shifted vanishing point
+  var baseX = (W * 0.5) + (shiftedVPX - (W * 0.5)) * depth;
+
+  // Add curve ONLY further down the path (gives a true 3D turn appearance)
   var curveX = 0;
-  if (dirType === 'left')  curveX = -t * t * W * 0.52;
-  if (dirType === 'right') curveX = +t * t * W * 0.52;
-  var x = VPX + curveX;
-  return { x: x, y: y, t: t };
+  if (dirType === 'left')  curveX = (t < 0.25) ? 0 : -Math.pow(t - 0.25, 2) * W * 0.9;
+  if (dirType === 'right') curveX = (t < 0.25) ? 0 : +Math.pow(t - 0.25, 2) * W * 0.9;
+  
+  return { x: baseX + curveX, y: y, t: t };
 }
 
 function travelAngle(t) {
@@ -233,12 +245,17 @@ function animate(ts) {
 }
 requestAnimationFrame(animate);
 
-window.updateARPath = function(newDir, nearTurn, newPitch) {
+window.updateARPath = function(newDir, nearTurn, newPitch, newBearingDiff) {
   dirType    = newDir;
   isNearTurn = nearTurn == 1 || nearTurn === true;
   pitchDeg   = Math.max(0, Math.min(85, newPitch || 20));
+  bearingDiff = newBearingDiff || 0;
 
-  var horizonFrac = 0.15 + (pitchDeg / 85) * 0.63;
+  // Real physical horizon calculation based on camera vertical FOV (~55-60 deg)
+  // Upright phone (pitch 0) -> horizon is around center (0.55 * H)
+  // Tilted 30 deg -> horizon is near top of screen (0.0 * H)
+  // Tilted 60 deg -> horizon is above the screen (-0.54 * H)
+  var horizonFrac = 0.55 - (pitchDeg / 55);
   VPY = H * horizonFrac;
 };
 </script>
@@ -263,8 +280,8 @@ export default function ARScreen({ navigation, route }) {
     routeData ? Math.round(routeData.distance || 0) : 0
   );
   const [arrived, setArrived] = useState(false);
-  const [dirType, setDirType] = useState("straight");    // from instruction text (fallback)
-  const [arDirType, setArDirType] = useState("straight"); // from GPS bearing vs compass (primary)
+  const [arDirType, setArDirType] = useState("straight"); // from instruction (shape of path)
+  const [bearingDiff, setBearingDiff] = useState(0);      // from GPS vs compass (panning)
   const [isNearTurn, setIsNearTurn] = useState(false);
   const [distToTurn, setDistToTurn] = useState(999);
   const [nearDestination, setNearDestination] = useState(false);
@@ -371,10 +388,9 @@ export default function ARScreen({ navigation, route }) {
     setShowMiniMap(tiltLevel > 0);
   }, [tiltLevel]);
 
-  // ── Compute AR direction type from GPS bearing vs compass heading (primary)
-  //     Falls back to instruction-text parsing if GPS not available
+  // ── Compute AR direction shape and bearing diff (for world-space panning)
   useEffect(() => {
-    // ── GPS bearing method (most accurate)
+    // 1. Calculate bearing difference to pan the path if user looks away
     if (userPos && routeData?.path) {
       const nextNode = routeData.path[Math.min(currentStep + 1, routeData.path.length - 1)];
       if (nextNode && nextNode.x && nextNode.y) {
@@ -383,16 +399,13 @@ export default function ARScreen({ navigation, route }) {
         const bY = Math.sin(dLon) * Math.cos(lat2);
         const bX = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
         const requiredBearing = ((Math.atan2(bY, bX) * 180 / Math.PI) + 360) % 360;
-        const diff = ((requiredBearing - heading) + 360) % 360;
-        // diff: 0° = go straight, 90° = turn right, 270° = turn left
-        if      (diff < 30 || diff > 330)          setArDirType('straight');
-        else if (diff >= 30  && diff <= 165)        setArDirType('right');
-        else if (diff >= 195 && diff <= 330)        setArDirType('left');
-        else                                        setArDirType('straight');
-        return;
+        let diff = ((requiredBearing - heading) + 360) % 360;
+        if (diff > 180) diff -= 360; // range -180 to +180
+        setBearingDiff(diff);
       }
     }
-    // ── Fallback: parse instruction text
+
+    // 2. Shape of the path is purely based on the route geometry (instruction)
     if (!currentDir) return;
     const instr = currentDir.instruction?.toLowerCase() || '';
     if      (instr.includes('left'))  setArDirType('left');
@@ -401,9 +414,7 @@ export default function ARScreen({ navigation, route }) {
   }, [userPos, heading, currentStep, currentDir, routeData]);
 
   // ── Keep dirType in sync (used for bottom panel icon)
-  useEffect(() => {
-    setDirType(arDirType);
-  }, [arDirType]);
+  const dirType = arDirType;
 
   // ── Step advancement based on user position
   useEffect(() => {
@@ -461,16 +472,16 @@ export default function ARScreen({ navigation, route }) {
     `);
   }, [userPos, heading]);
 
-  // ── Update AR path canvas: direction + pitch for dynamic floor horizon
+  // ── Update AR path canvas: direction, pitch, and panning bearing
   useEffect(() => {
     if (!arPathRef.current) return;
     arPathRef.current.injectJavaScript(`
       if (typeof window.updateARPath === 'function') {
-        window.updateARPath('${arDirType}', ${isNearTurn ? 1 : 0}, ${pitch});
+        window.updateARPath('${arDirType}', ${isNearTurn ? 1 : 0}, ${pitch}, ${bearingDiff});
       }
       true;
     `);
-  }, [arDirType, isNearTurn, pitch]);
+  }, [arDirType, isNearTurn, pitch, bearingDiff]);
 
   const miniMapHtml = React.useMemo(() =>
     buildMiniMapHTML(routeData?.path, initialUserPos, targetRoom),
