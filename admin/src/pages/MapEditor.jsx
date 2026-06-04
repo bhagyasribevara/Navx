@@ -164,12 +164,7 @@ const EditablePolygon = ({ r, isSelected, isLocked, onUpdate, onClick, activeMod
   const initialBounds = useRef(
     s.points && s.points.length > 0
       ? s.points.map(p => [p.x, p.y])
-      : [
-        [s.x, s.y],
-        [s.x, s.y + (s.width || 0.00015)],
-        [s.x + (s.height || 0.0001), s.y + (s.width || 0.00015)],
-        [s.x + (s.height || 0.0001), s.y]
-      ]
+      : []
   );
 
   useEffect(() => {
@@ -268,13 +263,20 @@ const EditablePolygon = ({ r, isSelected, isLocked, onUpdate, onClick, activeMod
     }
   }), [isLocked]); // ONLY recreate if isLocked changes!
 
+  if (!initialBounds.current || initialBounds.current.length === 0) return null;
+
   return (
     <Polygon ref={polyRef} positions={initialBounds.current}
       pathOptions={pathOpts}
       eventHandlers={eventHandlers}>
-      {!r.isBlock && (
-        <Tooltip permanent direction="center" className="room-label">
-          <span style={{ fontSize: 10, fontWeight: 700, color: '#fff', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}>{r.name}</span>
+      {r.name && (
+        <Tooltip permanent direction="center" className={r.isBlock ? "block-label" : "room-label"}>
+          <span style={{ 
+            fontSize: r.isBlock ? 12 : 10, 
+            fontWeight: 800, 
+            color: r.isBlock ? '#818cf8' : '#fff', 
+            textShadow: r.isBlock ? '0 1px 3px rgba(0,0,0,0.9)' : '0 1px 2px rgba(0,0,0,0.8)' 
+          }}>{r.name}</span>
         </Tooltip>
       )}
     </Polygon>
@@ -848,7 +850,7 @@ export default function GuidedMapBuilder() {
         toast.success('Block Updated!');
         setStep(2);
       } else {
-        const res = await createBlock({ name: blockForm.name, description: 'Block Shape stored', domain: blockForm.domain, campusId });
+        const res = await createBlock({ name: blockForm.name, description: 'Block Shape stored', domain: blockForm.domain, campusId, shape: tempBlockShape });
         setActiveBlock({ ...res.data, shape: tempBlockShape });
         toast.success('Block Locked & Saved!');
         await loadBlocks();
@@ -1096,12 +1098,36 @@ export default function GuidedMapBuilder() {
             />
           )}
 
-          {/* Render Active Block Outline */}
-          {activeBlock?.shape && (
-            <EditablePolygon key={`block-${activeBlock._id}`} r={{ ...activeBlock, isBlock: true }} isSelected={step === 1} isLocked={step > 1} onUpdate={(id, s) => setActiveBlock(p => ({ ...p, shape: s }))} onClick={() => { }} activeMode={drawMode} />
-          )}
+          {/* Render All Blocks */}
+          {blocks.map(b => {
+            const isActive = activeBlock?._id === b._id;
+            const isSelected = isActive && step === 1;
+            const isLocked = step > 1 || !isActive;
+            const currentBlock = isActive ? activeBlock : b;
+            if (!currentBlock.shape) return null;
+
+            return (
+              <EditablePolygon 
+                key={`block-${b._id}`} 
+                r={{ ...currentBlock, isBlock: true }} 
+                isSelected={isSelected} 
+                isLocked={isLocked} 
+                onUpdate={(id, s) => {
+                  if (isActive) setActiveBlock(p => ({ ...p, shape: s }));
+                }} 
+                onClick={() => {
+                  if (step === 1) {
+                    setActiveBlock(b);
+                    setTempBlockShape(null);
+                    setBlockForm({ name: b.name, domain: b.domain || 'Academic Blocks', id: b._id });
+                  }
+                }} 
+                activeMode={drawMode} 
+              />
+            );
+          })}
           {step === 1 && !activeBlock && tempBlockShape && (
-            <EditablePolygon key="temp-block" r={{ _id: 'temp', shape: tempBlockShape, type: 'other', name: 'New Block' }} isSelected={true} isLocked={false} onUpdate={(_, s) => setTempBlockShape(s)} onClick={() => { }} activeMode={drawMode} />
+            <EditablePolygon key="temp-block" r={{ _id: 'temp', shape: tempBlockShape, type: 'other', name: 'New Block', isBlock: true }} isSelected={true} isLocked={false} onUpdate={(_, s) => setTempBlockShape(s)} onClick={() => { }} activeMode={drawMode} />
           )}
 
           {/* Render Rooms (Step 3 & 4) */}

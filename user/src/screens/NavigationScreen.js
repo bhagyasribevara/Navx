@@ -89,6 +89,16 @@ function buildNavMapHTML(geoJSONData, pathPoints, initialPos, targetRoom) {
     color: white; font-weight: bold; padding: 2px 6px; border-radius: 4px;
     font-size: 11px; box-shadow: 0 4px 6px rgba(0,0,0,0.3);
   }
+  .room-label {
+    background: transparent; border: none; box-shadow: none;
+    color: #1e293b; font-weight: bold; font-size: 10px;
+    text-shadow: 0 1px 2px rgba(255,255,255,0.8);
+  }
+  .target-room-label {
+    background: transparent; border: none; box-shadow: none;
+    color: #ffffff; font-weight: bold; font-size: 11px;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+  }
 </style>
 </head><body><div id="map"></div>
 <script>
@@ -102,7 +112,7 @@ function styleFeature(feature) {
     return Object.assign(baseStyle, { color: feature.properties.color || '#64748b', fillOpacity: 0.1 });
   } else if (feature.properties.type === 'room') {
     var isTarget = feature.properties.id === '${targetRoom?._id || ''}';
-    return Object.assign(baseStyle, { color: isTarget ? '#ef4444' : '#3b82f6', weight: isTarget ? 3 : 1, fillOpacity: isTarget ? 0.6 : 0.2 });
+    return Object.assign(baseStyle, { color: isTarget ? '#3b82f6' : '#64748b', fillColor: isTarget ? '#3b82f6' : '#ffffff', weight: isTarget ? 3 : 1, fillOpacity: isTarget ? 0.6 : 1 });
   } else if (feature.properties.type === 'path') {
     return { color: '#c084fc', weight: 4, opacity: 0.6, dashArray: '5, 5' };
   } else if (feature.properties.type === 'map_layer') {
@@ -134,7 +144,12 @@ window.updateGeoJSON = function(data, floorId) {
     style: styleFeature,
     onEachFeature: function(f, l) {
       if (f.properties && f.properties.name) {
-        l.bindTooltip(f.properties.name, { permanent: f.properties.type === 'map_layer', direction: 'center', className: 'layer-label' });
+        if (f.properties.type === 'map_layer') {
+          l.bindTooltip(f.properties.name, { permanent: true, direction: 'center', className: 'layer-label' });
+        } else if (f.properties.type === 'room') {
+          var isTarget = f.properties.id === '${targetRoom?._id || ''}';
+          l.bindTooltip(f.properties.name, { permanent: true, direction: 'center', className: isTarget ? 'target-room-label' : 'room-label' });
+        }
       }
     }
   }).addTo(map);

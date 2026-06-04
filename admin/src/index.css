@@ -638,3 +638,22 @@ tr:hover td {
   border: 2px solid var(--border-color);
   cursor: pointer;
 }
+
+/* Leaflet Tooltips for Map Editor */
+.leaflet-tooltip.room-label,
+.leaflet-tooltip.block-label {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.leaflet-tooltip-top.room-label::before,
+.leaflet-tooltip-bottom.room-label::before,
+.leaflet-tooltip-left.room-label::before,
+.leaflet-tooltip-right.room-label::before,
+.leaflet-tooltip-top.block-label::before,
+.leaflet-tooltip-bottom.block-label::before,
+.leaflet-tooltip-left.block-label::before,
+.leaflet-tooltip-right.block-label::before {
+  border: none !important;
+}
