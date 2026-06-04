@@ -956,7 +956,7 @@ export default function NavigationScreen({ navigation, route }) {
             <Text style={s.btnText}>Stop Navigation</Text>
           </TouchableOpacity>
         )}
-        <TouchableOpacity style={s.arToggle} onPress={() => navigation.navigate("AR", { routeData, room: targetRoom, heading })}>
+        <TouchableOpacity style={s.arToggle} onPress={() => navigation.navigate("AR", { routeData, room: targetRoom, heading, userPos, campusId })}>
           <Ionicons name="camera" size={18} color={colors.primary} />
           <Text style={{ color: colors.primary, fontWeight: "700", fontSize: 14, marginLeft: 8 }}>Switch to AR View</Text>
         </TouchableOpacity>
