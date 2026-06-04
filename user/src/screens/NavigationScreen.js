@@ -491,6 +491,11 @@ export default function NavigationScreen({ navigation, route }) {
   useEffect(() => { routeDataRef.current = routeData; routeDataStableRef.current = routeData; }, [routeData]);
   useEffect(() => { arrivedRef.current = arrived; }, [arrived]);
 
+  // ── Voice announcement guard refs (prevent repeated announcements)
+  const preTurnAnnouncedRef = useRef(-1);  // last step for which 10m pre-turn was announced
+  const destReminder50Ref   = useRef(false);
+  const destReminder20Ref   = useRef(false);
+
   useEffect(() => {
     let locationWatcher;
     let accel;
@@ -530,24 +535,54 @@ export default function NavigationScreen({ navigation, route }) {
               const prevNode = rData.path[cStep];
               const targetNode = rData.path[cStep + 1] || rData.path[cStep];
               if (targetNode && prevNode) {
-                // Haversine distance to end of current segment
                 const distToNextNodeMeters = haversine(activeLat, activeLng, targetNode.x, targetNode.y);
                 const distToPrevNodeMeters = haversine(activeLat, activeLng, prevNode.x, prevNode.y);
                 const segmentLength = haversine(prevNode.x, prevNode.y, targetNode.x, targetNode.y);
 
                 setLiveStepDist(Math.round(distToNextNodeMeters * 10) / 10);
-                
-                // Sum distances of all SUBSEQUENT segments
+
                 const remainingPathMeters = rData.directions?.slice(cStep + 1).reduce((s,d)=>s+(d.distance||0), 0) || 0;
-                
                 setLiveDistance(Math.max(0, Math.round((distToNextNodeMeters + remainingPathMeters) * 10) / 10));
 
-                // Off-route detection: 
-                // Using the triangle inequality, if sum of distances to both endpoints is much larger 
-                // than the segment length, the user is far off the line segment.
-                // 25m allowance for GPS drift
-                if (distToNextNodeMeters + distToPrevNodeMeters > segmentLength + 25) {
-                   setOffRoute(true);
+                // ── PRE-TURN ANNOUNCEMENT at 10m before the turn
+                if (voiceEnabled && distToNextNodeMeters <= 10 && preTurnAnnouncedRef.current !== cStep) {
+                  const upcoming = rData.directions?.[cStep];
+                  if (upcoming && (upcoming.instruction?.toLowerCase().includes('left') ||
+                                   upcoming.instruction?.toLowerCase().includes('right') ||
+                                   upcoming.instruction?.toLowerCase().includes('turn'))) {
+                    preTurnAnnouncedRef.current = cStep;
+                    Speech.speak(
+                      formatSpeech(`In ${Math.round(distToNextNodeMeters)} meters, ${upcoming.instruction}`),
+                      { language: 'en-US', rate: 0.9 }
+                    );
+                  }
+                }
+
+                // ── DESTINATION PROXIMITY REMINDERS
+                const destNode = rData.path[rData.path.length - 1];
+                if (destNode) {
+                  const distToDest = haversine(activeLat, activeLng, destNode.x, destNode.y) +
+                    (remainingPathMeters > 0 ? remainingPathMeters * 0.1 : 0);
+
+                  if (voiceEnabled && distToDest <= 50 && !destReminder50Ref.current) {
+                    destReminder50Ref.current = true;
+                    Speech.speak(
+                      formatSpeech(`You are approaching ${targetRoom?.name || 'your destination'}. About 50 meters away.`),
+                      { language: 'en-US', rate: 0.9 }
+                    );
+                  }
+                  if (voiceEnabled && distToDest <= 20 && !destReminder20Ref.current) {
+                    destReminder20Ref.current = true;
+                    Speech.speak(
+                      formatSpeech(`${targetRoom?.name || 'Your destination'} is just ahead!`),
+                      { language: 'en-US', rate: 0.9 }
+                    );
+                  }
+                }
+
+                // ── OFF-ROUTE DETECTION (tightened to 18m)
+                if (distToNextNodeMeters + distToPrevNodeMeters > segmentLength + 18) {
+                  setOffRoute(true);
                 }
               }
             }
@@ -596,38 +631,34 @@ export default function NavigationScreen({ navigation, route }) {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
             if (voiceEnabled && nextDir) {
-              // Floor-change aware voice guidance
-              if (nextDir.isFloorChange) {
-                // Only announce floor change if we haven't completed all required transitions
+              // ── FLOOR-CHANGE: Only announce if it's genuinely an INDOOR transition
+              // Outdoor/street path types don't have floor changes — skip to avoid confusion
+              const isOutdoorSegment =
+                nextDir.pathType === 'street' ||
+                nextDir.pathType === 'outdoor' ||
+                (!nextDir.toFloorId && !nextDir.fromFloorId && !nextDir.to?.floorId);
+
+              if (nextDir.isFloorChange && !isOutdoorSegment) {
                 if (completedFloorTransitions < totalFloorTransitions) {
                   const transNum = nextDir.floorTransitionNumber || (completedFloorTransitions + 1);
                   const totalTrans = nextDir.totalFloorTransitions || totalFloorTransitions;
                   let floorMsg = nextDir.instruction;
-
-                  if (totalTrans > 1) {
-                    floorMsg += `. Floor change ${transNum} of ${totalTrans}`;
-                  }
+                  if (totalTrans > 1) floorMsg += `. Floor change ${transNum} of ${totalTrans}`;
                   floorMsg += '.';
-
-                  Speech.speak(formatSpeech(floorMsg), { language: "en-US" });
+                  Speech.speak(formatSpeech(floorMsg), { language: 'en-US' });
                   Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-
-                  // Track floor transition completion
                   setCompletedFloorTransitions(prev => prev + 1);
-                  if (nextDir.toFloorId) {
-                    setCurrentFloor(nextDir.toFloorId);
-                  } else if (nextDir.to?.floorId) {
-                    setCurrentFloor(nextDir.to.floorId);
-                  }
-                }
-                // If all floor transitions already completed, skip floor-change announcement
-                // and just give a regular distance announcement
-                else {
-                  Speech.speak(`Continue. ${Math.round(nextDir.distance)} meters.`, { language: "en-US" });
+                  if (nextDir.toFloorId) setCurrentFloor(nextDir.toFloorId);
+                  else if (nextDir.to?.floorId) setCurrentFloor(nextDir.to.floorId);
+                } else {
+                  Speech.speak(`Continue. ${Math.round(nextDir.distance)} meters.`, { language: 'en-US' });
                 }
               } else {
-                // Normal (non-floor-change) step announcement
-                Speech.speak(formatSpeech(`${nextDir.instruction}. ${Math.round(nextDir.distance)} meters.`), { language: "en-US" });
+                // Normal step or outdoor floor-change → just give direction
+                Speech.speak(
+                  formatSpeech(`${nextDir.instruction}. ${Math.round(nextDir.distance)} meters.`),
+                  { language: 'en-US' }
+                );
               }
             }
           } else {
