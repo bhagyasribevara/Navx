@@ -163,39 +163,50 @@ ${geoJSONData ? `window.updateGeoJSON(${JSON.stringify(geoJSONData)}, '${targetR
 ${routeLine}
 ${destDot}
 
-const userIconHtml = \`
-  <style>
-    @keyframes pulseGlow {
-      0% { transform: scale(0.85); opacity: 0.8; }
-      50% { transform: scale(1.4); opacity: 0.3; }
-      100% { transform: scale(0.85); opacity: 0.8; }
-    }
-  </style>
-  <div style="position:relative; width:70px; height:70px; display:flex; align-items:center; justify-content:center;">
-    <div style="position:absolute; width:100%; height:100%; background:radial-gradient(circle, rgba(139, 92, 246, 0.45) 0%, rgba(139, 92, 246, 0) 65%); border-radius:50%; animation: pulseGlow 2.5s infinite;"></div>
-    <div id="user-puck-inner" style="position:relative; width:30px; height:30px; background:linear-gradient(135deg, #A855F7, #6D28D9); border-radius:50%; box-shadow: 0 6px 16px rgba(109, 40, 217, 0.6); display:flex; align-items:center; justify-content:center; border: 2px solid rgba(255,255,255,0.4); transition: transform 0.2s ease-out;">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="white" style="transform: translateY(-1px);">
-        <path d="M12 2L4 20l8-4 8 4z"/>
-      </svg>
-    </div>
-  </div>
-\`;
-const customUserIcon = L.divIcon({ className: '', html: userIconHtml, iconSize: [70, 70], iconAnchor: [35, 35] });
+function buildUserIconHtml(hdg) {
+  var r = (hdg !== undefined && hdg !== null) ? hdg : 0;
+  return '<style>'
+    + '@keyframes pulseGlow { 0% { transform: scale(0.85); opacity: 0.8; } 50% { transform: scale(1.4); opacity: 0.3; } 100% { transform: scale(0.85); opacity: 0.8; } }'
+    + '</style>'
+    + '<div style="position:relative; width:70px; height:70px; display:flex; align-items:center; justify-content:center;">'
+    + '<div style="position:absolute; width:100%; height:100%; background:radial-gradient(circle, rgba(139, 92, 246, 0.45) 0%, rgba(139, 92, 246, 0) 65%); border-radius:50%; animation: pulseGlow 2.5s infinite;"></div>'
+    + '<div id="user-puck-inner" style="position:relative; width:30px; height:30px; background:linear-gradient(135deg, #A855F7, #6D28D9); border-radius:50%; box-shadow: 0 6px 16px rgba(109, 40, 217, 0.6); display:flex; align-items:center; justify-content:center; border: 2px solid rgba(255,255,255,0.4); transform: rotate(' + r + 'deg); transition: transform 0.3s ease-out;">'
+    + '<svg width="16" height="16" viewBox="0 0 24 24" fill="white" style="transform: translateY(-1px);"><path d="M12 2L4 20l8-4 8 4z"/></svg>'
+    + '</div>'
+    + '</div>';
+}
+var customUserIcon = L.divIcon({ className: '', html: buildUserIconHtml(0), iconSize: [70, 70], iconAnchor: [35, 35] });
 
+window._lastHeading = 0;
 window.userMarker = null;
 ${initialPos ? `window.userMarker = L.marker([${initialPos.x},${initialPos.y}], {icon: customUserIcon, zIndexOffset: 1000}).addTo(map);` : ''}
 
 window.updateUserPos = function(lat, lng, heading) {
   if (!window.userMarker) {
-    window.userMarker = L.marker([lat, lng], {icon: customUserIcon, zIndexOffset: 1000}).addTo(map);
+    var icon = L.divIcon({ className: '', html: buildUserIconHtml(heading || 0), iconSize: [70, 70], iconAnchor: [35, 35] });
+    window.userMarker = L.marker([lat, lng], {icon: icon, zIndexOffset: 1000}).addTo(map);
+    window._lastHeading = heading || 0;
   } else {
     window.userMarker.setLatLng([lat, lng]);
   }
   if (heading !== undefined && heading !== null) {
-    const puck = document.getElementById('user-puck-inner');
-    if (puck) {
-      puck.style.transform = 'rotate(' + heading + 'deg)';
+    window.updateUserHeading(heading);
+  }
+  map.panTo([lat, lng], {animate: false});
+};
+
+window.updateUserHeading = function(heading) {
+  if (heading !== undefined && heading !== null) {
+    if (window.userMarker) {
+      var el = window.userMarker.getElement();
+      if (el) {
+        var puck = el.querySelector('#user-puck-inner');
+        if (puck) {
+          puck.style.transform = 'rotate(' + heading + 'deg)';
+        }
+      }
     }
+    window._lastHeading = heading;
   }
 };
 </script></body></html>`;
@@ -282,12 +293,12 @@ export default function NavigationScreen({ navigation, route }) {
     if (userPos && webViewRef.current) {
       webViewRef.current.injectJavaScript(`
         if (typeof window.updateUserPos === 'function') {
-          window.updateUserPos(${userPos.x}, ${userPos.y}, ${heading});
+          window.updateUserPos(${userPos.x}, ${userPos.y}, ${posEngine.heading});
         }
         true;
       `);
     }
-  }, [userPos, heading]);
+  }, [userPos]);
 
   useEffect(() => {
     (async () => {
@@ -504,13 +515,22 @@ export default function NavigationScreen({ navigation, route }) {
     let mag;
     if (isNavigating) {
       // Step detector for dead reckoning bridging
-      stepDetector.current = new StepDetector(() => posEngine.processStep(heading));
+      stepDetector.current = new StepDetector(() => posEngine.processStep(posEngine.heading));
       accel = Accelerometer.addListener(d => stepDetector.current?.processAccelerometer(d.x, d.y, d.z));
       Accelerometer.setUpdateInterval(100);
       
       mag = Magnetometer.addListener(d => {
         const h = Math.atan2(d.y, d.x) * (180 / Math.PI);
-        posEngine.updateHeading((h + 360) % 360);
+        const normalizedH = (h + 360) % 360;
+        posEngine.updateHeading(normalizedH);
+        if (webViewRef.current) {
+          webViewRef.current.injectJavaScript(`
+            if (typeof window.updateUserHeading === 'function') {
+              window.updateUserHeading(${normalizedH});
+            }
+            true;
+          `);
+        }
       });
       Magnetometer.setUpdateInterval(100);
 
@@ -917,6 +937,16 @@ export default function NavigationScreen({ navigation, route }) {
           mixedContentMode="always"
           allowsInlineMediaPlayback={true}
           startInLoadingState={true}
+          onLoadEnd={() => {
+            if (userPos && webViewRef.current) {
+              webViewRef.current.injectJavaScript(`
+                if (typeof window.updateUserPos === 'function') {
+                  window.updateUserPos(${userPos.x}, ${userPos.y}, ${posEngine.heading});
+                }
+                true;
+              `);
+            }
+          }}
         />
 
         {/* Direction card */}
@@ -989,7 +1019,7 @@ export default function NavigationScreen({ navigation, route }) {
             <Text style={s.btnText}>Stop Navigation</Text>
           </TouchableOpacity>
         )}
-        <TouchableOpacity style={s.arToggle} onPress={() => navigation.navigate("AR", { routeData, room: targetRoom, heading, userPos, campusId })}>
+        <TouchableOpacity style={s.arToggle} onPress={() => navigation.navigate("AR", { routeData, room: targetRoom, heading: posEngine.heading, userPos, campusId })}>
           <Ionicons name="camera" size={18} color={colors.primary} />
           <Text style={{ color: colors.primary, fontWeight: "700", fontSize: 14, marginLeft: 8 }}>Switch to AR View</Text>
         </TouchableOpacity>

@@ -11,6 +11,8 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import * as Speech from "expo-speech";
 import { WebView } from "react-native-webview";
+import * as Location from "expo-location";
+import { PositionEngine, StepDetector } from "../positioning";
 import { ThemeContext } from "../context/ThemeContext";
 import { SHADOWS, RADIUS } from "../theme/designSystem";
 
@@ -65,11 +67,15 @@ function buildMiniMapHTML(pathPoints, userPos, targetRoom) {
     ? `L.circleMarker([${destX},${destY}],{radius:7,color:'#fff',weight:2,fillColor:'#22c55e',fillOpacity:1}).addTo(map);`
     : "";
 
-  const userMarker = userPos
-    ? `window.userMarker = L.circleMarker([${userPos.x},${userPos.y}],{radius:8,color:'#fff',weight:2,fillColor:'#6366f1',fillOpacity:1,zIndexOffset:1000}).addTo(map);`
-    : `window.userMarker = null;`;
-
   const mapboxUrl = process.env.EXPO_PUBLIC_MAPBOX_URL || "https://api.mapbox.com/styles/v1/mapbox/streets-v11/tiles/256/{z}/{x}/{y}@2x?access_token=pk.eyJ1IjoidmVua2F0YS1rcmlzaG5hIiwiYSI6ImNtZnYycHN0bTAzY28yanFxeG4wOXVsenAifQ.w1yd6XuvWvarYj33rP1LkA";
+
+  const initialHeading = 0;
+  const userMarkerInit = userPos
+    ? `
+      var initIcon = L.divIcon({ className: '', html: buildArrowIconHtml(${initialHeading}), iconSize: [50, 50], iconAnchor: [25, 25] });
+      window.userMarker = L.marker([${userPos.x},${userPos.y}], {icon: initIcon, zIndexOffset: 1000}).addTo(map);
+    `
+    : `window.userMarker = null;`;
 
   return `<!DOCTYPE html>
 <html><head>
@@ -81,6 +87,11 @@ function buildMiniMapHTML(pathPoints, userPos, targetRoom) {
   #map{width:100%;height:100vh;background:#0a0e17;}
   .leaflet-container{background:#0a0e17!important;}
   .leaflet-control-zoom,.leaflet-control-attribution{display:none!important;}
+  @keyframes miniPulseGlow {
+    0% { transform: scale(0.85); opacity: 0.7; }
+    50% { transform: scale(1.3); opacity: 0.2; }
+    100% { transform: scale(0.85); opacity: 0.7; }
+  }
 </style>
 </head><body><div id="map"></div>
 <script>
@@ -88,21 +99,48 @@ var map = L.map('map',{zoomControl:false,attributionControl:false}).setView([${c
 L.tileLayer('${mapboxUrl}',{maxZoom:22,attribution:''}).addTo(map);
 ${routeLine}
 ${destDot}
-${userMarker}
 
-var _panDebounce = null;
+function buildArrowIconHtml(hdg) {
+  var r = (hdg !== undefined && hdg !== null) ? hdg : 0;
+  return '<div style="position:relative; width:50px; height:50px; display:flex; align-items:center; justify-content:center;">'
+    + '<div style="position:absolute; width:100%; height:100%; background:radial-gradient(circle, rgba(139, 92, 246, 0.4) 0%, rgba(139, 92, 246, 0) 60%); border-radius:50%; animation: miniPulseGlow 2.5s infinite;"></div>'
+    + '<div id="mini-user-arrow" style="position:relative; width:24px; height:24px; background:linear-gradient(135deg, #A855F7, #6D28D9); border-radius:50%; box-shadow: 0 4px 12px rgba(109, 40, 217, 0.6); display:flex; align-items:center; justify-content:center; border: 2px solid rgba(255,255,255,0.5); transform: rotate(' + r + 'deg); transition: transform 0.3s ease-out;">'
+    + '<svg width="12" height="12" viewBox="0 0 24 24" fill="white"><path d="M12 2L4 20l8-4 8 4z"/></svg>'
+    + '</div>'
+    + '</div>';
+}
+
+${userMarkerInit}
+
+window._lastHeading = 0;
 window.updateUserPos = function(lat,lng,heading){
   if(!window.userMarker){
-    window.userMarker = L.circleMarker([lat,lng],{radius:8,color:'#fff',weight:2,fillColor:'#6366f1',fillOpacity:1,zIndexOffset:1000}).addTo(map);
+    var icon = L.divIcon({ className: '', html: buildArrowIconHtml(heading || 0), iconSize: [50, 50], iconAnchor: [25, 25] });
+    window.userMarker = L.marker([lat,lng], {icon: icon, zIndexOffset: 1000}).addTo(map);
+    window._lastHeading = heading || 0;
     map.setView([lat,lng],18);
   } else {
     window.userMarker.setLatLng([lat,lng]);
   }
-  // Debounced pan — only re-center every 3 seconds to avoid lag
-  clearTimeout(_panDebounce);
-  _panDebounce = setTimeout(function(){
-    map.setView([lat,lng],18,{animate:false});
-  }, 3000);
+  if (heading !== undefined && heading !== null) {
+    window.updateUserHeading(heading);
+  }
+  map.panTo([lat,lng], {animate: false});
+};
+
+window.updateUserHeading = function(heading) {
+  if (heading !== undefined && heading !== null) {
+    if (window.userMarker) {
+      var el = window.userMarker.getElement();
+      if (el) {
+        var arrow = el.querySelector('#mini-user-arrow');
+        if (arrow) {
+          arrow.style.transform = 'rotate(' + heading + 'deg)';
+        }
+      }
+    }
+    window._lastHeading = heading;
+  }
 };
 </script></body></html>`;
 }
@@ -301,6 +339,8 @@ export default function ARScreen({ navigation, route }) {
   const accelSub = useRef(null);
   const magSub = useRef(null);
   const locWatcher = useRef(null);
+  const posEngine = useRef(new PositionEngine()).current;
+  const stepDetector = useRef(null);
 
   const currentDir = routeData?.directions?.[currentStep];
 
@@ -337,17 +377,35 @@ export default function ARScreen({ navigation, route }) {
     }
   }, [arrived]);
 
-  // ── Sensor subscriptions: Accelerometer (tilt + pitch) + Magnetometer (heading)
+  // ── Initialize PositionEngine with initial user position
   useEffect(() => {
+    if (initialUserPos) {
+      posEngine.setPositionFromQR(initialUserPos.x, initialUserPos.y, targetRoom?.floorId);
+    }
+  }, [initialUserPos]);
+
+  // ── Subscribe to PositionEngine updates to update React state
+  useEffect(() => {
+    const unsub = posEngine.onPositionUpdate(pos => {
+      setUserPos({ x: pos.x, y: pos.y, floor: pos.floor });
+    });
+    return unsub;
+  }, []);
+
+  // ── Sensor subscriptions: Accelerometer (tilt + pitch + steps) + Magnetometer (heading) + GPS watch
+  useEffect(() => {
+    // 1. Step detection setup
+    stepDetector.current = new StepDetector(() => {
+      posEngine.processStep(posEngine.heading);
+    });
+
     Accelerometer.setUpdateInterval(150);
     accelSub.current = Accelerometer.addListener(({ x, y, z }) => {
-      // Expo Accelerometer coordinate system:
-      //   Phone held upright portrait  → y ≈ -1, z ≈ 0
-      //   Phone flat on table face-up  → z ≈ -1, y ≈ 0
-      //   Phone tilted toward horizontal → y decreases, |z| increases
-      const absY = Math.abs(y);
+      // Step detection processing
+      stepDetector.current?.processAccelerometer(x, y, z);
 
-      // ── Tilt level for mini-map toggle (use Y axis, not Z)
+      // Tilt level for mini-map toggle (use Y axis, not Z)
+      const absY = Math.abs(y);
       let newTilt;
       if      (absY > 0.72) newTilt = 0;   // upright → AR only, mini-map hidden
       else if (absY > 0.38) newTilt = 1;   // tilting  → mini-map partially visible
@@ -355,10 +413,7 @@ export default function ARScreen({ navigation, route }) {
 
       setTiltLevel(prev => prev === newTilt ? prev : newTilt);
 
-      // ── Pitch angle: how far phone is tilted from vertical
-      // 0° = perfectly upright (looking straight ahead, floor at very bottom)
-      // 45° = tilted toward floor (floor occupies lower half of view)
-      // 90° = horizontal (camera pointing at floor)
+      // Pitch angle: how far phone is tilted from vertical
       const pitchRad = Math.atan2(Math.abs(z), absY + 0.001);
       const pitchDeg = Math.round(Math.min(85, pitchRad * 180 / Math.PI));
       setPitch(pitchDeg);
@@ -367,12 +422,29 @@ export default function ARScreen({ navigation, route }) {
     Magnetometer.setUpdateInterval(250);
     magSub.current = Magnetometer.addListener(({ x, y }) => {
       const h = Math.atan2(y, x) * (180 / Math.PI);
-      setHeading(((h + 360) % 360));
+      const normalizedH = (h + 360) % 360;
+      setHeading(normalizedH);
+      posEngine.updateHeading(normalizedH);
+    });
+
+    // 2. GPS watch for live user position
+    Location.watchPositionAsync(
+      { accuracy: Location.Accuracy.BestForNavigation, timeInterval: 1000, distanceInterval: 0.5 },
+      (loc) => {
+        const lat = loc.coords.latitude;
+        const lng = loc.coords.longitude;
+        posEngine.processGPSUpdate(lat, lng);
+      }
+    ).then(w => {
+      locWatcher.current = w;
     });
 
     return () => {
       accelSub.current?.remove();
       magSub.current?.remove();
+      if (locWatcher.current) {
+        locWatcher.current.remove();
+      }
     };
   }, []);
 
@@ -713,6 +785,16 @@ export default function ARScreen({ navigation, route }) {
             mixedContentMode="always"
             allowsInlineMediaPlayback={true}
             startInLoadingState={false}
+            onLoadEnd={() => {
+              if (userPos && miniMapRef.current) {
+                miniMapRef.current.injectJavaScript(`
+                  if (typeof window.updateUserPos === 'function') {
+                    window.updateUserPos(${userPos.x}, ${userPos.y}, ${heading});
+                  }
+                  true;
+                `);
+              }
+            }}
           />
         </View>
       </Animated.View>
