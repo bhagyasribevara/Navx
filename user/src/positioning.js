@@ -67,7 +67,7 @@ export class PositionEngine {
   }
 
   // Fused GPS Update - blends GPS coordinate to correct sensor drift and filter noise
-  processGPSUpdate(lat, lng) {
+  processGPSUpdate(lat, lng, accuracy = 15) {
     if (!this.isCalibrated) {
       this.position = { ...this.position, x: lat, y: lng };
       this.isCalibrated = true;
@@ -75,11 +75,21 @@ export class PositionEngine {
       return;
     }
 
-    // Blend GPS with sensor dead-reckoning (Weight 0.15 for GPS)
-    // This absorbs GPS jumps/jitter while anchoring sensor drift
-    const weight = 0.15;
-    this.position.x = this.position.x * (1 - weight) + lat * weight;
-    this.position.y = this.position.y * (1 - weight) + lng * weight;
+    // Dynamic weight based on GPS accuracy radius
+    // Indoors, accuracy > 25m is common and should be ignored to prevent jumping
+    let weight = 0.15;
+    if (accuracy > 25) {
+      weight = 0.0;  // Ignore completely, trust Dead Reckoning / Sensors
+    } else if (accuracy > 15) {
+      weight = 0.05; // Lightly pull towards GPS
+    } else if (accuracy <= 5) {
+      weight = 0.3;  // Strong GPS lock, trust heavily
+    }
+
+    if (weight > 0) {
+      this.position.x = this.position.x * (1 - weight) + lat * weight;
+      this.position.y = this.position.y * (1 - weight) + lng * weight;
+    }
     this.notify();
   }
 

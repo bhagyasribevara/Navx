@@ -540,20 +540,31 @@ export default function NavigationScreen({ navigation, route }) {
   const preTurnAnnouncedRef = useRef(-1);  // last step for which 10m pre-turn was announced
   const destReminder50Ref   = useRef(false);
   const destReminder20Ref   = useRef(false);
+  const offRouteCountRef    = useRef(0);
 
   useEffect(() => {
     let locationWatcher;
     let accel;
     let mag;
+    const accelYRef = { current: 0 };
     if (isNavigating) {
       // Step detector for dead reckoning bridging
       stepDetector.current = new StepDetector(() => posEngine.processStep(posEngine.heading));
-      accel = Accelerometer.addListener(d => stepDetector.current?.processAccelerometer(d.x, d.y, d.z));
+      accel = Accelerometer.addListener(d => {
+        accelYRef.current = d.y;
+        stepDetector.current?.processAccelerometer(d.x, d.y, d.z);
+      });
       Accelerometer.setUpdateInterval(100);
       
       mag = Magnetometer.addListener(d => {
-        const h = Math.atan2(d.y, d.x) * (180 / Math.PI);
-        const normalizedH = (h + 360) % 360;
+        // Tilt-compensated compass logic
+        const gY = Math.min(1, Math.abs(accelYRef.current || 0));
+        const mForward = d.y * (1 - gY) + (-d.z) * gY;
+        
+        const h = Math.atan2(mForward, d.x) * (180 / Math.PI);
+        const trueBearing = h - 90;
+        const normalizedH = (trueBearing + 360) % 360;
+        
         posEngine.updateHeading(normalizedH);
         if (webViewRef.current) {
           webViewRef.current.injectJavaScript(`
@@ -573,19 +584,25 @@ export default function NavigationScreen({ navigation, route }) {
           (loc) => {
             const lat = loc.coords.latitude;
             const lng = loc.coords.longitude;
+            const accuracy = loc.coords.accuracy || 15;
             
             // Feed raw GPS coordinate into our sensor fusion engine
-            posEngine.processGPSUpdate(lat, lng);
+            posEngine.processGPSUpdate(lat, lng, accuracy);
             
             const rData = routeDataRef.current;
             const cStep = currentStepRef.current;
             const isArrived = arrivedRef.current;
             
             // Fused, smoothed position coordinates
-            const activeLat = posEngine.position.x;
-            const activeLng = posEngine.position.y;
+            let activeLat = posEngine.position.x;
+            let activeLng = posEngine.position.y;
 
             if (rData && rData.path && !isArrived) {
+              // Apply aggressive route snapping to internal coordinates to stabilize distances
+              const snapped = snapPositionToRoute({ x: activeLat, y: activeLng }, rData.path, cStep);
+              activeLat = snapped.x;
+              activeLng = snapped.y;
+
               const prevNode = rData.path[cStep];
               const targetNode = rData.path[cStep + 1] || rData.path[cStep];
               if (targetNode && prevNode) {
@@ -634,9 +651,15 @@ export default function NavigationScreen({ navigation, route }) {
                   }
                 }
 
-                // ── OFF-ROUTE DETECTION (tightened to 18m)
+                // ── OFF-ROUTE DETECTION (tightened to 18m with Debounce)
                 if (distToNextNodeMeters + distToPrevNodeMeters > segmentLength + 18) {
-                  setOffRoute(true);
+                  offRouteCountRef.current = (offRouteCountRef.current || 0) + 1;
+                  if (offRouteCountRef.current >= 3) {
+                    setOffRoute(true);
+                    offRouteCountRef.current = 0; // Reset after triggering
+                  }
+                } else {
+                  offRouteCountRef.current = 0; // Reset if user is back on track
                 }
               }
             }

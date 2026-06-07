@@ -305,6 +305,7 @@ var lastTime   = 0;
 
 // Smoothed values for jitter-free rendering
 var smoothPitch   = 25;
+var smoothBearing = 0;
 var PITCH_SMOOTH   = 0.15;
 
 var VPY = 0;  // vanishing point Y (horizon from pitch)
@@ -334,9 +335,12 @@ function floorPt(t) {
   // Y: linearly interpolate from screen bottom to horizon
   var y = FLOOR_Y + (VPY - FLOOR_Y) * depth;
 
-  // X: ALWAYS starts at center (CX). NO bearing shift! 
-  // Arrows must be rigidly locked to the center line.
-  var baseX = CX;
+  // AR Mapping: The Vanishing Point X (vpX) is shifted by the compass bearing difference.
+  // 45 degrees of bearing difference pushes the vanishing point to the edge of the screen (W/2).
+  var vpX = CX + (smoothBearing / 45) * (W * 0.5);
+
+  // The base path strictly originates at the center-bottom (CX) and linearly aims toward the vanishing point (vpX)
+  var baseX = CX + (vpX - CX) * depth;
 
   // Turn curvature — smooth curve that only kicks in after 25% depth
   // This visually shows map directions on the floor
@@ -540,6 +544,9 @@ function animate(ts) {
   // Smooth pitch
   smoothPitch += (pitchDeg - smoothPitch) * PITCH_SMOOTH;
 
+  // Smooth bearing tracking
+  smoothBearing += (bearingDiff - smoothBearing) * 0.1;
+
   // Accurate FOV-based horizon calculation
   // Assuming a vertical Field of View (FOV) of approx 60 degrees.
   // 1 degree of tilt shifts the horizon by H / 60 pixels.
@@ -559,12 +566,13 @@ function animate(ts) {
 }
 requestAnimationFrame(animate);
 
-window.updateARPath = function(newDir, nearTurn, newPitch) {
+window.updateARPath = function(newDir, nearTurn, newPitch, newBearing) {
   dirType    = newDir || 'straight';
   isNearTurn = nearTurn == 1 || nearTurn === true;
   
   // newPitch: 0 = upright. Positive = tilted down towards floor.
   pitchDeg = newPitch || 0;
+  bearingDiff = newBearing || 0;
 };
 </script>
 </body></html>`;
@@ -623,6 +631,7 @@ export default function ARScreen({ navigation, route }) {
   const locWatcher = useRef(null);
   const posEngine = useRef(new PositionEngine()).current;
   const stepDetector = useRef(null);
+  const accelYRef = useRef(0);
 
   // Smooth heading ref to avoid jitter
   const smoothHeadingRef = useRef(initialHeading || 0);
@@ -687,6 +696,8 @@ export default function ARScreen({ navigation, route }) {
 
     Accelerometer.setUpdateInterval(100);
     accelSub.current = Accelerometer.addListener(({ x, y, z }) => {
+      accelYRef.current = y;
+      
       // Step detection
       stepDetector.current?.processAccelerometer(x, y, z);
 
@@ -711,9 +722,15 @@ export default function ARScreen({ navigation, route }) {
     });
 
     Magnetometer.setUpdateInterval(200);
-    magSub.current = Magnetometer.addListener(({ x, y }) => {
-      const h = Math.atan2(y, x) * (180 / Math.PI);
-      const normalizedH = (h + 360) % 360;
+    magSub.current = Magnetometer.addListener(({ x, y, z }) => {
+      // Tilt-compensated compass: blend Y and -Z based on how upright the phone is
+      const gY = Math.min(1, Math.abs(accelYRef.current || 0));
+      const mForward = y * (1 - gY) + (-z) * gY;
+      
+      // Calculate standard angle and convert to map bearing (0=North, 90=East)
+      const h = Math.atan2(mForward, x) * (180 / Math.PI);
+      const trueBearing = h - 90;
+      const normalizedH = (trueBearing + 360) % 360;
 
       // Smooth heading to reduce jitter
       let diff = normalizedH - smoothHeadingRef.current;
@@ -761,15 +778,33 @@ export default function ARScreen({ navigation, route }) {
     }).start();
   }, [tiltLevel, showMiniMap]);
 
-  // ── Compute AR direction shape
+  // ── Compute AR direction shape and true bearing diff
   useEffect(() => {
+    // Calculate world-space bearing to the next node
+    if (userPos && routeData?.path) {
+      const nextNode = routeData.path[Math.min(currentStep + 1, routeData.path.length - 1)];
+      if (nextNode && nextNode.x && nextNode.y) {
+        const dLon = toRad(nextNode.y - userPos.y);
+        const lat1 = toRad(userPos.x), lat2 = toRad(nextNode.x);
+        const bY = Math.sin(dLon) * Math.cos(lat2);
+        const bX = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
+        const requiredBearing = ((Math.atan2(bY, bX) * 180 / Math.PI) + 360) % 360;
+        
+        let diff = ((requiredBearing - heading) + 360) % 360;
+        if (diff > 180) diff -= 360;
+        
+        // Clamp diff to prevent the AR path from snapping violently if the destination is behind us
+        setBearingDiff(Math.max(-90, Math.min(90, diff)));
+      }
+    }
+
     // Direction type from instruction
     if (!currentDir) return;
     const instr = currentDir.instruction?.toLowerCase() || '';
     if      (instr.includes('left'))  setArDirType('left');
     else if (instr.includes('right')) setArDirType('right');
     else                              setArDirType('straight');
-  }, [currentStep, currentDir, routeData]);
+  }, [userPos, heading, currentStep, currentDir, routeData]);
 
   // ── Step advancement based on user position
   useEffect(() => {
@@ -842,11 +877,11 @@ export default function ARScreen({ navigation, route }) {
     if (!arPathRef.current) return;
     arPathRef.current.injectJavaScript(`
       if (typeof window.updateARPath === 'function') {
-        window.updateARPath('${arDirType}', ${isNearTurn ? 1 : 0}, ${pitch});
+        window.updateARPath('${arDirType}', ${isNearTurn ? 1 : 0}, ${pitch}, ${bearingDiff});
       }
       true;
     `);
-  }, [arDirType, isNearTurn, pitch]);
+  }, [arDirType, isNearTurn, pitch, bearingDiff]);
 
   const miniMapHtml = React.useMemo(() =>
     buildMiniMapHTML(routeData?.path, initialUserPos, targetRoom, geoJSONData),
