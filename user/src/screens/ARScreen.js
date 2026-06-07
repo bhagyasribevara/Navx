@@ -12,7 +12,6 @@ import * as Haptics from "expo-haptics";
 import * as Speech from "expo-speech";
 import { WebView } from "react-native-webview";
 import { ThemeContext } from "../context/ThemeContext";
-import ARRobotGuide from "../components/ARRobotGuide";
 import { SHADOWS, RADIUS } from "../theme/designSystem";
 
 const { width: SW, height: SH } = Dimensions.get("window");
@@ -109,6 +108,7 @@ window.updateUserPos = function(lat,lng,heading){
 }
 
 // ─── AR Path Canvas HTML ───────────────────────────────────────────────────────
+// ─── AR Path Canvas HTML ───────────────────────────────────────────────────────
 // ONLY arrows — no lane outline, no side lines.
 // Floor-anchored: path starts at screen BOTTOM, converges to vanishing point (horizon).
 // Arrows flow AWAY from user (upward = toward destination).
@@ -126,77 +126,73 @@ function buildARPathHTML() {
 <script>
 var c = document.getElementById('c');
 var ctx = c.getContext('2d');
-var W = window.innerWidth;
-var H = window.innerHeight;
-c.width = W; c.height = H;
-
-var dirType = 'straight';  // 'straight' | 'left' | 'right'
+var W, H;
+var dirType    = 'straight';
 var isNearTurn = false;
+var pitchDeg   = 20;
+var bearingDiff = 0;
 var animOffset = 0;
 
-// ── Floor perspective setup ──────────────────────────────────────────────────
-// Vanishing point = horizon line (where floor meets sky)
-// Floor is the BOTTOM portion of the screen
-// Arrows start at the BOTTOM (near = camera feet) and go UP toward horizon
-var VPX = W * 0.5;
-var VPY = H * 0.40;    // horizon at 40% from top — shows enough floor
-var FLOOR_Y = H;        // very bottom = camera position / user's feet
+var VPX = 0;
+var VPY = 0;
+var FLOOR_Y = 0;
 
-// Get floor-plane point at depth t (0=near/feet, 1=vanishing point)
-function floorPoint(t) {
-  // y: from FLOOR_Y (bottom) to VPY (horizon), perspective-compressed
-  var depth = Math.pow(t, 0.60); // nonlinear — heavier toward near
+function resize() {
+  W = c.width  = window.innerWidth;
+  H = c.height = window.innerHeight;
+  VPX = W * 0.5;
+  FLOOR_Y = H;
+}
+resize();
+window.addEventListener('resize', resize);
+
+function floorPt(t) {
+  var depth = Math.pow(t, 0.60);
   var y = FLOOR_Y + (VPY - FLOOR_Y) * depth;
+  
+  // Pan the vanishing point based on bearingDiff
+  // 35 degrees off-center shifts the vanishing point to the edge of the screen
+  var shiftedVPX = (W * 0.5) + (bearingDiff / 35) * (W * 0.5);
+  
+  // Base X starts at center-bottom (W*0.5) and linearly goes to shifted vanishing point
+  var baseX = (W * 0.5) + (shiftedVPX - (W * 0.5)) * depth;
 
-  // x: straight center or curving for turns
+  // Add curve ONLY further down the path (gives a true 3D turn appearance)
   var curveX = 0;
-  if (dirType === 'left')  curveX = -t * t * W * 0.52;
-  if (dirType === 'right') curveX = +t * t * W * 0.52;
-  var x = VPX + curveX;
-
-  return { x: x, y: y, t: t };
+  if (dirType === 'left')  curveX = (t < 0.25) ? 0 : -Math.pow(t - 0.25, 2) * W * 0.9;
+  if (dirType === 'right') curveX = (t < 0.25) ? 0 : +Math.pow(t - 0.25, 2) * W * 0.9;
+  
+  return { x: baseX + curveX, y: y, t: t };
 }
 
-// Travel-direction tangent at depth t (pointing AWAY from user)
 function travelAngle(t) {
-  var dt = 0.04;
-  var a = floorPoint(t);
-  var b = floorPoint(Math.min(t + dt, 0.97));
-  // Vector from current to next (direction user is heading = away from user)
+  var a = floorPt(t);
+  var b = floorPt(Math.min(t + 0.04, 0.97));
   return Math.atan2(b.y - a.y, b.x - a.x);
 }
 
-var ARROW_COUNT = 9;   // number of arrows visible at once
+var ARROW_COUNT = 9;
 
 function render() {
   ctx.clearRect(0, 0, W, H);
 
   for (var k = 0; k < ARROW_COUNT; k++) {
-    // Each arrow's depth position, animated so arrows flow from BOTTOM→UP
-    // animOffset increases over time → rawT increases → y decreases (goes up) ✓
     var rawT = ((k / ARROW_COUNT) + animOffset) % 1.0;
-
-    // Only show arrows in the floor region (t: 0.05 → 0.80)
-    // Skip anything too close to the feet or too close to horizon
     if (rawT < 0.05 || rawT > 0.80) continue;
 
-    var p = floorPoint(rawT);
-    // angle: arrow tip points in direction of travel (away from user)
-    // +PI/2 corrects the local coordinate so tip at (0,-h) → travel direction
+    var p = floorPt(rawT);
     var angle = travelAngle(rawT) + Math.PI / 2;
 
-    // Perspective scale: LARGE near bottom, tiny near horizon
     var perspScale = 1.0 - rawT * 0.72;
-    var arrowH = (60 * perspScale) + 10;   // height of arrow
-    var arrowW = arrowH * 0.62;            // width
+    var arrowH = (60 * perspScale) + 10;
+    var arrowW = arrowH * 0.62;
     if (isNearTurn && rawT < 0.28) {
-      arrowH *= 1.45; arrowW *= 1.45;     // enlarge at upcoming turn
+      arrowH *= 1.45; arrowW *= 1.45;
     }
 
-    // Opacity: full in middle band, fade at very bottom and at horizon
     var alpha;
-    if      (rawT < 0.10) alpha = (rawT - 0.05) / 0.05;   // fade-in from feet
-    else if (rawT > 0.65) alpha = (0.80 - rawT) / 0.15;   // fade-out to horizon
+    if      (rawT < 0.10) alpha = (rawT - 0.05) / 0.05;
+    else if (rawT > 0.65) alpha = (0.80 - rawT) / 0.15;
     else                  alpha = 1.0;
     alpha = Math.max(0, Math.min(1, alpha)) * 0.92;
     if (alpha <= 0.02) continue;
@@ -206,25 +202,22 @@ function render() {
     ctx.rotate(angle);
     ctx.globalAlpha = alpha;
 
-    // ── Draw chevron arrow ──────────────────────────────────────────────
-    // Tip at local (0, -arrowH*0.55) = pointing in direction of travel
     var hw = arrowW * 0.5;
-    var ht = arrowH * 0.55;  // tip above center
-    var hb = arrowH * 0.26;  // base below center
-    var notch = arrowH * 0.08; // inner V notch depth
+    var ht = arrowH * 0.55;
+    var hb = arrowH * 0.26;
+    var notch = arrowH * 0.08;
 
     ctx.beginPath();
-    ctx.moveTo(0,       -ht);         // ← tip (toward destination)
-    ctx.lineTo( hw,      hb);         // bottom-right wing
-    ctx.lineTo( hw*0.2,  hb - notch); // inner-right notch
-    ctx.lineTo(0,        hb + notch * 0.5); // center base dip
-    ctx.lineTo(-hw*0.2,  hb - notch); // inner-left notch
-    ctx.lineTo(-hw,      hb);         // bottom-left wing
+    ctx.moveTo(0,       -ht);
+    ctx.lineTo( hw,      hb);
+    ctx.lineTo( hw*0.2,  hb - notch);
+    ctx.lineTo(0,        hb + notch * 0.5);
+    ctx.lineTo(-hw*0.2,  hb - notch);
+    ctx.lineTo(-hw,      hb);
     ctx.closePath();
 
-    // Color: bright cyan-blue tip → indigo base, changes at turns
-    var tipC  = isNearTurn ? 'rgba(196,181,253,' : 'rgba(147,197,253,'; // purple vs sky-blue tip
-    var baseC = isNearTurn ? 'rgba(99,102,241,'  : 'rgba(59,130,246,';  // indigo vs blue base
+    var tipC  = isNearTurn ? 'rgba(196,181,253,' : 'rgba(147,197,253,';
+    var baseC = isNearTurn ? 'rgba(99,102,241,'  : 'rgba(59,130,246,';
 
     var grad = ctx.createLinearGradient(0, -ht, 0, hb);
     grad.addColorStop(0,   tipC  + (alpha * 1.0) + ')');
@@ -232,12 +225,10 @@ function render() {
     grad.addColorStop(1,   baseC + (alpha * 0.55)+ ')');
     ctx.fillStyle = grad;
 
-    // Glow
     ctx.shadowColor = isNearTurn ? '#818cf8' : '#38bdf8';
     ctx.shadowBlur  = 18 * perspScale + 3;
     ctx.fill();
 
-    // Crisp outline
     ctx.shadowBlur = 0;
     ctx.strokeStyle = 'rgba(186,230,253,' + (alpha * 0.7) + ')';
     ctx.lineWidth = 1.2;
@@ -245,46 +236,31 @@ function render() {
 
     ctx.restore();
   }
-
-  ctx.globalAlpha = 1.0;
-  ctx.shadowBlur  = 0;
 }
 
-// Animation: offset increases → arrows move upward (away from user) ✓
-function animate() {
+function animate(ts) {
   animOffset = (animOffset + 0.0028) % 1.0;
   render();
   requestAnimationFrame(animate);
 }
 requestAnimationFrame(animate);
 
-// Update direction + pitch from React Native
-// pitchDeg: 0°=upright (arrows near bottom), 45°=tilted, 85°=horizontal (arrows fill view)
-window.updateARPath = function(newDir, nearTurn, pitchDeg) {
+window.updateARPath = function(newDir, nearTurn, newPitch, newBearingDiff) {
   dirType    = newDir;
   isNearTurn = nearTurn == 1 || nearTurn === true;
+  pitchDeg   = Math.max(0, Math.min(85, newPitch || 20));
+  bearingDiff = newBearingDiff || 0;
 
-  // Dynamically position the horizon based on real phone pitch
-  // 0° → VPY at 15% (very little floor visible when looking straight ahead)
-  // 30° → VPY at 35% (floor in lower 65%)
-  // 60° → VPY at 58% (floor in lower half+)
-  // 85° → VPY at 78% (mostly floor when looking down)
-  var p = Math.max(0, Math.min(85, pitchDeg || 25));
-  var horizonFrac = 0.15 + (p / 85) * 0.63;
+  // Real physical horizon calculation based on camera vertical FOV (~55-60 deg)
+  // Upright phone (pitch 0) -> horizon is around center (0.55 * H)
+  // Tilted 30 deg -> horizon is near top of screen (0.0 * H)
+  // Tilted 60 deg -> horizon is above the screen (-0.54 * H)
+  var horizonFrac = 0.55 - (pitchDeg / 55);
   VPY = H * horizonFrac;
 };
-
-window.addEventListener('resize', function() {
-  W = window.innerWidth; H = window.innerHeight;
-  c.width = W; c.height = H;
-  VPX = W * 0.5; FLOOR_Y = H;
-  // Keep VPY relative on resize
-  VPY = H * 0.38;
-});
 </script>
 </body></html>`;
 }
-
 // ─── Main AR Screen ────────────────────────────────────────────────────────────
 export default function ARScreen({ navigation, route }) {
   const { colors } = useContext(ThemeContext);
@@ -304,8 +280,8 @@ export default function ARScreen({ navigation, route }) {
     routeData ? Math.round(routeData.distance || 0) : 0
   );
   const [arrived, setArrived] = useState(false);
-  const [dirType, setDirType] = useState("straight");    // from instruction text (fallback)
-  const [arDirType, setArDirType] = useState("straight"); // from GPS bearing vs compass (primary)
+  const [arDirType, setArDirType] = useState("straight"); // from instruction (shape of path)
+  const [bearingDiff, setBearingDiff] = useState(0);      // from GPS vs compass (panning)
   const [isNearTurn, setIsNearTurn] = useState(false);
   const [distToTurn, setDistToTurn] = useState(999);
   const [nearDestination, setNearDestination] = useState(false);
@@ -412,10 +388,9 @@ export default function ARScreen({ navigation, route }) {
     setShowMiniMap(tiltLevel > 0);
   }, [tiltLevel]);
 
-  // ── Compute AR direction type from GPS bearing vs compass heading (primary)
-  //     Falls back to instruction-text parsing if GPS not available
+  // ── Compute AR direction shape and bearing diff (for world-space panning)
   useEffect(() => {
-    // ── GPS bearing method (most accurate)
+    // 1. Calculate bearing difference to pan the path if user looks away
     if (userPos && routeData?.path) {
       const nextNode = routeData.path[Math.min(currentStep + 1, routeData.path.length - 1)];
       if (nextNode && nextNode.x && nextNode.y) {
@@ -424,16 +399,13 @@ export default function ARScreen({ navigation, route }) {
         const bY = Math.sin(dLon) * Math.cos(lat2);
         const bX = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
         const requiredBearing = ((Math.atan2(bY, bX) * 180 / Math.PI) + 360) % 360;
-        const diff = ((requiredBearing - heading) + 360) % 360;
-        // diff: 0° = go straight, 90° = turn right, 270° = turn left
-        if      (diff < 30 || diff > 330)          setArDirType('straight');
-        else if (diff >= 30  && diff <= 165)        setArDirType('right');
-        else if (diff >= 195 && diff <= 330)        setArDirType('left');
-        else                                        setArDirType('straight');
-        return;
+        let diff = ((requiredBearing - heading) + 360) % 360;
+        if (diff > 180) diff -= 360; // range -180 to +180
+        setBearingDiff(diff);
       }
     }
-    // ── Fallback: parse instruction text
+
+    // 2. Shape of the path is purely based on the route geometry (instruction)
     if (!currentDir) return;
     const instr = currentDir.instruction?.toLowerCase() || '';
     if      (instr.includes('left'))  setArDirType('left');
@@ -442,9 +414,7 @@ export default function ARScreen({ navigation, route }) {
   }, [userPos, heading, currentStep, currentDir, routeData]);
 
   // ── Keep dirType in sync (used for bottom panel icon)
-  useEffect(() => {
-    setDirType(arDirType);
-  }, [arDirType]);
+  const dirType = arDirType;
 
   // ── Step advancement based on user position
   useEffect(() => {
@@ -502,16 +472,16 @@ export default function ARScreen({ navigation, route }) {
     `);
   }, [userPos, heading]);
 
-  // ── Update AR path canvas: direction + pitch for dynamic floor horizon
+  // ── Update AR path canvas: direction, pitch, and panning bearing
   useEffect(() => {
     if (!arPathRef.current) return;
     arPathRef.current.injectJavaScript(`
       if (typeof window.updateARPath === 'function') {
-        window.updateARPath('${arDirType}', ${isNearTurn ? 1 : 0}, ${pitch});
+        window.updateARPath('${arDirType}', ${isNearTurn ? 1 : 0}, ${pitch}, ${bearingDiff});
       }
       true;
     `);
-  }, [arDirType, isNearTurn, pitch]);
+  }, [arDirType, isNearTurn, pitch, bearingDiff]);
 
   const miniMapHtml = React.useMemo(() =>
     buildMiniMapHTML(routeData?.path, initialUserPos, targetRoom),
@@ -646,18 +616,6 @@ export default function ARScreen({ navigation, route }) {
         </Animated.View>
       )}
 
-      {/* ── ROBOT GUIDE (preserves ARRobotGuide as-is) ── */}
-      {!arrived && (
-        <ARRobotGuide
-          dirType={dirType}
-          instructionText={
-            currentDir?.instruction
-              ? `${currentDir.instruction}${distToTurn < 20 ? ` in ${Math.round(distToTurn)}m` : ""}`
-              : (nearDestination ? "You're almost there! 🎯" : "Follow the blue path ahead!")
-          }
-          style={{ bottom: SH * 0.17 }}
-        />
-      )}
 
       {/* ── BOTTOM INSTRUCTION PANEL ── */}
       {!arrived && (
@@ -701,9 +659,11 @@ export default function ARScreen({ navigation, route }) {
 
           {/* Tilt hint */}
           <Text style={styles.tiltHint}>
-            {tiltLevel === 0
-              ? "Tilt phone ↓ to see mini-map"
-              : "Hold level for AR view"}
+            {nearDestination
+              ? `🎯 ${targetRoom?.name || 'Destination'} is near!`
+              : tiltLevel === 0
+              ? "Tilt phone ↓ for mini-map  |  Look ahead for AR arrows"
+              : "Hold upright for AR view"}
           </Text>
         </View>
       )}
