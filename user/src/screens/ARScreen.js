@@ -28,10 +28,11 @@ function haversine(lat1, lon1, lat2, lon2) {
 const WALK_SPEED = 1.2;
 const AVG_STRIDE = 0.72;
 
-function getCardinal(deg) {
-  const dirs = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
-  return dirs[Math.round(((deg % 360) + 360) % 360 / 45) % 8];
-}
+// Helper to format text for better Speech pronunciation
+const formatSpeech = (text) => {
+  if (!text) return "";
+  return text.replace(/-/g, " ");
+};
 
 function getDirIcon(instruction = "") {
   const instr = instruction.toLowerCase();
@@ -44,7 +45,30 @@ function getDirIcon(instruction = "") {
   return "arrow-up";
 }
 
-// ─── Mini-Map HTML (Leaflet + Mapbox, same pattern as NavigationScreen) ───────
+function getTurnLabel(instruction = "") {
+  const instr = instruction.toLowerCase();
+  if (instr.includes("turn left") || instr.includes("go left")) return "Turn Left";
+  if (instr.includes("turn right") || instr.includes("go right")) return "Turn Right";
+  if (instr.includes("slight left")) return "Slight Left";
+  if (instr.includes("slight right")) return "Slight Right";
+  if (instr.includes("stairs")) return "Take Stairs";
+  if (instr.includes("elevator")) return "Take Elevator";
+  if (instr.includes("floor")) return "Change Floor";
+  if (instr.includes("u-turn")) return "U-Turn";
+  return "Go Straight";
+}
+
+function getTurnIcon(instruction = "") {
+  const instr = instruction.toLowerCase();
+  if (instr.includes("left")) return "↰";
+  if (instr.includes("right")) return "↱";
+  if (instr.includes("stairs")) return "⇡";
+  if (instr.includes("elevator")) return "⇡";
+  if (instr.includes("floor")) return "⇅";
+  return "↑";
+}
+
+// ─── Mini-Map HTML (Leaflet + Mapbox) ──────────────────────────────────────────
 function buildMiniMapHTML(pathPoints, userPos, targetRoom) {
   const center = userPos
     ? [userPos.x, userPos.y]
@@ -145,11 +169,12 @@ window.updateUserHeading = function(heading) {
 </script></body></html>`;
 }
 
-// ─── AR Path Canvas HTML ───────────────────────────────────────────────────────
-// ─── AR Path Canvas HTML ───────────────────────────────────────────────────────
-// ONLY arrows — no lane outline, no side lines.
-// Floor-anchored: path starts at screen BOTTOM, converges to vanishing point (horizon).
-// Arrows flow AWAY from user (upward = toward destination).
+// ─── AR Path Canvas HTML — Floor-Anchored Chevron System ────────────────────────
+// Renders wide, glowing chevron arrows projected onto the floor plane.
+// Arrows always start from CENTER-BOTTOM of screen.
+// Uses accelerometer pitch to compute a real horizon line.
+// Bearing difference only shifts the distant vanishing point, not the base.
+// Chevrons are horizontally squashed by perspective to appear flat on the floor.
 function buildARPathHTML() {
   return `<!DOCTYPE html>
 <html><head>
@@ -167,139 +192,279 @@ var ctx = c.getContext('2d');
 var W, H;
 var dirType    = 'straight';
 var isNearTurn = false;
-var pitchDeg   = 20;
+var pitchDeg   = 25;
 var bearingDiff = 0;
 var animOffset = 0;
+var lastTime   = 0;
 
-var VPX = 0;
-var VPY = 0;
-var FLOOR_Y = 0;
+// Smoothed values for jitter-free rendering
+var smoothPitch   = 25;
+var PITCH_SMOOTH   = 0.15;
+
+var VPY = 0;  // vanishing point Y (horizon from pitch)
+var FLOOR_Y = 0;  // bottom of screen — where arrows originate
+var CX = 0;   // center X — arrows ALWAYS start here
 
 function resize() {
-  W = c.width  = window.innerWidth;
-  H = c.height = window.innerHeight;
-  VPX = W * 0.5;
-  FLOOR_Y = H;
+  var dpr = window.devicePixelRatio || 1;
+  W = window.innerWidth;
+  H = window.innerHeight;
+  c.width  = W * dpr;
+  c.height = H * dpr;
+  c.style.width  = W + 'px';
+  c.style.height = H + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  CX = W * 0.5;
+  FLOOR_Y = H;  // arrows start from the very bottom edge
 }
 resize();
 window.addEventListener('resize', resize);
 
+// Compute a point on the floor plane at depth t (0=user feet at bottom, 1=horizon)
 function floorPt(t) {
-  var depth = Math.pow(t, 0.60);
-  var y = FLOOR_Y + (VPY - FLOOR_Y) * depth;
-  
-  // Pan the vanishing point based on bearingDiff
-  // 35 degrees off-center shifts the vanishing point to the edge of the screen
-  var shiftedVPX = (W * 0.5) + (bearingDiff / 35) * (W * 0.5);
-  
-  // Base X starts at center-bottom (W*0.5) and linearly goes to shifted vanishing point
-  var baseX = (W * 0.5) + (shiftedVPX - (W * 0.5)) * depth;
+  // Depth curve — more bunching near horizon for realistic perspective
+  var depth = Math.pow(t, 0.52);
 
-  // Add curve ONLY further down the path (gives a true 3D turn appearance)
+  // Y: linearly interpolate from screen bottom to horizon
+  var y = FLOOR_Y + (VPY - FLOOR_Y) * depth;
+
+  // X: ALWAYS starts at center (CX). NO bearing shift! 
+  // Arrows must be rigidly locked to the center line.
+  var baseX = CX;
+
+  // Turn curvature — smooth curve that only kicks in after 25% depth
+  // This visually shows map directions on the floor
   var curveX = 0;
-  if (dirType === 'left')  curveX = (t < 0.25) ? 0 : -Math.pow(t - 0.25, 2) * W * 0.9;
-  if (dirType === 'right') curveX = (t < 0.25) ? 0 : +Math.pow(t - 0.25, 2) * W * 0.9;
-  
-  return { x: baseX + curveX, y: y, t: t };
+  if (dirType === 'left' && t > 0.25) {
+    curveX = -Math.pow((t - 0.25) * 1.3, 2.0) * W * 0.65;
+  }
+  if (dirType === 'right' && t > 0.25) {
+    curveX = +Math.pow((t - 0.25) * 1.3, 2.0) * W * 0.65;
+  }
+
+  return { x: baseX + curveX, y: y };
 }
 
+// Get the travel direction angle at depth t
 function travelAngle(t) {
   var a = floorPt(t);
-  var b = floorPt(Math.min(t + 0.04, 0.97));
+  var b = floorPt(Math.min(t + 0.025, 0.98));
   return Math.atan2(b.y - a.y, b.x - a.x);
 }
 
-var ARROW_COUNT = 9;
+// Lane width at depth (very wide near user, narrow at horizon)
+function laneWidth(t) {
+  var perspScale = 1.0 - t * 0.85;
+  return Math.max(10, W * 0.45 * perspScale);
+}
+
+var CHEVRON_COUNT = 11;
 
 function render() {
   ctx.clearRect(0, 0, W, H);
 
-  for (var k = 0; k < ARROW_COUNT; k++) {
-    var rawT = ((k / ARROW_COUNT) + animOffset) % 1.0;
-    if (rawT < 0.05 || rawT > 0.80) continue;
+  // ── 1. GROUND PLANE GLOW — creates the "floor detected" illusion ──
+  // A wide gradient from the bottom of the screen that fades upward
+  ctx.save();
+
+  // Ground surface glow (wide, centered)
+  var groundGrad = ctx.createLinearGradient(CX, FLOOR_Y, CX, FLOOR_Y - H * 0.55);
+  groundGrad.addColorStop(0,    'rgba(0, 100, 255, 0.18)');
+  groundGrad.addColorStop(0.15, 'rgba(0, 120, 255, 0.10)');
+  groundGrad.addColorStop(0.4,  'rgba(0, 140, 255, 0.04)');
+  groundGrad.addColorStop(1,    'rgba(0, 160, 255, 0.0)');
+
+  // Build the lane shape from bottom to horizon
+  var leftEdge = [];
+  var rightEdge = [];
+  var laneSteps = 35;
+  for (var i = 0; i <= laneSteps; i++) {
+    var lt = (i / laneSteps) * 0.88;
+    var p = floorPt(lt);
+    var w = laneWidth(lt) * 0.55;
+    var angle = travelAngle(lt);
+    var perpX = Math.cos(angle + Math.PI / 2);
+    var perpY = Math.sin(angle + Math.PI / 2);
+    leftEdge.push({ x: p.x - perpX * w, y: p.y - perpY * w });
+    rightEdge.push({ x: p.x + perpX * w, y: p.y + perpY * w });
+  }
+
+  // Draw filled lane
+  ctx.beginPath();
+  ctx.moveTo(leftEdge[0].x, leftEdge[0].y);
+  for (var i = 1; i < leftEdge.length; i++) ctx.lineTo(leftEdge[i].x, leftEdge[i].y);
+  for (var i = rightEdge.length - 1; i >= 0; i--) ctx.lineTo(rightEdge[i].x, rightEdge[i].y);
+  ctx.closePath();
+  ctx.fillStyle = groundGrad;
+  ctx.fill();
+
+  // Lane edge lines (subtle)
+  ctx.beginPath();
+  ctx.moveTo(leftEdge[0].x, leftEdge[0].y);
+  for (var i = 1; i < leftEdge.length; i++) ctx.lineTo(leftEdge[i].x, leftEdge[i].y);
+  ctx.strokeStyle = 'rgba(0, 150, 255, 0.12)';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.moveTo(rightEdge[0].x, rightEdge[0].y);
+  for (var i = 1; i < rightEdge.length; i++) ctx.lineTo(rightEdge[i].x, rightEdge[i].y);
+  ctx.stroke();
+
+  // Bright center line glow (makes the floor feel real)
+  ctx.beginPath();
+  for (var i = 0; i <= 20; i++) {
+    var ct = (i / 20) * 0.7;
+    var cp = floorPt(ct);
+    if (i === 0) ctx.moveTo(cp.x, cp.y);
+    else ctx.lineTo(cp.x, cp.y);
+  }
+  ctx.strokeStyle = 'rgba(0, 140, 255, 0.06)';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+
+  ctx.restore();
+
+  // ── 2. CHEVRON ARROWS — wide, glowing, floor-anchored with perspective squash ──
+  for (var k = 0; k < CHEVRON_COUNT; k++) {
+    var rawT = ((k / CHEVRON_COUNT) + animOffset) % 1.0;
+
+    // Only render arrows in the visible depth range
+    if (rawT < 0.03 || rawT > 0.85) continue;
 
     var p = floorPt(rawT);
-    var angle = travelAngle(rawT) + Math.PI / 2;
+    var angle = travelAngle(rawT);
 
-    var perspScale = 1.0 - rawT * 0.72;
-    var arrowH = (60 * perspScale) + 10;
-    var arrowW = arrowH * 0.62;
-    if (isNearTurn && rawT < 0.28) {
-      arrowH *= 1.45; arrowW *= 1.45;
+    // Perspective scaling — arrows get smaller with depth
+    var perspScale = 1.0 - rawT * 0.80;
+    var chevW = Math.max(18, W * 0.32 * perspScale);  // Wide at bottom
+    var chevH = chevW * 0.38;
+
+    // Perspective vertical squash — makes arrows look flat on the floor
+    // Near arrows (rawT close to 0) are barely squashed
+    // Far arrows are heavily squashed
+    var squash = 1.0 - rawT * 0.55;
+    chevH *= squash;
+
+    // Near-turn emphasis
+    var turnBoost = 1.0;
+    if (isNearTurn && rawT < 0.30) {
+      turnBoost = 1.35;
+      chevW *= 1.2;
+      chevH *= 1.15;
     }
 
+    // Alpha: fade in near bottom, fade out near horizon
     var alpha;
-    if      (rawT < 0.10) alpha = (rawT - 0.05) / 0.05;
-    else if (rawT > 0.65) alpha = (0.80 - rawT) / 0.15;
+    if      (rawT < 0.08) alpha = rawT / 0.08;
+    else if (rawT > 0.68) alpha = (0.85 - rawT) / 0.17;
     else                  alpha = 1.0;
-    alpha = Math.max(0, Math.min(1, alpha)) * 0.92;
+    alpha = Math.max(0, Math.min(1, alpha)) * 0.92 * turnBoost;
     if (alpha <= 0.02) continue;
 
     ctx.save();
     ctx.translate(p.x, p.y);
-    ctx.rotate(angle);
+    ctx.rotate(angle + Math.PI / 2);
     ctx.globalAlpha = alpha;
 
-    var hw = arrowW * 0.5;
-    var ht = arrowH * 0.55;
-    var hb = arrowH * 0.26;
-    var notch = arrowH * 0.08;
+    // ── Chevron shape ──
+    var hw = chevW * 0.5;
+    var tipY = -chevH * 0.5;
+    var baseY = chevH * 0.5;
+    var arm = chevW * 0.13;
 
     ctx.beginPath();
-    ctx.moveTo(0,       -ht);
-    ctx.lineTo( hw,      hb);
-    ctx.lineTo( hw*0.2,  hb - notch);
-    ctx.lineTo(0,        hb + notch * 0.5);
-    ctx.lineTo(-hw*0.2,  hb - notch);
-    ctx.lineTo(-hw,      hb);
+    ctx.moveTo(0, tipY);                       // tip
+    ctx.lineTo(hw, baseY);                     // right outer
+    ctx.lineTo(hw - arm, baseY);               // right inner
+    ctx.lineTo(0, tipY + arm * 1.8);           // inner tip
+    ctx.lineTo(-hw + arm, baseY);              // left inner
+    ctx.lineTo(-hw, baseY);                    // left outer
     ctx.closePath();
 
-    var tipC  = isNearTurn ? 'rgba(196,181,253,' : 'rgba(147,197,253,';
-    var baseC = isNearTurn ? 'rgba(99,102,241,'  : 'rgba(59,130,246,';
+    // Gradient fill
+    var chevGrad = ctx.createLinearGradient(0, tipY, 0, baseY);
+    if (isNearTurn && rawT < 0.35) {
+      chevGrad.addColorStop(0,   'rgba(120, 210, 255, ' + (alpha) + ')');
+      chevGrad.addColorStop(0.4, 'rgba(0, 170, 255, '   + (alpha * 0.95) + ')');
+      chevGrad.addColorStop(1,   'rgba(0, 100, 255, '   + (alpha * 0.7)  + ')');
+    } else {
+      chevGrad.addColorStop(0,   'rgba(100, 200, 255, ' + (alpha * 0.95) + ')');
+      chevGrad.addColorStop(0.4, 'rgba(0, 150, 255, '   + (alpha * 0.85) + ')');
+      chevGrad.addColorStop(1,   'rgba(0, 90, 230, '    + (alpha * 0.5)  + ')');
+    }
+    ctx.fillStyle = chevGrad;
 
-    var grad = ctx.createLinearGradient(0, -ht, 0, hb);
-    grad.addColorStop(0,   tipC  + (alpha * 1.0) + ')');
-    grad.addColorStop(0.55,tipC  + (alpha * 0.85)+ ')');
-    grad.addColorStop(1,   baseC + (alpha * 0.55)+ ')');
-    ctx.fillStyle = grad;
-
-    ctx.shadowColor = isNearTurn ? '#818cf8' : '#38bdf8';
-    ctx.shadowBlur  = 18 * perspScale + 3;
+    // Glow bloom
+    ctx.shadowColor = isNearTurn ? '#44ccff' : '#0099ff';
+    ctx.shadowBlur  = (20 * perspScale + 8) * turnBoost;
     ctx.fill();
 
+    // Edge highlight
     ctx.shadowBlur = 0;
-    ctx.strokeStyle = 'rgba(186,230,253,' + (alpha * 0.7) + ')';
-    ctx.lineWidth = 1.2;
+    ctx.strokeStyle = 'rgba(160, 225, 255, ' + (alpha * 0.5) + ')';
+    ctx.lineWidth = Math.max(0.5, 1.2 * perspScale);
     ctx.stroke();
 
     ctx.restore();
   }
+
+  // ── 3. GROUND REFLECTION DOTS — small dots between arrows to sell floor anchoring ──
+  for (var d = 0; d < 25; d++) {
+    var dt = (d / 25) * 0.7 + 0.02;
+    var dp = floorPt(dt);
+    var dAlpha = (1.0 - dt) * 0.25;
+    if (dAlpha < 0.02) continue;
+    var dotR = Math.max(1, 3 * (1.0 - dt));
+    ctx.beginPath();
+    ctx.arc(dp.x, dp.y, dotR, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0, 160, 255, ' + dAlpha + ')';
+    ctx.fill();
+  }
 }
 
 function animate(ts) {
-  animOffset = (animOffset + 0.0028) % 1.0;
+  if (!lastTime) lastTime = ts;
+  var dt = Math.min((ts - lastTime) / 1000, 0.1);  // cap dt to prevent jumps
+  lastTime = ts;
+
+  // Animate offset — chevrons flow toward user
+  animOffset = (animOffset + dt * 0.20) % 1.0;
+
+  // Smooth pitch
+  smoothPitch += (pitchDeg - smoothPitch) * PITCH_SMOOTH;
+
+  // Accurate FOV-based horizon calculation
+  // Assuming a vertical Field of View (FOV) of approx 60 degrees.
+  // 1 degree of tilt shifts the horizon by H / 60 pixels.
+  // When phone is perfectly upright (pitch=0), the camera is looking horizontal -> horizon is at exactly H * 0.5 (center)
+  // When tilted down (pitch > 0), the horizon moves UP on the screen (lower Y value)
+  var fovDegrees = 55; 
+  var pixelsPerDegree = H / fovDegrees;
+  
+  // VPY = Center - (Pitch * pixelsPerDegree)
+  VPY = (H * 0.5) - (smoothPitch * pixelsPerDegree);
+
+  // Clamp VPY slightly above screen top so we can always draw depth
+  VPY = Math.max(-H * 0.5, Math.min(H * 0.8, VPY));
+
   render();
   requestAnimationFrame(animate);
 }
 requestAnimationFrame(animate);
 
-window.updateARPath = function(newDir, nearTurn, newPitch, newBearingDiff) {
-  dirType    = newDir;
+window.updateARPath = function(newDir, nearTurn, newPitch) {
+  dirType    = newDir || 'straight';
   isNearTurn = nearTurn == 1 || nearTurn === true;
-  pitchDeg   = Math.max(0, Math.min(85, newPitch || 20));
-  bearingDiff = newBearingDiff || 0;
-
-  // Real physical horizon calculation based on camera vertical FOV (~55-60 deg)
-  // Upright phone (pitch 0) -> horizon is around center (0.55 * H)
-  // Tilted 30 deg -> horizon is near top of screen (0.0 * H)
-  // Tilted 60 deg -> horizon is above the screen (-0.54 * H)
-  var horizonFrac = 0.55 - (pitchDeg / 55);
-  VPY = H * horizonFrac;
+  
+  // newPitch: 0 = upright. Positive = tilted down towards floor.
+  pitchDeg = newPitch || 0;
 };
 </script>
 </body></html>`;
 }
-// ─── Main AR Screen ────────────────────────────────────────────────────────────
+
+// ─── Main AR Screen ─────────────────────────────────────────────────────────────
 export default function ARScreen({ navigation, route }) {
   const { colors } = useContext(ThemeContext);
   const {
@@ -318,21 +483,21 @@ export default function ARScreen({ navigation, route }) {
     routeData ? Math.round(routeData.distance || 0) : 0
   );
   const [arrived, setArrived] = useState(false);
-  const [arDirType, setArDirType] = useState("straight"); // from instruction (shape of path)
-  const [bearingDiff, setBearingDiff] = useState(0);      // from GPS vs compass (panning)
+  const [arDirType, setArDirType] = useState("straight");
+  const [bearingDiff, setBearingDiff] = useState(0);
   const [isNearTurn, setIsNearTurn] = useState(false);
   const [distToTurn, setDistToTurn] = useState(999);
-  const [nearDestination, setNearDestination] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [showMiniMap, setShowMiniMap] = useState(false);
-  const [pitch, setPitch] = useState(25); // phone tilt pitch 0°=upright, 90°=horizontal
+  const [pitch, setPitch] = useState(25);
 
-  // Tilt detection
-  const [tiltLevel, setTiltLevel] = useState(0); // 0=upright, 1=partial, 2=full
-  const miniMapHeight = useRef(new Animated.Value(0)).current;
-  const destPulse = useRef(new Animated.Value(1)).current;
+  // Tilt detection for auto mini-map (0=upright/AR, 1=partial, 2=horizontal/map)
+  const [tiltLevel, setTiltLevel] = useState(0);
+
   const arrivedAnim = useRef(new Animated.Value(0)).current;
   const arrivedScale = useRef(new Animated.Value(0.5)).current;
+  const dirCardAnim = useRef(new Animated.Value(0)).current;
+  const miniMapHeight = useRef(new Animated.Value(0)).current;
 
   const miniMapRef = useRef(null);
   const arPathRef = useRef(null);
@@ -341,6 +506,9 @@ export default function ARScreen({ navigation, route }) {
   const locWatcher = useRef(null);
   const posEngine = useRef(new PositionEngine()).current;
   const stepDetector = useRef(null);
+
+  // Smooth heading ref to avoid jitter
+  const smoothHeadingRef = useRef(initialHeading || 0);
 
   const currentDir = routeData?.directions?.[currentStep];
 
@@ -351,17 +519,18 @@ export default function ARScreen({ navigation, route }) {
     }
   }, []);
 
-  // ── Destination pulse animation
+  // ── Animate direction card on step change
   useEffect(() => {
-    if (nearDestination) {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(destPulse, { toValue: 1.3, duration: 800, useNativeDriver: true }),
-          Animated.timing(destPulse, { toValue: 1, duration: 800, useNativeDriver: true }),
-        ])
-      ).start();
+    if (currentDir && !arrived) {
+      dirCardAnim.setValue(0);
+      Animated.spring(dirCardAnim, {
+        toValue: 1,
+        tension: 80,
+        friction: 10,
+        useNativeDriver: true,
+      }).start();
     }
-  }, [nearDestination]);
+  }, [currentStep, arrived]);
 
   // ── Arrived animation
   useEffect(() => {
@@ -372,7 +541,7 @@ export default function ARScreen({ navigation, route }) {
       ]).start();
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       if (voiceEnabled) {
-        Speech.speak("You have arrived at " + (targetRoom?.name || "your destination"), { language: "en-US" });
+        Speech.speak(formatSpeech("You have arrived at " + (targetRoom?.name || "your destination")), { language: "en-US" });
       }
     }
   }, [arrived]);
@@ -384,7 +553,7 @@ export default function ARScreen({ navigation, route }) {
     }
   }, [initialUserPos]);
 
-  // ── Subscribe to PositionEngine updates to update React state
+  // ── Subscribe to PositionEngine updates
   useEffect(() => {
     const unsub = posEngine.onPositionUpdate(pos => {
       setUserPos({ x: pos.x, y: pos.y, floor: pos.floor });
@@ -392,42 +561,55 @@ export default function ARScreen({ navigation, route }) {
     return unsub;
   }, []);
 
-  // ── Sensor subscriptions: Accelerometer (tilt + pitch + steps) + Magnetometer (heading) + GPS watch
+  // ── Sensor subscriptions
   useEffect(() => {
-    // 1. Step detection setup
+    // Step detection
     stepDetector.current = new StepDetector(() => {
       posEngine.processStep(posEngine.heading);
     });
 
-    Accelerometer.setUpdateInterval(150);
+    Accelerometer.setUpdateInterval(100);
     accelSub.current = Accelerometer.addListener(({ x, y, z }) => {
-      // Step detection processing
+      // Step detection
       stepDetector.current?.processAccelerometer(x, y, z);
 
-      // Tilt level for mini-map toggle (use Y axis, not Z)
+      // Pitch calculation for AR Horizon.
+      // Phone vertical (y ~ -1, z ~ 0) -> pitch = 0 (looking straight ahead)
+      // Phone flat on table screen up (y ~ 0, z ~ -1 or 1) -> pitch = 90 (looking down)
+      // We want pitch in degrees.
+      const pitchRad = Math.atan2(Math.abs(z), Math.abs(y) + 0.001);
+      const pitchDegCalc = pitchRad * (180 / Math.PI);
+      setPitch(pitchDegCalc);
+
+      // Tilt level for auto mini-map (uses Y axis to detect phone orientation)
+      // |y| > 0.72 → phone is upright → AR mode, hide mini-map
+      // |y| > 0.38 → phone tilting → partial mini-map
+      // |y| < 0.38 → phone horizontal → full mini-map
       const absY = Math.abs(y);
       let newTilt;
-      if      (absY > 0.72) newTilt = 0;   // upright → AR only, mini-map hidden
-      else if (absY > 0.38) newTilt = 1;   // tilting  → mini-map partially visible
-      else                  newTilt = 2;   // horizontal → mini-map fully expanded
-
+      if      (absY > 0.72) newTilt = 0;   // upright → AR only
+      else if (absY > 0.38) newTilt = 1;   // tilting → partial map
+      else                  newTilt = 2;   // horizontal → full map
       setTiltLevel(prev => prev === newTilt ? prev : newTilt);
-
-      // Pitch angle: how far phone is tilted from vertical
-      const pitchRad = Math.atan2(Math.abs(z), absY + 0.001);
-      const pitchDeg = Math.round(Math.min(85, pitchRad * 180 / Math.PI));
-      setPitch(pitchDeg);
     });
 
-    Magnetometer.setUpdateInterval(250);
+    Magnetometer.setUpdateInterval(200);
     magSub.current = Magnetometer.addListener(({ x, y }) => {
       const h = Math.atan2(y, x) * (180 / Math.PI);
       const normalizedH = (h + 360) % 360;
-      setHeading(normalizedH);
-      posEngine.updateHeading(normalizedH);
+
+      // Smooth heading to reduce jitter
+      let diff = normalizedH - smoothHeadingRef.current;
+      if (diff > 180) diff -= 360;
+      if (diff < -180) diff += 360;
+      if (Math.abs(diff) > 1.5) {
+        smoothHeadingRef.current = (smoothHeadingRef.current + diff * 0.25 + 360) % 360;
+      }
+      setHeading(smoothHeadingRef.current);
+      posEngine.updateHeading(smoothHeadingRef.current);
     });
 
-    // 2. GPS watch for live user position
+    // GPS watch
     Location.watchPositionAsync(
       { accuracy: Location.Accuracy.BestForNavigation, timeInterval: 1000, distanceInterval: 0.5 },
       (loc) => {
@@ -448,45 +630,29 @@ export default function ARScreen({ navigation, route }) {
     };
   }, []);
 
-  // ── Tilt → mini-map animation
+  // ── Tilt-based auto mini-map + manual toggle
   useEffect(() => {
-    const targetH = tiltLevel === 0 ? 0 : tiltLevel === 1 ? SH * 0.18 : SH * 0.28;
+    // Auto-show based on tilt: upright=0, partial=18%, full=28%
+    const autoHeight = tiltLevel === 0 ? 0 : tiltLevel === 1 ? SH * 0.18 : SH * 0.28;
+    // Manual toggle overrides: if user explicitly toggled, respect that
+    const targetH = showMiniMap ? Math.max(SH * 0.25, autoHeight) : autoHeight;
     Animated.spring(miniMapHeight, {
       toValue: targetH,
       friction: 10,
       tension: 70,
       useNativeDriver: false,
     }).start();
-    setShowMiniMap(tiltLevel > 0);
-  }, [tiltLevel]);
+  }, [tiltLevel, showMiniMap]);
 
-  // ── Compute AR direction shape and bearing diff (for world-space panning)
+  // ── Compute AR direction shape
   useEffect(() => {
-    // 1. Calculate bearing difference to pan the path if user looks away
-    if (userPos && routeData?.path) {
-      const nextNode = routeData.path[Math.min(currentStep + 1, routeData.path.length - 1)];
-      if (nextNode && nextNode.x && nextNode.y) {
-        const dLon = toRad(nextNode.y - userPos.y);
-        const lat1 = toRad(userPos.x), lat2 = toRad(nextNode.x);
-        const bY = Math.sin(dLon) * Math.cos(lat2);
-        const bX = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
-        const requiredBearing = ((Math.atan2(bY, bX) * 180 / Math.PI) + 360) % 360;
-        let diff = ((requiredBearing - heading) + 360) % 360;
-        if (diff > 180) diff -= 360; // range -180 to +180
-        setBearingDiff(diff);
-      }
-    }
-
-    // 2. Shape of the path is purely based on the route geometry (instruction)
+    // Direction type from instruction
     if (!currentDir) return;
     const instr = currentDir.instruction?.toLowerCase() || '';
     if      (instr.includes('left'))  setArDirType('left');
     else if (instr.includes('right')) setArDirType('right');
     else                              setArDirType('straight');
-  }, [userPos, heading, currentStep, currentDir, routeData]);
-
-  // ── Keep dirType in sync (used for bottom panel icon)
-  const dirType = arDirType;
+  }, [currentStep, currentDir, routeData]);
 
   // ── Step advancement based on user position
   useEffect(() => {
@@ -504,16 +670,9 @@ export default function ARScreen({ navigation, route }) {
       .reduce((s, d) => s + (d.distance || 0), 0) || 0;
     setLiveDistance(Math.max(0, Math.round(distToNode + remainingPath)));
 
-    // Near turn warning
+    // Near turn detection
     setDistToTurn(distToNode);
     setIsNearTurn(distToNode < 15 && currentStep < (routeData.directions?.length || 1) - 1);
-
-    // Check destination proximity
-    const destNode = routeData.path?.[routeData.path.length - 1];
-    if (destNode) {
-      const distToDest = haversine(userPos.x, userPos.y, destNode.x, destNode.y);
-      setNearDestination(distToDest < 30);
-    }
 
     // Advance step
     if (distToNode < threshold) {
@@ -523,7 +682,7 @@ export default function ARScreen({ navigation, route }) {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         if (voiceEnabled && routeData.directions[nextStep]) {
           Speech.speak(
-            `${routeData.directions[nextStep].instruction}. ${Math.round(routeData.directions[nextStep].distance)} meters.`,
+            formatSpeech(`${routeData.directions[nextStep].instruction}. ${Math.round(routeData.directions[nextStep].distance)} meters.`),
             { language: "en-US" }
           );
         }
@@ -536,24 +695,27 @@ export default function ARScreen({ navigation, route }) {
   // ── Sync user position & heading to mini-map WebView
   useEffect(() => {
     if (!userPos || !miniMapRef.current) return;
-    miniMapRef.current.injectJavaScript(`
-      if (typeof window.updateUserPos === 'function') {
-        window.updateUserPos(${userPos.x}, ${userPos.y}, ${heading});
-      }
-      true;
-    `);
-  }, [userPos, heading]);
+    // Update mini-map whenever it's visible (tilt-based or manual toggle)
+    if (tiltLevel > 0 || showMiniMap) {
+      miniMapRef.current.injectJavaScript(`
+        if (typeof window.updateUserPos === 'function') {
+          window.updateUserPos(${userPos.x}, ${userPos.y}, ${heading});
+        }
+        true;
+      `);
+    }
+  }, [userPos, heading, tiltLevel, showMiniMap]);
 
-  // ── Update AR path canvas: direction, pitch, and panning bearing
+  // ── Update AR path canvas
   useEffect(() => {
     if (!arPathRef.current) return;
     arPathRef.current.injectJavaScript(`
       if (typeof window.updateARPath === 'function') {
-        window.updateARPath('${arDirType}', ${isNearTurn ? 1 : 0}, ${pitch}, ${bearingDiff});
+        window.updateARPath('${arDirType}', ${isNearTurn ? 1 : 0}, ${pitch});
       }
       true;
     `);
-  }, [arDirType, isNearTurn, pitch, bearingDiff]);
+  }, [arDirType, isNearTurn, pitch]);
 
   const miniMapHtml = React.useMemo(() =>
     buildMiniMapHTML(routeData?.path, initialUserPos, targetRoom),
@@ -561,7 +723,7 @@ export default function ARScreen({ navigation, route }) {
   );
 
   const arPathHtml = React.useMemo(() =>
-    buildARPathHTML(), // no args — direction updated via injectJavaScript
+    buildARPathHTML(),
     []
   );
 
@@ -571,8 +733,11 @@ export default function ARScreen({ navigation, route }) {
       || Math.round(liveDistance / WALK_SPEED))
     : 0;
   const etaText = etaSeconds >= 60
-    ? `${Math.ceil(etaSeconds / 60)}'`
+    ? `${Math.ceil(etaSeconds / 60)} min`
     : `${etaSeconds}s`;
+
+  // Distance text for the current step
+  const stepDist = Math.round(distToTurn < 999 ? distToTurn : currentDir?.distance || 0);
 
   // ── If no camera permission
   if (!permission) return <View style={{ flex: 1, backgroundColor: "#000" }} />;
@@ -627,116 +792,97 @@ export default function ARScreen({ navigation, route }) {
         />
       </View>
 
-      {/* ── TOP INFO BAR ── */}
-      <View style={styles.topBar}>
-        {/* Back Button */}
-        <TouchableOpacity
-          style={styles.topIconBtn}
-          onPress={() => navigation.goBack()}
-          activeOpacity={0.8}
+      {/* ── TOP DIRECTION CARD (Glassmorphic — matching reference) ── */}
+      {!arrived && currentDir && (
+        <Animated.View
+          style={[
+            styles.dirCard,
+            {
+              transform: [{
+                translateY: dirCardAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [-100, 0],
+                }),
+              }],
+              opacity: dirCardAnim,
+            },
+          ]}
         >
-          <Ionicons name="arrow-back" size={20} color="#fff" />
-        </TouchableOpacity>
+          {/* Turn icon circle */}
+          <View style={[
+            styles.dirIconCircle,
+            isNearTurn && { borderColor: 'rgba(68, 187, 255, 0.8)', backgroundColor: 'rgba(0, 120, 255, 0.25)' }
+          ]}>
+            <Text style={styles.dirIconText}>{getTurnIcon(currentDir?.instruction)}</Text>
+          </View>
+          {/* Instruction text */}
+          <View style={styles.dirCardContent}>
+            <Text style={styles.dirCardTitle} numberOfLines={1}>
+              {getTurnLabel(currentDir?.instruction)}
+            </Text>
+            <Text style={styles.dirCardSubtitle}>
+              In {stepDist} m
+            </Text>
+          </View>
+        </Animated.View>
+      )}
 
-        {/* Distance */}
-        <View style={styles.topMetric}>
-          <Ionicons name="location" size={13} color="#93c5fd" />
-          <Text style={styles.topMetricValue}>{liveDistance}m</Text>
-          <Text style={styles.topMetricLabel}>Distance</Text>
-        </View>
-
-        {/* ETA */}
-        <View style={styles.topMetric}>
-          <Ionicons name="time-outline" size={13} color="#86efac" />
-          <Text style={styles.topMetricValue}>{etaText}</Text>
-          <Text style={styles.topMetricLabel}>ETA</Text>
-        </View>
-
-        {/* Compass */}
-        <View style={styles.topMetric}>
-          <Ionicons name="compass-outline" size={13} color="#fcd34d" />
-          <Text style={styles.topMetricValue}>{getCardinal(heading)}</Text>
-          <Text style={styles.topMetricLabel}>{Math.round(heading)}°</Text>
-        </View>
-
+      {/* ── FLOATING ACTION BUTTONS (right side) ── */}
+      <View style={styles.fabColumn}>
         {/* Voice toggle */}
         <TouchableOpacity
-          style={styles.topIconBtn}
+          style={styles.fabBtn}
           onPress={() => setVoiceEnabled(v => !v)}
           activeOpacity={0.8}
         >
           <Ionicons
             name={voiceEnabled ? "volume-high" : "volume-mute"}
             size={20}
-            color={voiceEnabled ? "#86efac" : "#94a3b8"}
+            color={voiceEnabled ? "#4ade80" : "#64748b"}
           />
+        </TouchableOpacity>
+
+        {/* Mini-map toggle */}
+        <TouchableOpacity
+          style={[styles.fabBtn, (showMiniMap || tiltLevel > 0) && styles.fabBtnActive]}
+          onPress={() => setShowMiniMap(v => !v)}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="map" size={20} color={(showMiniMap || tiltLevel > 0) ? "#818cf8" : "#94a3b8"} />
         </TouchableOpacity>
       </View>
 
-      {/* ── DESTINATION MARKER (near destination) ── */}
-      {nearDestination && !arrived && (
-        <Animated.View
-          style={[styles.destMarker, { transform: [{ scale: destPulse }] }]}
-          pointerEvents="none"
-        >
-          <View style={styles.destMarkerInner}>
-            <Ionicons name="location" size={22} color="#fff" />
-          </View>
-          <Text style={styles.destMarkerLabel} numberOfLines={2}>
-            {targetRoom?.name || "Destination"}
-          </Text>
-        </Animated.View>
+      {/* ── TILT HINT ── */}
+      {!arrived && tiltLevel === 0 && !showMiniMap && (
+        <View style={styles.tiltHint}>
+          <Text style={styles.tiltHintText}>Tilt phone ↓ for mini-map</Text>
+        </View>
       )}
 
-
-      {/* ── BOTTOM INSTRUCTION PANEL ── */}
-      {!arrived && (
-        <View style={styles.bottomPanel}>
-          <View style={styles.bottomInner}>
-            {/* Direction Icon */}
-            <View style={styles.dirIconWrap}>
-              <Ionicons
-                name={getDirIcon(currentDir?.instruction)}
-                size={26}
-                color="#6366f1"
-              />
-            </View>
-            {/* Instruction text */}
-            <View style={{ flex: 1, marginLeft: 14 }}>
-              <Text style={styles.instrText} numberOfLines={2}>
-                {currentDir?.instruction || "Follow the highlighted path"}
-              </Text>
-              <View style={styles.instrMeta}>
-                <Text style={styles.instrDist}>
-                  {Math.round(distToTurn < 999 ? distToTurn : currentDir?.distance || 0)}m ahead
-                </Text>
-                <View style={styles.stepPill}>
-                  <Text style={styles.stepPillText}>
-                    Step {currentStep + 1}/{routeData?.directions?.length || 1}
-                  </Text>
-                </View>
-              </View>
-            </View>
-          </View>
-
-          {/* Near-turn alert stripe */}
-          {isNearTurn && (
-            <View style={styles.turnAlert}>
-              <Ionicons name="alert-circle" size={16} color="#fcd34d" />
-              <Text style={styles.turnAlertText}>
-                Turn {dirType === "left" ? "Left" : "Right"} in {Math.round(distToTurn)}m
-              </Text>
-            </View>
-          )}
-
-          {/* Tilt hint */}
-          <Text style={styles.tiltHint}>
-            {nearDestination
-              ? `🎯 ${targetRoom?.name || 'Destination'} is near!`
-              : tiltLevel === 0
-              ? "Tilt phone ↓ for mini-map  |  Look ahead for AR arrows"
-              : "Hold upright for AR view"}
+      {/* ── NEAR-TURN ALERT ── */}
+      {isNearTurn && !arrived && (
+        <View style={styles.turnAlertBanner}>
+          <Ionicons name="alert-circle" size={18} color="#fcd34d" />
+          <Text style={styles.turnAlertText}>
+            {getTurnLabel(currentDir?.instruction)} in {Math.round(distToTurn)}m
           </Text>
+        </View>
+      )}
+
+      {/* ── BOTTOM BAR (Distance + Exit — matching reference) ── */}
+      {!arrived && (
+        <View style={styles.bottomBar}>
+          <View style={styles.bottomBarLeft}>
+            <Text style={styles.bottomBarDistance}>{liveDistance} m</Text>
+            <Text style={styles.bottomBarLabel}>to your destination</Text>
+          </View>
+          <TouchableOpacity
+            style={styles.exitBtn}
+            onPress={() => navigation.goBack()}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.exitBtnText}>Exit</Text>
+          </TouchableOpacity>
         </View>
       )}
 
@@ -762,7 +908,7 @@ export default function ARScreen({ navigation, route }) {
         </Animated.View>
       )}
 
-      {/* ── MINI-MAP OVERLAY (tilt-triggered, slides from bottom above panel) ── */}
+      {/* ── MINI-MAP OVERLAY (toggle-controlled) ── */}
       <Animated.View style={[styles.miniMapContainer, { height: miniMapHeight }]}>
         <View style={styles.miniMapHandle}>
           <View style={styles.miniMapHandleBar} />
@@ -802,7 +948,7 @@ export default function ARScreen({ navigation, route }) {
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
+// ─── Styles ─────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   root: {
     flex: 1,
@@ -822,116 +968,168 @@ const styles = StyleSheet.create({
   permBtnText: { color: "#fff", fontWeight: "700", fontSize: 15 },
   permBack: { padding: 10 },
 
-  // Top info bar
-  topBar: {
+  // ── TOP DIRECTION CARD (glassmorphic, matching reference image) ──
+  dirCard: {
     position: "absolute",
-    top: Platform.OS === "ios" ? 54 : 36,
-    left: 14,
-    right: 14,
+    top: Platform.OS === "ios" ? 58 : 40,
+    left: 16,
+    right: 80, // leave room for FABs
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(7,11,20,0.82)",
-    borderRadius: RADIUS.lg,
-    paddingHorizontal: 12,
+    backgroundColor: "rgba(15, 23, 42, 0.85)",
+    borderRadius: 18,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: "rgba(100, 160, 255, 0.2)",
+    ...SHADOWS.lg,
+  },
+  dirIconCircle: {
+    width: 50,
+    height: 50,
+    borderRadius: 14,
+    backgroundColor: "rgba(0, 100, 255, 0.15)",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1.5,
+    borderColor: "rgba(0, 140, 255, 0.4)",
+    marginRight: 14,
+  },
+  dirIconText: {
+    fontSize: 26,
+    color: "#60a5fa",
+  },
+  dirCardContent: {
+    flex: 1,
+  },
+  dirCardTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#f1f5f9",
+    marginBottom: 2,
+  },
+  dirCardSubtitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#94a3b8",
+  },
+
+  // ── FLOATING ACTION BUTTONS ──
+  fabColumn: {
+    position: "absolute",
+    top: Platform.OS === "ios" ? 60 : 42,
+    right: 14,
+    gap: 10,
+  },
+  fabBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: "rgba(15, 23, 42, 0.8)",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+    ...SHADOWS.md,
+  },
+  fabBtnActive: {
+    borderColor: "rgba(99, 102, 241, 0.5)",
+    backgroundColor: "rgba(99, 102, 241, 0.15)",
+  },
+
+  // ── NEAR-TURN ALERT BANNER ──
+  turnAlertBanner: {
+    position: "absolute",
+    top: Platform.OS === "ios" ? 128 : 110,
+    left: 16,
+    right: 80,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(245, 158, 11, 0.2)",
+    borderRadius: 12,
+    paddingHorizontal: 14,
     paddingVertical: 10,
     borderWidth: 1,
-    borderColor: "rgba(99,102,241,0.3)",
-    ...SHADOWS.lg,
+    borderColor: "rgba(245, 158, 11, 0.4)",
+    gap: 8,
   },
-  topIconBtn: {
-    width: 36, height: 36, borderRadius: 18,
-    backgroundColor: "rgba(255,255,255,0.12)",
-    alignItems: "center", justifyContent: "center",
-  },
-  topMetric: {
-    flex: 1, alignItems: "center",
-  },
-  topMetricValue: {
-    fontSize: 16, fontWeight: "800", color: "#f1f5f9", marginTop: 2,
-  },
-  topMetricLabel: {
-    fontSize: 9, fontWeight: "600", color: "#64748b",
-    textTransform: "uppercase", letterSpacing: 0.8,
+  turnAlertText: {
+    color: "#fcd34d",
+    fontWeight: "700",
+    fontSize: 13,
   },
 
-  // Destination marker
-  destMarker: {
-    position: "absolute",
-    top: "28%",
-    alignSelf: "center",
-    alignItems: "center",
-    zIndex: 20,
-  },
-  destMarkerInner: {
-    width: 48, height: 48, borderRadius: 24,
-    backgroundColor: "#22c55e",
-    alignItems: "center", justifyContent: "center",
-    borderWidth: 3, borderColor: "#fff",
-    ...SHADOWS.lg,
-  },
-  destMarkerLabel: {
-    marginTop: 6, color: "#fff", fontWeight: "800",
-    fontSize: 13, textAlign: "center", maxWidth: 140,
-    backgroundColor: "rgba(0,0,0,0.65)",
-    paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8,
-    overflow: "hidden",
-  },
-
-  // Bottom instruction panel
-  bottomPanel: {
+  // ── BOTTOM BAR (distance + exit, matching reference) ──
+  bottomBar: {
     position: "absolute",
     bottom: 0,
-    left: 0, right: 0,
-    backgroundColor: "rgba(7,11,20,0.92)",
-    borderTopLeftRadius: RADIUS.xl,
-    borderTopRightRadius: RADIUS.xl,
+    left: 0,
+    right: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "rgba(15, 23, 42, 0.88)",
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
     borderWidth: 1,
-    borderColor: "rgba(99,102,241,0.25)",
-    paddingTop: 16, paddingHorizontal: 16, paddingBottom: Platform.OS === "ios" ? 36 : 22,
+    borderColor: "rgba(100, 160, 255, 0.15)",
+    borderBottomWidth: 0,
+    paddingHorizontal: 24,
+    paddingTop: 18,
+    paddingBottom: Platform.OS === "ios" ? 36 : 22,
     ...SHADOWS.lg,
   },
-  bottomInner: {
-    flexDirection: "row", alignItems: "center",
-    marginBottom: 10,
+  bottomBarLeft: {
+    flex: 1,
   },
-  dirIconWrap: {
-    width: 52, height: 52, borderRadius: 17,
-    backgroundColor: "rgba(99,102,241,0.18)",
-    alignItems: "center", justifyContent: "center",
-    borderWidth: 1.5, borderColor: "rgba(99,102,241,0.4)",
+  bottomBarDistance: {
+    fontSize: 28,
+    fontWeight: "900",
+    color: "#f1f5f9",
+    letterSpacing: -0.5,
   },
-  instrText: {
-    fontSize: 16, fontWeight: "800", color: "#f1f5f9", marginBottom: 4,
+  bottomBarLabel: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: "#64748b",
+    marginTop: 2,
+    fontStyle: "italic",
   },
-  instrMeta: {
-    flexDirection: "row", alignItems: "center", gap: 8,
+  exitBtn: {
+    backgroundColor: "rgba(255, 255, 255, 0.12)",
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
   },
-  instrDist: {
-    fontSize: 13, color: "#94a3b8", fontWeight: "600",
-  },
-  stepPill: {
-    backgroundColor: "#6366f1", borderRadius: 99,
-    paddingHorizontal: 9, paddingVertical: 3,
-  },
-  stepPillText: { fontSize: 11, fontWeight: "700", color: "#fff" },
-  turnAlert: {
-    flexDirection: "row", alignItems: "center",
-    backgroundColor: "rgba(245,158,11,0.18)",
-    borderRadius: RADIUS.sm, paddingHorizontal: 12, paddingVertical: 8,
-    borderWidth: 1, borderColor: "rgba(245,158,11,0.4)",
-    marginBottom: 8, gap: 8,
-  },
-  turnAlertText: { color: "#fcd34d", fontWeight: "700", fontSize: 13 },
-  tiltHint: {
-    textAlign: "center", fontSize: 11, color: "#475569",
-    fontWeight: "500", marginTop: 4,
+  exitBtnText: {
+    color: "#f1f5f9",
+    fontWeight: "700",
+    fontSize: 15,
   },
 
-  // Arrived overlay
+  // ── TILT HINT ──
+  tiltHint: {
+    position: "absolute",
+    bottom: Platform.OS === "ios" ? 90 : 76,
+    alignSelf: "center",
+    backgroundColor: "rgba(15, 23, 42, 0.6)",
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  tiltHintText: {
+    color: "#64748b",
+    fontSize: 11,
+    fontWeight: "500",
+  },
+
+  // ── ARRIVED OVERLAY ──
   arrivedOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(0,0,0,0.75)",
-    alignItems: "center", justifyContent: "center",
+    alignItems: "center",
+    justifyContent: "center",
     zIndex: 100,
   },
   arrivedBadge: {
@@ -958,7 +1156,7 @@ const styles = StyleSheet.create({
   },
   arrivedBtnText: { color: "#fff", fontWeight: "800", fontSize: 15 },
 
-  // Mini-map
+  // ── MINI-MAP ──
   miniMapContainer: {
     position: "absolute",
     bottom: 0, left: 0, right: 0,
