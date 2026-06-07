@@ -14,6 +14,8 @@ import * as Location from 'expo-location';
 
 const { height: SH, width: SW } = Dimensions.get('window');
 
+const MAPBOX_URL = process.env.EXPO_PUBLIC_MAPBOX_URL || "https://api.mapbox.com/styles/v1/mapbox/streets-v11/tiles/256/{z}/{x}/{y}@2x?access_token=pk.eyJ1IjoidmVua2F0YS1rcmlzaG5hIiwiYSI6ImNtZnYycHN0bTAzY28yanFxeG4wOXVsenAifQ.w1yd6XuvWvarYj33rP1LkA";
+
 function buildCampusMapHTML(geoJSONData, centerCoords) {
   const center = centerCoords ? [centerCoords.x, centerCoords.y] : [18.4665, 83.6629];
   
@@ -35,7 +37,7 @@ function buildCampusMapHTML(geoJSONData, centerCoords) {
 </head><body><div id="map"></div>
 <script>
 var map=L.map('map',{zoomControl:false}).setView([${center[0]},${center[1]}], 18);
-L.tileLayer('${process.env.EXPO_PUBLIC_MAPBOX_URL}',{maxZoom:22}).addTo(map);
+L.tileLayer('${MAPBOX_URL}',{maxZoom:22}).addTo(map);
 
 var geojsonLayer = null;
 function styleFeature(feature) {

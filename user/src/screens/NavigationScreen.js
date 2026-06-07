@@ -62,6 +62,8 @@ async function fetchStreetRoute(lat1, lon1, lat2, lon2) {
   return null;
 }
 
+const MAPBOX_URL = process.env.EXPO_PUBLIC_MAPBOX_URL || "https://api.mapbox.com/styles/v1/mapbox/streets-v11/tiles/256/{z}/{x}/{y}@2x?access_token=pk.eyJ1IjoidmVua2F0YS1rcmlzaG5hIiwiYSI6ImNtZnYycHN0bTAzY28yanFxeG4wOXVsenAifQ.w1yd6XuvWvarYj33rP1LkA";
+
 function buildNavMapHTML(geoJSONData, pathPoints, initialPos, targetRoom) {
   const center = initialPos ? [initialPos.x, initialPos.y] : (pathPoints?.length ? [pathPoints[0].x, pathPoints[0].y] : [18.4665, 83.6629]);
   
@@ -103,7 +105,7 @@ function buildNavMapHTML(geoJSONData, pathPoints, initialPos, targetRoom) {
 </head><body><div id="map"></div>
 <script>
 var map=L.map('map',{zoomControl:false}).setView([${center[0]},${center[1]}], 19);
-L.tileLayer('${process.env.EXPO_PUBLIC_MAPBOX_URL}',{maxZoom:22}).addTo(map);
+L.tileLayer('${MAPBOX_URL}',{maxZoom:22}).addTo(map);
 
 var geojsonLayer = null;
 function styleFeature(feature) {

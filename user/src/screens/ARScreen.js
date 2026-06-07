@@ -70,7 +70,7 @@ function buildMiniMapHTML(pathPoints, userPos, targetRoom) {
     ? `window.userMarker = L.circleMarker([${userPos.x},${userPos.y}],{radius:8,color:'#fff',weight:2,fillColor:'#6366f1',fillOpacity:1,zIndexOffset:1000}).addTo(map);`
     : `window.userMarker = null;`;
 
-  const mapboxUrl = process.env.EXPO_PUBLIC_MAPBOX_URL || "";
+  const mapboxUrl = process.env.EXPO_PUBLIC_MAPBOX_URL || "https://api.mapbox.com/styles/v1/mapbox/streets-v11/tiles/256/{z}/{x}/{y}@2x?access_token=pk.eyJ1IjoidmVua2F0YS1rcmlzaG5hIiwiYSI6ImNtZnYycHN0bTAzY28yanFxeG4wOXVsenAifQ.w1yd6XuvWvarYj33rP1LkA";
 
   return `<!DOCTYPE html>
 <html><head>
