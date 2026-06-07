@@ -14,6 +14,7 @@ import { WebView } from "react-native-webview";
 import * as Location from "expo-location";
 import { PositionEngine, StepDetector } from "../positioning";
 import { ThemeContext } from "../context/ThemeContext";
+import ARRobotGuide from "../components/ARRobotGuide";
 import { SHADOWS, RADIUS } from "../theme/designSystem";
 
 const { width: SW, height: SH } = Dimensions.get("window");
@@ -27,6 +28,37 @@ function haversine(lat1, lon1, lat2, lon2) {
 }
 const WALK_SPEED = 1.2;
 const AVG_STRIDE = 0.72;
+
+function getClosestPointOnSegment(px, py, x1, y1, x2, y2) {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  if (dx === 0 && dy === 0) return { x: x1, y: y1 };
+
+  let t = ((px - x1) * dx + (py - y1) * dy) / (dx * dx + dy * dy);
+  t = Math.max(0, Math.min(1, t)); // clamp to segment
+
+  return {
+    x: x1 + t * dx,
+    y: y1 + t * dy
+  };
+}
+
+function snapPositionToRoute(pos, path, currentStep) {
+  if (!pos || !path || path.length === 0) return pos;
+  
+  const startNode = path[currentStep];
+  const endNode = path[Math.min(currentStep + 1, path.length - 1)];
+  if (!startNode || !endNode) return pos;
+
+  const snapped = getClosestPointOnSegment(pos.x, pos.y, startNode.x, startNode.y, endNode.x, endNode.y);
+  
+  // Calculate distance between raw and snapped in meters
+  const dist = haversine(pos.x, pos.y, snapped.x, snapped.y);
+  if (dist < 15) { // within 15 meters
+    return { ...pos, x: snapped.x, y: snapped.y };
+  }
+  return pos;
+}
 
 function getCardinal(deg) {
   const dirs = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
@@ -45,7 +77,7 @@ function getDirIcon(instruction = "") {
 }
 
 // ─── Mini-Map HTML (Leaflet + Mapbox, same pattern as NavigationScreen) ───────
-function buildMiniMapHTML(pathPoints, userPos, targetRoom) {
+function buildMiniMapHTML(pathPoints, userPos, targetRoom, geoJSONData) {
   const center = userPos
     ? [userPos.x, userPos.y]
     : (pathPoints?.length ? [pathPoints[0].x, pathPoints[0].y] : [18.4665, 83.6629]);
@@ -56,8 +88,8 @@ function buildMiniMapHTML(pathPoints, userPos, targetRoom) {
 
   const routeLine = pathStr
     ? `
-      L.polyline([${pathStr}],{color:'#818cf8',weight:5,opacity:0.35,lineCap:'round',lineJoin:'round'}).addTo(map);
-      L.polyline([${pathStr}],{color:'#6366f1',weight:3,opacity:1,lineCap:'round',lineJoin:'round'}).addTo(map);
+      L.polyline([${pathStr}],{color:'#818cf8',weight:10,opacity:0.25,lineCap:'round',lineJoin:'round'}).addTo(map);
+      L.polyline([${pathStr}],{color:'#6366f1',weight:4,opacity:1,lineCap:'round',lineJoin:'round'}).addTo(map);
     `
     : "";
 
@@ -92,11 +124,80 @@ function buildMiniMapHTML(pathPoints, userPos, targetRoom) {
     50% { transform: scale(1.3); opacity: 0.2; }
     100% { transform: scale(0.85); opacity: 0.7; }
   }
+  .layer-label {
+    background: rgba(10, 14, 23, 0.8); border: 1px solid rgba(255,255,255,0.2);
+    color: white; font-weight: bold; padding: 2px 6px; border-radius: 4px;
+    font-size: 11px; box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+  }
+  .room-label {
+    background: transparent; border: none; box-shadow: none;
+    color: #1e293b; font-weight: bold; font-size: 10px;
+    text-shadow: 0 1px 2px rgba(255,255,255,0.8);
+  }
+  .target-room-label {
+    background: transparent; border: none; box-shadow: none;
+    color: #ffffff; font-weight: bold; font-size: 11px;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+  }
 </style>
 </head><body><div id="map"></div>
 <script>
-var map = L.map('map',{zoomControl:false,attributionControl:false}).setView([${center[0]},${center[1]}],18);
+var map = L.map('map',{zoomControl:false,attributionControl:false}).setView([${center[0]},${center[1]}],19);
 L.tileLayer('${mapboxUrl}',{maxZoom:22,attribution:''}).addTo(map);
+
+var geojsonLayer = null;
+function styleFeature(feature) {
+  var baseStyle = { weight: 2, fillOpacity: 0.3 };
+  if (feature.properties.type === 'block') {
+    return Object.assign(baseStyle, { color: feature.properties.color || '#64748b', fillOpacity: 0.1 });
+  } else if (feature.properties.type === 'room') {
+    var isTarget = feature.properties.id === '${targetRoom?._id || ''}';
+    return Object.assign(baseStyle, { color: isTarget ? '#3b82f6' : '#64748b', fillColor: isTarget ? '#3b82f6' : '#ffffff', weight: isTarget ? 3 : 1, fillOpacity: isTarget ? 0.6 : 1 });
+  } else if (feature.properties.type === 'path') {
+    return { color: '#c084fc', weight: 4, opacity: 0.6, dashArray: '5, 5' };
+  } else if (feature.properties.type === 'map_layer') {
+    return Object.assign(baseStyle, { 
+      color: feature.properties.color || '#ef4444', 
+      fillColor: feature.properties.color || '#ef4444',
+      fillOpacity: 0.4, weight: 2
+    });
+  }
+  return baseStyle;
+}
+
+window.updateGeoJSON = function(data, floorId) {
+  if (geojsonLayer) { map.removeLayer(geojsonLayer); }
+  geojsonLayer = L.geoJSON(data, {
+    filter: function(f) {
+      if (f.properties.type === 'path' || f.properties.type === 'node') return false;
+      
+      // Hide parking areas unless it's the target destination
+      if (f.properties.category === 'parking' || (f.properties.name && f.properties.name.toLowerCase().includes('parking'))) {
+        if (f.properties.id !== '${targetRoom?._id || ''}') return false;
+      }
+
+      if (f.properties.type === 'room' && f.properties.floorId) {
+        if (floorId && f.properties.floorId !== floorId) return false;
+      }
+      return true;
+    },
+    style: styleFeature,
+    onEachFeature: function(f, l) {
+      if (f.properties && f.properties.name) {
+        if (f.properties.type === 'map_layer') {
+          l.bindTooltip(f.properties.name, { permanent: true, direction: 'center', className: 'layer-label' });
+        } else if (f.properties.type === 'room') {
+          var isTarget = f.properties.id === '${targetRoom?._id || ''}';
+          l.bindTooltip(f.properties.name, { permanent: true, direction: 'center', className: isTarget ? 'target-room-label' : 'room-label' });
+        }
+      }
+    }
+  }).addTo(map);
+};
+
+// Initialize MapLayers
+${geoJSONData ? `window.updateGeoJSON(${JSON.stringify(geoJSONData)}, '${targetRoom?.floorId || ''}');` : ''}
+
 ${routeLine}
 ${destDot}
 
@@ -314,6 +415,17 @@ export default function ARScreen({ navigation, route }) {
   const [currentStep, setCurrentStep] = useState(0);
   const [heading, setHeading] = useState(initialHeading || 0);
   const [userPos, setUserPos] = useState(initialUserPos || null);
+  const [geoJSONData, setGeoJSONData] = useState(null);
+
+  // Fetch GeoJSON data for floor plan mapping
+  useEffect(() => {
+    if (campusId) {
+      import("../api").then(({ getGeoJSONMapData }) => {
+        getGeoJSONMapData(campusId).then(setGeoJSONData).catch(console.warn);
+      });
+    }
+  }, [campusId]);
+
   const [liveDistance, setLiveDistance] = useState(
     routeData ? Math.round(routeData.distance || 0) : 0
   );
@@ -533,16 +645,30 @@ export default function ARScreen({ navigation, route }) {
     }
   }, [userPos]);
 
-  // ── Sync user position & heading to mini-map WebView
+  // ── Sync user position & heading to mini-map WebView (with route-snapping)
   useEffect(() => {
     if (!userPos || !miniMapRef.current) return;
+    const snappedPos = snapPositionToRoute(userPos, routeData?.path, currentStep);
     miniMapRef.current.injectJavaScript(`
       if (typeof window.updateUserPos === 'function') {
-        window.updateUserPos(${userPos.x}, ${userPos.y}, ${heading});
+        window.updateUserPos(${snappedPos.x}, ${snappedPos.y}, ${heading});
       }
       true;
     `);
-  }, [userPos, heading]);
+  }, [userPos, heading, routeData, currentStep]);
+
+  // ── Sync GeoJSON map layer to mini-map WebView
+  useEffect(() => {
+    if (geoJSONData && miniMapRef.current) {
+      const activeFloorId = targetRoom?.floorId || userPos?.floor;
+      miniMapRef.current.injectJavaScript(`
+        if (typeof window.updateGeoJSON === 'function') {
+          window.updateGeoJSON(${JSON.stringify(geoJSONData)}, '${activeFloorId || ''}');
+        }
+        true;
+      `);
+    }
+  }, [geoJSONData, userPos?.floor, targetRoom]);
 
   // ── Update AR path canvas: direction, pitch, and panning bearing
   useEffect(() => {
@@ -556,8 +682,8 @@ export default function ARScreen({ navigation, route }) {
   }, [arDirType, isNearTurn, pitch, bearingDiff]);
 
   const miniMapHtml = React.useMemo(() =>
-    buildMiniMapHTML(routeData?.path, initialUserPos, targetRoom),
-    [routeData, initialUserPos, targetRoom]
+    buildMiniMapHTML(routeData?.path, initialUserPos, targetRoom, geoJSONData),
+    [routeData, initialUserPos, targetRoom, geoJSONData]
   );
 
   const arPathHtml = React.useMemo(() =>
@@ -738,6 +864,14 @@ export default function ARScreen({ navigation, route }) {
               : "Hold upright for AR view"}
           </Text>
         </View>
+      )}
+
+      {/* ── ROBOT GUIDE ── */}
+      {!arrived && (
+        <ARRobotGuide
+          dirType={dirType}
+          instructionText={currentDir?.instruction || "Follow the highlighted path"}
+        />
       )}
 
       {/* ── ARRIVED OVERLAY ── */}

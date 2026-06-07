@@ -58,11 +58,12 @@ export default function QRScanScreen({ navigation }) {
     Animated.spring(successAnim, { toValue: 1, tension: 80, friction: 8, useNativeDriver: true }).start();
 
     try {
-      const lowerData = data.toLowerCase();
+      const trimmedData = data.trim();
+      const lowerData = trimmedData.toLowerCase();
       if (lowerData.startsWith("navx://campus/")) {
         // Handle case-insensitive split
         const prefixLength = "navx://campus/".length;
-        const campusId = data.substring(prefixLength);
+        const campusId = trimmedData.substring(prefixLength).trim();
         
         console.log("Scanning campus QR:", campusId);
 
@@ -114,9 +115,9 @@ export default function QRScanScreen({ navigation }) {
           return;
         }
       } else {
-        console.log("Scanning standard QR:", data);
+        console.log("Scanning standard QR:", trimmedData);
         // Encode the data to prevent Express routing errors on URLs with slashes
-        const qrData = await scanQRCode(encodeURIComponent(data));
+        const qrData = await scanQRCode(encodeURIComponent(trimmedData));
         console.log("Standard QR API response:", qrData);
         
         setResult(qrData);
