@@ -35,6 +35,37 @@ function haversine(lat1, lon1, lat2, lon2) {
 const AVG_STRIDE = 0.72;   // meters per step
 const WALK_SPEED = 1.2;    // m/s fallback
 
+function getClosestPointOnSegment(px, py, x1, y1, x2, y2) {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  if (dx === 0 && dy === 0) return { x: x1, y: y1 };
+
+  let t = ((px - x1) * dx + (py - y1) * dy) / (dx * dx + dy * dy);
+  t = Math.max(0, Math.min(1, t)); // clamp to segment
+
+  return {
+    x: x1 + t * dx,
+    y: y1 + t * dy
+  };
+}
+
+function snapPositionToRoute(pos, path, currentStep) {
+  if (!pos || !path || path.length === 0) return pos;
+  
+  const startNode = path[currentStep];
+  const endNode = path[Math.min(currentStep + 1, path.length - 1)];
+  if (!startNode || !endNode) return pos;
+
+  const snapped = getClosestPointOnSegment(pos.x, pos.y, startNode.x, startNode.y, endNode.x, endNode.y);
+  
+  // Calculate distance between raw and snapped in meters
+  const dist = haversine(pos.x, pos.y, snapped.x, snapped.y);
+  if (dist < 15) { // within 15 meters
+    return { ...pos, x: snapped.x, y: snapped.y };
+  }
+  return pos;
+}
+
 const DIR_ICONS = {
   left: "arrow-back",
   right: "arrow-forward",
@@ -288,17 +319,18 @@ export default function NavigationScreen({ navigation, route }) {
     }
   }, [campusId]);
 
-  // Push user location updates directly into the WebView via JS
+  // Push user location updates directly into the WebView via JS (with route-snapping)
   useEffect(() => {
     if (userPos && webViewRef.current) {
+      const snappedPos = snapPositionToRoute(userPos, routeData?.path, currentStep);
       webViewRef.current.injectJavaScript(`
         if (typeof window.updateUserPos === 'function') {
-          window.updateUserPos(${userPos.x}, ${userPos.y}, ${posEngine.heading});
+          window.updateUserPos(${snappedPos.x}, ${snappedPos.y}, ${posEngine.heading});
         }
         true;
       `);
     }
-  }, [userPos]);
+  }, [userPos, routeData, currentStep]);
 
   useEffect(() => {
     (async () => {
