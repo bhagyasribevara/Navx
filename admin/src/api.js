@@ -1,19 +1,126 @@
 import axios from "axios";
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "/api";
+let API_BASE = import.meta.env.VITE_API_BASE_URL || "/api";
+if (API_BASE.startsWith("http") && !API_BASE.endsWith("/api")) {
+  API_BASE = API_BASE.replace(/\/$/, "") + "/api";
+}
 
 const api = axios.create({
   baseURL: API_BASE,
-  timeout: 10000,
+  timeout: 30000,
   headers: { "Content-Type": "application/json" },
+  withCredentials: true // Phase 12: Secure Cookies support
 });
 
-// Admin Auth
+// Request Interceptor: Attach JWT Access Token (Phase 4, 12)
+api.interceptors.request.use(
+  (config) => {
+    const savedAdmin = localStorage.getItem("navx_admin");
+    if (savedAdmin) {
+      try {
+        const { token } = JSON.parse(savedAdmin);
+        if (token) {
+          config.headers["Authorization"] = `Bearer ${token}`;
+        }
+      } catch (e) {}
+    }
+    const token = localStorage.getItem("navx_token");
+    if (token && !config.headers["Authorization"]) {
+      config.headers["Authorization"] = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
+
+// Response Interceptor: Auto-Refresh Access Token (Phase 4, 12)
+let isRefreshing = false;
+let failedQueue = [];
+
+const processQueue = (error, token = null) => {
+  failedQueue.forEach((prom) => {
+    if (error) {
+      prom.reject(error);
+    } else {
+      prom.resolve(token);
+    }
+  });
+  failedQueue = [];
+};
+
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const originalRequest = error.config;
+    if (error.response?.status === 401 && error.response?.data?.code === "TOKEN_EXPIRED" && !originalRequest._retry) {
+      if (isRefreshing) {
+        return new Promise((resolve, reject) => {
+          failedQueue.push({ resolve, reject });
+        })
+          .then((token) => {
+            originalRequest.headers["Authorization"] = `Bearer ${token}`;
+            return api(originalRequest);
+          })
+          .catch((err) => Promise.reject(err));
+      }
+
+      originalRequest._retry = true;
+      isRefreshing = true;
+
+      try {
+        const savedAdmin = localStorage.getItem("navx_admin");
+        let localRefreshToken = "";
+        if (savedAdmin) {
+          const parsed = JSON.parse(savedAdmin);
+          localRefreshToken = parsed.refreshToken || "";
+        }
+        
+        // Hitting the refresh route
+        const res = await axios.post(`${API_BASE}/admin/refresh`, { refreshToken: localRefreshToken }, { withCredentials: true });
+        if (res.data.success) {
+          const { token, refreshToken } = res.data;
+          
+          // Update tokens in localStorage
+          if (savedAdmin) {
+            const parsed = JSON.parse(savedAdmin);
+            parsed.token = token;
+            if (refreshToken) parsed.refreshToken = refreshToken;
+            localStorage.setItem("navx_admin", JSON.stringify(parsed));
+          }
+          localStorage.setItem("navx_token", token);
+          
+          api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
+          originalRequest.headers["Authorization"] = `Bearer ${token}`;
+          
+          processQueue(null, token);
+          isRefreshing = false;
+          return api(originalRequest);
+        }
+      } catch (refreshError) {
+        processQueue(refreshError, null);
+        isRefreshing = false;
+        
+        // Refresh token invalid/expired - force logout (Phase 12)
+        localStorage.removeItem("navx_admin");
+        localStorage.removeItem("navx_token");
+        window.location.href = "/";
+        return Promise.reject(refreshError);
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+
+// Admin Auth & Management
 export const loginAdmin = (data) => api.post("/admin/login", data);
 export const createCampusAdmin = (data) => api.post("/admin/create-campus-admin", data);
 export const getAdmins = (superAdminId) => api.get(`/admin/admins/${superAdminId}`);
 export const deleteCampusAdmin = (superAdminId, adminId) => api.delete(`/admin/admins/${superAdminId}/${adminId}`);
 export const updateCampusAdmin = (superAdminId, adminId, data) => api.put(`/admin/admins/${superAdminId}/${adminId}`, data);
+export const toggleAdminStatus = (adminId, status) => api.post(`/admin/admins/${adminId}/status`, { status });
+export const revokeAdminSessions = (adminId) => api.post(`/admin/admins/${adminId}/revoke`);
+export const regenerateCampusUrl = (campusId, campusCode) => api.post(`/campus/${campusId}/regenerate-url`, { campusCode });
+export const getCampusByCode = (campusCode) => api.get(`/campus/code/${campusCode}`);
 
 // Campus
 export const getCampuses = () => api.get("/campus");

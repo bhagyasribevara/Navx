@@ -117,7 +117,7 @@ export default function CampusManager({ admin }) {
   const load = () => {
     getCampuses().then(r => {
       let campusList = r.data;
-      if (admin && (admin.role === 'CampusAdmin' || admin.role === 'VenueAdmin') && admin.campusId) {
+      if (admin && (admin.role === 'CampusAdmin' || admin.role === 'VenueAdmin' || admin.role === 'campus_admin') && admin.campusId) {
         const cId = admin.campusId._id || admin.campusId;
         campusList = campusList.filter(c => c._id === cId);
       }
@@ -200,7 +200,15 @@ export default function CampusManager({ admin }) {
               <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>{c.description || 'No description'}</p>
               <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>📍 {c.address || 'No address'}</p>
               <div style={{ marginTop: 16, display: 'flex', flexWrap: 'wrap', gap: 8, position: 'relative', zIndex: 10 }}>
-                <button type="button" className="btn btn-primary btn-sm" onClick={(e) => { e.stopPropagation(); navigate(`/editor/${c._id}`); }}>
+                <button type="button" className="btn btn-primary btn-sm" onClick={(e) => { 
+                  e.stopPropagation(); 
+                  const targetCode = admin?.campus?.campusCode || admin?.campusId?.campusCode;
+                  if (targetCode) {
+                    navigate(`/campus/${targetCode}/editor/${c._id}`);
+                  } else {
+                    navigate(`/editor/${c._id}`);
+                  }
+                }}>
                   <FiMap /> Open Editor
                 </button>
                 <button type="button" className="btn btn-secondary btn-sm" onClick={(e) => { e.stopPropagation(); setSelectedQR(c); setShowQRModal(true); }}>

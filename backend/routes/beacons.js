@@ -1,7 +1,9 @@
 const router = require('express').Router();
 const Beacon = require('../models/Beacon');
+const Floor = require('../models/Floor');
+const { authenticateJWT, optionalAuthenticateJWT, enforceCampusIsolation } = require('../utils/auth');
 
-router.get('/', async (req, res) => {
+router.get('/', optionalAuthenticateJWT, enforceCampusIsolation, async (req, res) => {
   try {
     const filter = { isActive: true };
     if (req.query.floorId) filter.floorId = req.query.floorId;
@@ -21,14 +23,21 @@ router.get('/detect/:beaconId', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-router.get('/floor/:floorId', async (req, res) => {
+router.get('/floor/:floorId', optionalAuthenticateJWT, async (req, res) => {
   try {
+    const floor = await Floor.findById(req.params.floorId);
+    if (!floor) return res.status(404).json({ error: 'Floor not found' });
+
+    if (req.admin && req.admin.role !== 'SuperAdmin' && floor.campusId.toString() !== req.admin.campusId.toString()) {
+      return res.status(403).json({ error: 'Access Denied: Floor belongs to another campus.' });
+    }
+
     const beacons = await Beacon.find({ floorId: req.params.floorId, isActive: true });
     res.json(beacons);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-router.post('/', async (req, res) => {
+router.post('/', authenticateJWT, enforceCampusIsolation, async (req, res) => {
   try {
     const beacon = new Beacon(req.body);
     await beacon.save();
@@ -36,7 +45,7 @@ router.post('/', async (req, res) => {
   } catch (err) { res.status(400).json({ error: err.message }); }
 });
 
-router.put('/:id', async (req, res) => {
+router.put('/:id', authenticateJWT, enforceCampusIsolation, async (req, res) => {
   try {
     const beacon = await Beacon.findByIdAndUpdate(req.params.id, req.body, { new: true });
     if (!beacon) return res.status(404).json({ error: 'Beacon not found' });
@@ -44,7 +53,7 @@ router.put('/:id', async (req, res) => {
   } catch (err) { res.status(400).json({ error: err.message }); }
 });
 
-router.put('/:id/calibrate', async (req, res) => {
+router.put('/:id/calibrate', authenticateJWT, enforceCampusIsolation, async (req, res) => {
   try {
     const beacon = await Beacon.findByIdAndUpdate(req.params.id, { calibration: req.body }, { new: true });
     if (!beacon) return res.status(404).json({ error: 'Beacon not found' });
@@ -52,7 +61,7 @@ router.put('/:id/calibrate', async (req, res) => {
   } catch (err) { res.status(400).json({ error: err.message }); }
 });
 
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', authenticateJWT, enforceCampusIsolation, async (req, res) => {
   try {
     await Beacon.findByIdAndUpdate(req.params.id, { isActive: false });
     res.json({ message: 'Beacon deleted' });

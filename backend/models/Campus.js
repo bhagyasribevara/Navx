@@ -2,6 +2,15 @@ const mongoose = require('mongoose');
 
 const campusSchema = new mongoose.Schema({
   name: { type: String, required: true, unique: true },
+  campusName: { type: String, unique: true, sparse: true, default: function() { return this.name; } },
+  campusCode: { type: String, unique: true, sparse: true, lowercase: true, trim: true },
+  adminUrl: { type: String, default: '' },
+  adminId: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+  status: { 
+    type: String, 
+    enum: ['active', 'disabled'], 
+    default: 'active' 
+  },
   description: { type: String, default: '' },
   address: { type: String, default: '' },
   venueType: { 

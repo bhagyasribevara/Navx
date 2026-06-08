@@ -1,58 +1,57 @@
 const router = require('express').Router();
-const Floor = require('../models/Floor');
+const Landmark = require('../models/Landmark');
 const { authenticateJWT, optionalAuthenticateJWT, enforceCampusIsolation } = require('../utils/auth');
 
-// GET all floors (filter by blockId or campusId)
+// GET all landmarks (filter by campusId)
 router.get('/', optionalAuthenticateJWT, enforceCampusIsolation, async (req, res) => {
   try {
     const filter = { isActive: true };
-    if (req.query.blockId) filter.blockId = req.query.blockId;
     if (req.query.campusId) filter.campusId = req.query.campusId;
-    const floors = await Floor.find(filter).sort({ level: 1 });
-    res.json(floors);
+    const landmarks = await Landmark.find(filter);
+    res.json(landmarks);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// GET single floor
+// GET single landmark
 router.get('/:id', optionalAuthenticateJWT, enforceCampusIsolation, async (req, res) => {
   try {
-    const floor = await Floor.findById(req.params.id);
-    if (!floor) return res.status(404).json({ error: 'Floor not found' });
-    res.json(floor);
+    const landmark = await Landmark.findById(req.params.id);
+    if (!landmark) return res.status(404).json({ error: 'Landmark not found' });
+    res.json(landmark);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// POST create floor
+// POST create landmark
 router.post('/', authenticateJWT, enforceCampusIsolation, async (req, res) => {
   try {
-    const floor = new Floor(req.body);
-    await floor.save();
-    res.status(201).json(floor);
+    const landmark = new Landmark(req.body);
+    await landmark.save();
+    res.status(201).json(landmark);
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
 });
 
-// PUT update floor
+// PUT update landmark
 router.put('/:id', authenticateJWT, enforceCampusIsolation, async (req, res) => {
   try {
-    const floor = await Floor.findByIdAndUpdate(req.params.id, req.body, { new: true });
-    if (!floor) return res.status(404).json({ error: 'Floor not found' });
-    res.json(floor);
+    const landmark = await Landmark.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    if (!landmark) return res.status(404).json({ error: 'Landmark not found' });
+    res.json(landmark);
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
 });
 
-// DELETE floor
+// DELETE landmark
 router.delete('/:id', authenticateJWT, enforceCampusIsolation, async (req, res) => {
   try {
-    await Floor.findByIdAndUpdate(req.params.id, { isActive: false });
-    res.json({ message: 'Floor deleted' });
+    await Landmark.findByIdAndUpdate(req.params.id, { isActive: false });
+    res.json({ message: 'Landmark deleted successfully' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useOutletContext } from "react-router-dom";
 import { FiMap, FiGrid, FiLayers, FiNavigation, FiPlus } from "react-icons/fi";
 import { getBlocks, getCampuses, getFloors } from "../api";
 
@@ -11,19 +11,26 @@ export default function Dashboard({ admin }) {
   });
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
+  const context = useOutletContext() || {};
 
   useEffect(() => {
     let mounted = true;
 
     const load = async () => {
       try {
-        const campusesRes = await getCampuses();
-        let campusList = campusesRes.data;
+        let campusList = [];
         
-        // Filter for CampusAdmin or VenueAdmin
-        if (admin && (admin.role === 'CampusAdmin' || admin.role === 'VenueAdmin') && admin.campusId) {
-          const cId = admin.campusId._id || admin.campusId;
-          campusList = campusList.filter(c => c._id === cId);
+        if (context.campus) {
+          campusList = [context.campus];
+        } else {
+          const campusesRes = await getCampuses();
+          campusList = campusesRes.data;
+          
+          // Filter for CampusAdmin or VenueAdmin or campus_admin
+          if (admin && (admin.role === 'CampusAdmin' || admin.role === 'VenueAdmin' || admin.role === 'campus_admin') && admin.campusId) {
+            const cId = admin.campusId._id || admin.campusId;
+            campusList = campusList.filter(c => c._id === cId);
+          }
         }
 
         if (!mounted) return;
@@ -171,72 +178,75 @@ export default function Dashboard({ admin }) {
         </div>
       ) : (
         <div className="card-grid">
-          {campuses.map((c) => (
-            <div
-              className="card"
-              key={c._id}
-              style={{ cursor: "pointer" }}
-              onClick={() => navigate(`/editor/${c._id}`)}
-            >
+          {campuses.map((c) => {
+            const prefix = context.campus ? `/campus/${context.campus.campusCode}` : '';
+            return (
               <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "start",
-                }}
+                className="card"
+                key={c._id}
+                style={{ cursor: "pointer" }}
+                onClick={() => navigate(`${prefix}/editor/${c._id}`)}
               >
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ fontSize: 18 }}>
-                      {({'campus':'🎓','hospital':'🏥','airport':'✈️','mall':'🛍️','building':'🏢'})[c.venueType] || '📍'}
-                    </span>
-                    <h3 style={{ fontSize: 16, fontWeight: 600, margin: 0 }}>{c.name}</h3>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "start",
+                  }}
+                >
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 18 }}>
+                        {({'campus':'🎓','hospital':'🏥','airport':'✈️','mall':'🛍️','building':'🏢'})[c.venueType] || '📍'}
+                      </span>
+                      <h3 style={{ fontSize: 16, fontWeight: 600, margin: 0 }}>{c.name}</h3>
+                    </div>
+                    <p
+                      style={{
+                        fontSize: 13,
+                        color: "var(--text-muted)",
+                        marginTop: 4,
+                      }}
+                    >
+                      {c.description || "No description"}
+                    </p>
                   </div>
-                  <p
-                    style={{
-                      fontSize: 13,
-                      color: "var(--text-muted)",
-                      marginTop: 4,
+                  <span className="badge badge-success">Active</span>
+                </div>
+                <div
+                  style={{
+                    marginTop: 16,
+                    display: "flex",
+                    gap: 16,
+                    fontSize: 12,
+                    color: "var(--text-muted)",
+                  }}
+                >
+                  <span>📍 {c.address || "No address"}</span>
+                </div>
+                <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      navigate(`${prefix}/editor/${c._id}`);
                     }}
                   >
-                    {c.description || "No description"}
-                  </p>
+                    <FiMap /> Edit Map
+                  </button>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      navigate(`${prefix}/positioning/${c._id}`);
+                    }}
+                  >
+                    <FiNavigation /> Positioning
+                  </button>
                 </div>
-                <span className="badge badge-success">Active</span>
               </div>
-              <div
-                style={{
-                  marginTop: 16,
-                  display: "flex",
-                  gap: 16,
-                  fontSize: 12,
-                  color: "var(--text-muted)",
-                }}
-              >
-                <span>📍 {c.address || "No address"}</span>
-              </div>
-              <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
-                <button
-                  className="btn btn-secondary btn-sm"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    navigate(`/editor/${c._id}`);
-                  }}
-                >
-                  <FiMap /> Edit Map
-                </button>
-                <button
-                  className="btn btn-secondary btn-sm"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    navigate(`/positioning/${c._id}`);
-                  }}
-                >
-                  <FiNavigation /> Positioning
-                </button>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

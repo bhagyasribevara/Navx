@@ -1,58 +1,57 @@
 const router = require('express').Router();
-const Floor = require('../models/Floor');
+const Announcement = require('../models/Announcement');
 const { authenticateJWT, optionalAuthenticateJWT, enforceCampusIsolation } = require('../utils/auth');
 
-// GET all floors (filter by blockId or campusId)
+// GET all announcements (filter by campusId)
 router.get('/', optionalAuthenticateJWT, enforceCampusIsolation, async (req, res) => {
   try {
     const filter = { isActive: true };
-    if (req.query.blockId) filter.blockId = req.query.blockId;
     if (req.query.campusId) filter.campusId = req.query.campusId;
-    const floors = await Floor.find(filter).sort({ level: 1 });
-    res.json(floors);
+    const announcements = await Announcement.find(filter).sort({ createdAt: -1 });
+    res.json(announcements);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// GET single floor
+// GET single announcement
 router.get('/:id', optionalAuthenticateJWT, enforceCampusIsolation, async (req, res) => {
   try {
-    const floor = await Floor.findById(req.params.id);
-    if (!floor) return res.status(404).json({ error: 'Floor not found' });
-    res.json(floor);
+    const announcement = await Announcement.findById(req.params.id);
+    if (!announcement) return res.status(404).json({ error: 'Announcement not found' });
+    res.json(announcement);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// POST create floor
+// POST create announcement
 router.post('/', authenticateJWT, enforceCampusIsolation, async (req, res) => {
   try {
-    const floor = new Floor(req.body);
-    await floor.save();
-    res.status(201).json(floor);
+    const announcement = new Announcement(req.body);
+    await announcement.save();
+    res.status(201).json(announcement);
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
 });
 
-// PUT update floor
+// PUT update announcement
 router.put('/:id', authenticateJWT, enforceCampusIsolation, async (req, res) => {
   try {
-    const floor = await Floor.findByIdAndUpdate(req.params.id, req.body, { new: true });
-    if (!floor) return res.status(404).json({ error: 'Floor not found' });
-    res.json(floor);
+    const announcement = await Announcement.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    if (!announcement) return res.status(404).json({ error: 'Announcement not found' });
+    res.json(announcement);
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
 });
 
-// DELETE floor
+// DELETE announcement
 router.delete('/:id', authenticateJWT, enforceCampusIsolation, async (req, res) => {
   try {
-    await Floor.findByIdAndUpdate(req.params.id, { isActive: false });
-    res.json({ message: 'Floor deleted' });
+    await Announcement.findByIdAndUpdate(req.params.id, { isActive: false });
+    res.json({ message: 'Announcement deleted successfully' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -1,58 +1,57 @@
 const router = require('express').Router();
-const Floor = require('../models/Floor');
+const NavigationGraph = require('../models/NavigationGraph');
 const { authenticateJWT, optionalAuthenticateJWT, enforceCampusIsolation } = require('../utils/auth');
 
-// GET all floors (filter by blockId or campusId)
+// GET all navigation graphs (filter by campusId)
 router.get('/', optionalAuthenticateJWT, enforceCampusIsolation, async (req, res) => {
   try {
     const filter = { isActive: true };
-    if (req.query.blockId) filter.blockId = req.query.blockId;
     if (req.query.campusId) filter.campusId = req.query.campusId;
-    const floors = await Floor.find(filter).sort({ level: 1 });
-    res.json(floors);
+    const graphs = await NavigationGraph.find(filter);
+    res.json(graphs);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// GET single floor
+// GET single navigation graph
 router.get('/:id', optionalAuthenticateJWT, enforceCampusIsolation, async (req, res) => {
   try {
-    const floor = await Floor.findById(req.params.id);
-    if (!floor) return res.status(404).json({ error: 'Floor not found' });
-    res.json(floor);
+    const graph = await NavigationGraph.findById(req.params.id);
+    if (!graph) return res.status(404).json({ error: 'Navigation graph not found' });
+    res.json(graph);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// POST create floor
+// POST create navigation graph
 router.post('/', authenticateJWT, enforceCampusIsolation, async (req, res) => {
   try {
-    const floor = new Floor(req.body);
-    await floor.save();
-    res.status(201).json(floor);
+    const graph = new NavigationGraph(req.body);
+    await graph.save();
+    res.status(201).json(graph);
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
 });
 
-// PUT update floor
+// PUT update navigation graph
 router.put('/:id', authenticateJWT, enforceCampusIsolation, async (req, res) => {
   try {
-    const floor = await Floor.findByIdAndUpdate(req.params.id, req.body, { new: true });
-    if (!floor) return res.status(404).json({ error: 'Floor not found' });
-    res.json(floor);
+    const graph = await NavigationGraph.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    if (!graph) return res.status(404).json({ error: 'Navigation graph not found' });
+    res.json(graph);
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
 });
 
-// DELETE floor
+// DELETE navigation graph
 router.delete('/:id', authenticateJWT, enforceCampusIsolation, async (req, res) => {
   try {
-    await Floor.findByIdAndUpdate(req.params.id, { isActive: false });
-    res.json({ message: 'Floor deleted' });
+    await NavigationGraph.findByIdAndUpdate(req.params.id, { isActive: false });
+    res.json({ message: 'Navigation graph deleted successfully' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -1,8 +1,9 @@
 const router = require('express').Router();
 const Room = require('../models/Room');
+const { authenticateJWT, optionalAuthenticateJWT, enforceCampusIsolation } = require('../utils/auth');
 
 // GET all rooms (filter by floorId, blockId, campusId)
-router.get('/', async (req, res) => {
+router.get('/', optionalAuthenticateJWT, enforceCampusIsolation, async (req, res) => {
   try {
     const filter = { isActive: true };
     if (req.query.floorId && req.query.blockId) {
@@ -27,7 +28,7 @@ router.get('/', async (req, res) => {
 });
 
 // GET search rooms
-router.get('/search/:query', async (req, res) => {
+router.get('/search/:query', optionalAuthenticateJWT, enforceCampusIsolation, async (req, res) => {
   try {
     const query = req.params.query;
     const filter = { isActive: true };
@@ -53,7 +54,7 @@ router.get('/search/:query', async (req, res) => {
 });
 
 // GET single room
-router.get('/:id', async (req, res) => {
+router.get('/:id', optionalAuthenticateJWT, enforceCampusIsolation, async (req, res) => {
   try {
     const room = await Room.findById(req.params.id)
       .populate('floorId', 'name level')
@@ -66,7 +67,7 @@ router.get('/:id', async (req, res) => {
 });
 
 // POST create room
-router.post('/', async (req, res) => {
+router.post('/', authenticateJWT, enforceCampusIsolation, async (req, res) => {
   try {
     const room = new Room(req.body);
     await room.save();
@@ -77,7 +78,7 @@ router.post('/', async (req, res) => {
 });
 
 // PUT update room
-router.put('/:id', async (req, res) => {
+router.put('/:id', authenticateJWT, enforceCampusIsolation, async (req, res) => {
   try {
     console.log(`[UPDATE ROOM] Received shape for ${req.params.id}:`, JSON.stringify(req.body.shape));
     const room = await Room.findByIdAndUpdate(req.params.id, req.body, { new: true });
@@ -90,7 +91,7 @@ router.put('/:id', async (req, res) => {
 });
 
 // DELETE room
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', authenticateJWT, enforceCampusIsolation, async (req, res) => {
   try {
     await Room.findByIdAndUpdate(req.params.id, { isActive: false });
     res.json({ message: 'Room deleted' });
@@ -100,7 +101,7 @@ router.delete('/:id', async (req, res) => {
 });
 
 // DELETE stairs/elevator from a specific floor (adds floor to excludedFloors)
-router.delete('/:id/floor/:floorId', async (req, res) => {
+router.delete('/:id/floor/:floorId', authenticateJWT, enforceCampusIsolation, async (req, res) => {
   try {
     const room = await Room.findById(req.params.id);
     if (!room) return res.status(404).json({ error: 'Room not found' });
@@ -120,7 +121,7 @@ router.delete('/:id/floor/:floorId', async (req, res) => {
 });
 
 // RESTORE stairs/elevator to a specific floor (removes floor from excludedFloors)
-router.put('/:id/floor/:floorId/restore', async (req, res) => {
+router.put('/:id/floor/:floorId/restore', authenticateJWT, enforceCampusIsolation, async (req, res) => {
   try {
     const room = await Room.findById(req.params.id);
     if (!room) return res.status(404).json({ error: 'Room not found' });
@@ -135,7 +136,7 @@ router.put('/:id/floor/:floorId/restore', async (req, res) => {
 });
 
 // GET excluded floors for a specific stairs/elevator room
-router.get('/:id/excluded-floors', async (req, res) => {
+router.get('/:id/excluded-floors', optionalAuthenticateJWT, enforceCampusIsolation, async (req, res) => {
   try {
     const room = await Room.findById(req.params.id).populate('excludedFloors', 'name level');
     if (!room) return res.status(404).json({ error: 'Room not found' });

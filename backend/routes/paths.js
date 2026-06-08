@@ -1,9 +1,10 @@
 const router = require('express').Router();
 const NavPath = require('../models/NavPath');
 const NavNode = require('../models/NavNode');
+const { authenticateJWT, optionalAuthenticateJWT, enforceCampusIsolation } = require('../utils/auth');
 
 // GET all paths (filter by floorId, campusId)
-router.get('/', async (req, res) => {
+router.get('/', optionalAuthenticateJWT, enforceCampusIsolation, async (req, res) => {
   try {
     const filter = { isActive: true };
     if (req.query.floorId) {
@@ -18,7 +19,7 @@ router.get('/', async (req, res) => {
 });
 
 // POST create path (auto-calculate distance)
-router.post('/', async (req, res) => {
+router.post('/', authenticateJWT, enforceCampusIsolation, async (req, res) => {
   try {
     const nodeA = await NavNode.findById(req.body.nodeA);
     const nodeB = await NavNode.findById(req.body.nodeB);
@@ -43,8 +44,13 @@ router.post('/', async (req, res) => {
 });
 
 // POST bulk create paths
-router.post('/bulk', async (req, res) => {
+router.post('/bulk', authenticateJWT, enforceCampusIsolation, async (req, res) => {
   try {
+    const pathsArray = req.body.paths;
+    if (req.admin.role !== 'SuperAdmin' && req.admin.campusId) {
+      // Force campusId on all bulk items (Phase 12: Security Protection)
+      req.body.paths = pathsArray.map(p => ({ ...p, campusId: req.admin.campusId }));
+    }
     const paths = await NavPath.insertMany(req.body.paths);
     res.status(201).json(paths);
   } catch (err) {
@@ -53,7 +59,7 @@ router.post('/bulk', async (req, res) => {
 });
 
 // PUT update path
-router.put('/:id', async (req, res) => {
+router.put('/:id', authenticateJWT, enforceCampusIsolation, async (req, res) => {
   try {
     const path = await NavPath.findByIdAndUpdate(req.params.id, req.body, { new: true });
     if (!path) return res.status(404).json({ error: 'Path not found' });
@@ -64,7 +70,7 @@ router.put('/:id', async (req, res) => {
 });
 
 // DELETE path
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', authenticateJWT, enforceCampusIsolation, async (req, res) => {
   try {
     await NavPath.findByIdAndUpdate(req.params.id, { isActive: false });
     res.json({ message: 'Path deleted' });

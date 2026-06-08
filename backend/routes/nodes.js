@@ -1,8 +1,9 @@
 const router = require('express').Router();
 const NavNode = require('../models/NavNode');
+const { authenticateJWT, optionalAuthenticateJWT, enforceCampusIsolation } = require('../utils/auth');
 
 // GET all nodes (filter by floorId, campusId)
-router.get('/', async (req, res) => {
+router.get('/', optionalAuthenticateJWT, enforceCampusIsolation, async (req, res) => {
   try {
     const filter = { isActive: true };
     if (req.query.floorId && req.query.floorId !== 'null' && req.query.blockId) {
@@ -25,7 +26,7 @@ router.get('/', async (req, res) => {
 });
 
 // GET single node
-router.get('/:id', async (req, res) => {
+router.get('/:id', optionalAuthenticateJWT, enforceCampusIsolation, async (req, res) => {
   try {
     const node = await NavNode.findById(req.params.id);
     if (!node) return res.status(404).json({ error: 'Node not found' });
@@ -36,7 +37,7 @@ router.get('/:id', async (req, res) => {
 });
 
 // POST create node
-router.post('/', async (req, res) => {
+router.post('/', authenticateJWT, enforceCampusIsolation, async (req, res) => {
   try {
     const node = new NavNode(req.body);
     await node.save();
@@ -47,8 +48,13 @@ router.post('/', async (req, res) => {
 });
 
 // POST bulk create nodes
-router.post('/bulk', async (req, res) => {
+router.post('/bulk', authenticateJWT, enforceCampusIsolation, async (req, res) => {
   try {
+    const nodesArray = req.body.nodes;
+    if (req.admin.role !== 'SuperAdmin' && req.admin.campusId) {
+      // Force campusId on all bulk items (Phase 12: Security Protection)
+      req.body.nodes = nodesArray.map(n => ({ ...n, campusId: req.admin.campusId }));
+    }
     const nodes = await NavNode.insertMany(req.body.nodes);
     res.status(201).json(nodes);
   } catch (err) {
@@ -57,7 +63,7 @@ router.post('/bulk', async (req, res) => {
 });
 
 // PUT update node
-router.put('/:id', async (req, res) => {
+router.put('/:id', authenticateJWT, enforceCampusIsolation, async (req, res) => {
   try {
     const node = await NavNode.findByIdAndUpdate(req.params.id, req.body, { new: true });
     if (!node) return res.status(404).json({ error: 'Node not found' });
@@ -68,7 +74,7 @@ router.put('/:id', async (req, res) => {
 });
 
 // DELETE node
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', authenticateJWT, enforceCampusIsolation, async (req, res) => {
   try {
     await NavNode.findByIdAndUpdate(req.params.id, { isActive: false });
     res.json({ message: 'Node deleted' });

@@ -1,10 +1,12 @@
 const router = require('express').Router();
 const QRCode = require('../models/QRCode');
+const Floor = require('../models/Floor');
 const qrcode = require('qrcode');
 const { v4: uuidv4 } = require('uuid');
+const { authenticateJWT, optionalAuthenticateJWT, enforceCampusIsolation } = require('../utils/auth');
 
 // GET all QR codes (filter by floorId, campusId)
-router.get('/', async (req, res) => {
+router.get('/', optionalAuthenticateJWT, enforceCampusIsolation, async (req, res) => {
   try {
     const filter = { isActive: true };
     if (req.query.floorId) filter.floorId = req.query.floorId;
@@ -17,7 +19,7 @@ router.get('/', async (req, res) => {
   }
 });
 
-// GET QR code by code string (for mobile scanning)
+// GET QR code by code string (for mobile scanning - public)
 router.get('/scan/:code', async (req, res) => {
   try {
     const qr = await QRCode.findOne({ code: req.params.code, isActive: true })
@@ -32,7 +34,7 @@ router.get('/scan/:code', async (req, res) => {
 });
 
 // POST create QR code
-router.post('/', async (req, res) => {
+router.post('/', authenticateJWT, enforceCampusIsolation, async (req, res) => {
   try {
     if (!req.body.code) {
       req.body.code = `NAVX-${uuidv4().substring(0, 8).toUpperCase()}`;
@@ -46,7 +48,7 @@ router.post('/', async (req, res) => {
 });
 
 // GET generate QR image for printing
-router.get('/:id/image', async (req, res) => {
+router.get('/:id/image', optionalAuthenticateJWT, enforceCampusIsolation, async (req, res) => {
   try {
     const qr = await QRCode.findById(req.params.id);
     if (!qr) return res.status(404).json({ error: 'QR code not found' });
@@ -67,9 +69,17 @@ router.get('/:id/image', async (req, res) => {
   }
 });
 
-// GET export all QR codes for a floor as printable
-router.get('/export/:floorId', async (req, res) => {
+// GET export all QR codes for a floor as printable (Admin only)
+router.get('/export/:floorId', authenticateJWT, async (req, res) => {
   try {
+    const floor = await Floor.findById(req.params.floorId);
+    if (!floor) return res.status(404).json({ error: 'Floor not found' });
+    
+    // Check campus level authorization
+    if (req.admin.role !== 'SuperAdmin' && floor.campusId.toString() !== req.admin.campusId.toString()) {
+      return res.status(403).json({ error: 'Access Denied: Floor belongs to another campus.' });
+    }
+
     const qrcodes = await QRCode.find({ floorId: req.params.floorId, isActive: true });
     const results = await Promise.all(qrcodes.map(async (qr) => {
       const image = await qrcode.toDataURL(qr.code, {
@@ -85,7 +95,7 @@ router.get('/export/:floorId', async (req, res) => {
 });
 
 // PUT update QR code
-router.put('/:id', async (req, res) => {
+router.put('/:id', authenticateJWT, enforceCampusIsolation, async (req, res) => {
   try {
     const qr = await QRCode.findByIdAndUpdate(req.params.id, req.body, { new: true });
     if (!qr) return res.status(404).json({ error: 'QR code not found' });
@@ -96,7 +106,7 @@ router.put('/:id', async (req, res) => {
 });
 
 // DELETE QR code
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', authenticateJWT, enforceCampusIsolation, async (req, res) => {
   try {
     await QRCode.findByIdAndUpdate(req.params.id, { isActive: false });
     res.json({ message: 'QR code deleted' });

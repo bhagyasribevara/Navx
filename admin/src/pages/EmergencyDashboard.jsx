@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useOutletContext } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { FiAlertTriangle, FiCheckCircle } from 'react-icons/fi';
 import { getCampuses, triggerEmergency } from '../api';
@@ -6,14 +7,22 @@ import { getCampuses, triggerEmergency } from '../api';
 export default function EmergencyDashboard({ admin }) {
   const [campuses, setCampuses] = useState([]);
   const [loading, setLoading] = useState(true);
+  const context = useOutletContext() || {};
 
   const fetchCampuses = async () => {
     try {
-      const { data } = await getCampuses();
-      let campusList = data;
-      if (admin && (admin.role === 'CampusAdmin' || admin.role === 'VenueAdmin') && admin.campusId) {
-        const cId = admin.campusId._id || admin.campusId;
-        campusList = campusList.filter(c => c._id === cId);
+      let campusList = [];
+      if (context.campus) {
+        const { getCampus } = await import('../api');
+        const { data } = await getCampus(context.campus._id);
+        campusList = [data];
+      } else {
+        const { data } = await getCampuses();
+        campusList = data;
+        if (admin && (admin.role === 'CampusAdmin' || admin.role === 'VenueAdmin' || admin.role === 'campus_admin') && admin.campusId) {
+          const cId = admin.campusId._id || admin.campusId;
+          campusList = campusList.filter(c => c._id === cId);
+        }
       }
       setCampuses(campusList);
     } catch (err) {

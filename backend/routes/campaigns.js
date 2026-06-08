@@ -1,5 +1,6 @@
 const router = require('express').Router();
 const Campaign = require('../models/Campaign');
+const { authenticateJWT, optionalAuthenticateJWT, enforceCampusIsolation } = require('../utils/auth');
 
 const populate = (q) => q
   .populate('destination.blockId', 'name')
@@ -13,7 +14,7 @@ const emit = (req, campusId, event, payload) => {
 };
 
 // ─── GET top-level campaigns for a campus (parentId = null) ───────────────────
-router.get('/campus/:campusId', async (req, res) => {
+router.get('/campus/:campusId', optionalAuthenticateJWT, enforceCampusIsolation, async (req, res) => {
   try {
     const filter = { campusId: req.params.campusId, parentId: null };
     if (req.query.active === 'true') filter.isActive = true;
@@ -41,7 +42,7 @@ router.get('/campus/:campusId', async (req, res) => {
 });
 
 // ─── GET sub-campaigns of a parent ───────────────────────────────────────────
-router.get('/:id/sub', async (req, res) => {
+router.get('/:id/sub', optionalAuthenticateJWT, enforceCampusIsolation, async (req, res) => {
   try {
     const filter = { parentId: req.params.id };
     if (req.query.active === 'true') filter.isActive = true;
@@ -53,7 +54,7 @@ router.get('/:id/sub', async (req, res) => {
 });
 
 // ─── GET single campaign ───────────────────────────────────────────────────────
-router.get('/:id', async (req, res) => {
+router.get('/:id', optionalAuthenticateJWT, enforceCampusIsolation, async (req, res) => {
   try {
     const campaign = await populate(Campaign.findById(req.params.id));
     if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
@@ -64,7 +65,7 @@ router.get('/:id', async (req, res) => {
 });
 
 // ─── POST create campaign or sub-campaign ─────────────────────────────────────
-router.post('/', async (req, res) => {
+router.post('/', authenticateJWT, enforceCampusIsolation, async (req, res) => {
   try {
     const campaign = new Campaign(req.body);
     await campaign.save();
@@ -81,7 +82,7 @@ router.post('/', async (req, res) => {
 });
 
 // ─── PUT update campaign ───────────────────────────────────────────────────────
-router.put('/:id', async (req, res) => {
+router.put('/:id', authenticateJWT, enforceCampusIsolation, async (req, res) => {
   try {
     const campaign = await Campaign.findByIdAndUpdate(req.params.id, req.body, { new: true });
     if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
@@ -98,7 +99,7 @@ router.put('/:id', async (req, res) => {
 });
 
 // ─── DELETE campaign (and all its sub-campaigns) ──────────────────────────────
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', authenticateJWT, enforceCampusIsolation, async (req, res) => {
   try {
     const campaign = await Campaign.findById(req.params.id);
     if (!campaign) return res.status(404).json({ error: 'Campaign not found' });

@@ -4,104 +4,170 @@ const Block = require('../models/Block');
 const Room = require('../models/Room');
 const NavPath = require('../models/NavPath');
 const MapLayer = require('../models/MapLayer');
+const Admin = require('../models/Admin');
+const { authenticateJWT, enforceCampusIsolation } = require('../utils/auth');
 
-// GET all campuses
+// GET all campuses (Phase 13: Scalability - public)
 router.get('/', async (req, res) => {
   try {
-    const campuses = await Campus.find({ isActive: true }).sort({ createdAt: 1 });
+    const campuses = await Campus.find({ isActive: true, status: 'active' }).sort({ createdAt: 1 });
     res.json(campuses);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// GET single campus
-router.get('/:id', async (req, res) => {
+// GET single campus by campusCode (Phase 3: Dynamic Route Resolution)
+router.get('/code/:campusCode', async (req, res) => {
   try {
-    const campus = await Campus.findById(req.params.id);
-    if (!campus) return res.status(404).json({ error: 'Campus not found' });
+    const campus = await Campus.findOne({ campusCode: req.params.campusCode.toLowerCase() });
+    if (!campus) {
+      return res.status(404).json({ error: 'Campus Not Found' });
+    }
+    if (campus.status === 'disabled') {
+      return res.status(403).json({ error: 'Campus has been disabled by administrator.' });
+    }
     res.json(campus);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// POST create campus
-router.post('/', async (req, res) => {
+// GET single campus by ID (public)
+router.get('/:id', async (req, res) => {
   try {
-    const existingCampus = await Campus.findOne({ name: req.body.name });
+    const campus = await Campus.findById(req.params.id);
+    if (!campus) return res.status(404).json({ error: 'Campus not found' });
+    if (campus.status === 'disabled') {
+      return res.status(403).json({ error: 'Campus is disabled' });
+    }
+    res.json(campus);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST create campus (SuperAdmin only)
+router.post('/', authenticateJWT, async (req, res) => {
+  try {
+    if (req.admin.role !== 'SuperAdmin') {
+      return res.status(403).json({ error: 'Unauthorized.' });
+    }
+
+    const { name, campusName, campusCode, address, venueType } = req.body;
+    
+    if (!campusCode) {
+      return res.status(400).json({ error: 'Campus Code is required' });
+    }
+
+    const existingCampus = await Campus.findOne({ $or: [{ name }, { campusName }, { campusCode }] });
     
     if (existingCampus) {
       if (!existingCampus.isActive) {
         // Reactivate soft-deleted campus
         const updatedCampus = await Campus.findByIdAndUpdate(
           existingCampus._id, 
-          { ...req.body, isActive: true }, 
+          { ...req.body, isActive: true, status: 'active' }, 
           { new: true }
         );
         return res.status(201).json(updatedCampus);
       } else {
-        // Auto-append number to avoid E11000 failure
-        let counter = 1;
-        let newName = `${req.body.name} (${counter})`;
-        while (await Campus.findOne({ name: newName })) {
-          counter++;
-          newName = `${req.body.name} (${counter})`;
-        }
-        req.body.name = newName;
+        return res.status(400).json({ error: 'A campus with this name or code already exists.' });
       }
     }
     
-    const campus = new Campus(req.body);
+    const hostBase = process.env.ADMIN_URL_BASE || 'https://admin.navx.com';
+    const adminUrl = `${hostBase}/campus/${campusCode.toLowerCase()}`;
+
+    const campus = new Campus({
+      ...req.body,
+      name: name || campusName,
+      campusName: campusName || name,
+      campusCode: campusCode.toLowerCase(),
+      adminUrl,
+      status: 'active'
+    });
+
     await campus.save();
     res.status(201).json(campus);
   } catch (err) {
-    if (err.code === 11000) {
-      return res.status(400).json({ error: 'A campus with this name already exists. Please choose a different name.' });
-    }
     res.status(400).json({ error: err.message });
   }
 });
 
-// PUT update campus
-router.put('/:id', async (req, res) => {
+// POST regenerate campus URL (Phase 11: URL Regeneration - SuperAdmin only)
+router.post('/:id/regenerate-url', authenticateJWT, async (req, res) => {
   try {
-    if (req.body.name) {
-      const existingCampus = await Campus.findOne({ name: req.body.name, _id: { $ne: req.params.id } });
-      if (existingCampus) {
-        let counter = 1;
-        let newName = `${req.body.name} (${counter})`;
-        while (await Campus.findOne({ name: newName, _id: { $ne: req.params.id } })) {
-          counter++;
-          newName = `${req.body.name} (${counter})`;
-        }
-        req.body.name = newName;
+    if (req.admin.role !== 'SuperAdmin') {
+      return res.status(403).json({ error: 'Unauthorized.' });
+    }
+
+    const { campusCode } = req.body;
+    if (!campusCode) {
+      return res.status(400).json({ error: 'Campus Code is required' });
+    }
+
+    const codeRegex = /^[a-z0-9-_]+$/;
+    if (!codeRegex.test(campusCode)) {
+      return res.status(400).json({ error: 'Campus Code must contain only lowercase letters, numbers, hyphens, and underscores.' });
+    }
+
+    const existingCampus = await Campus.findOne({ campusCode, _id: { $ne: req.params.id } });
+    if (existingCampus) {
+      return res.status(400).json({ error: `Campus Code '${campusCode}' is already in use.` });
+    }
+
+    const campus = await Campus.findById(req.params.id);
+    if (!campus) {
+      return res.status(404).json({ error: 'Campus not found' });
+    }
+
+    const hostBase = process.env.ADMIN_URL_BASE || 'https://admin.navx.com';
+    campus.campusCode = campusCode.toLowerCase();
+    campus.adminUrl = `${hostBase}/campus/${campusCode.toLowerCase()}`;
+    await campus.save();
+
+    // Invalidate current sessions if a campus admin exists
+    if (campus.adminId) {
+      const admin = await Admin.findById(campus.adminId);
+      if (admin) {
+        admin.sessionVersion += 1;
+        await admin.save();
       }
     }
 
+    res.json({ success: true, campus });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT update campus details
+router.put('/:id', authenticateJWT, enforceCampusIsolation, async (req, res) => {
+  try {
     const campus = await Campus.findByIdAndUpdate(req.params.id, req.body, { new: true });
     if (!campus) return res.status(404).json({ error: 'Campus not found' });
     res.json(campus);
   } catch (err) {
-    if (err.code === 11000) {
-      return res.status(400).json({ error: 'A campus with this name already exists. Please choose a different name.' });
-    }
     res.status(400).json({ error: err.message });
   }
 });
 
-// DELETE campus
-router.delete('/:id', async (req, res) => {
+// DELETE campus (SuperAdmin only)
+router.delete('/:id', authenticateJWT, async (req, res) => {
   try {
-    await Campus.findByIdAndUpdate(req.params.id, { isActive: false });
+    if (req.admin.role !== 'SuperAdmin') {
+      return res.status(403).json({ error: 'Unauthorized.' });
+    }
+    await Campus.findByIdAndUpdate(req.params.id, { isActive: false, status: 'disabled' });
     res.json({ message: 'Campus deleted' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// POST trigger emergency
-router.post('/:id/emergency', async (req, res) => {
+// POST trigger emergency (Phase 12: Campus Level Authorization)
+router.post('/:id/emergency', authenticateJWT, enforceCampusIsolation, async (req, res) => {
   try {
     const { isActive, message, type } = req.body;
     const campus = await Campus.findById(req.params.id);

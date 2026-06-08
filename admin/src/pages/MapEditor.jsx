@@ -375,6 +375,18 @@ function ClickHandler({ onClick }) { useMapEvents({ click: e => onClick(e.latlng
 export default function GuidedMapBuilder() {
   const { campusId } = useParams();
   const nav = useNavigate();
+  
+  // Auto-Save State (Phase 9)
+  const [isBlockDirty, setIsBlockDirty] = useState(false);
+  const [isRoomDirty, setIsRoomDirty] = useState(false);
+  const [lastAutoSaved, setLastAutoSaved] = useState(null);
+
+  // Security authorization validation (Phase 12)
+  const savedAdmin = localStorage.getItem('navx_admin');
+  const parsedAdmin = savedAdmin ? JSON.parse(savedAdmin) : null;
+  const loggedAdminCampusId = parsedAdmin?.campusId?._id || parsedAdmin?.campusId;
+  const isAuthorized = !parsedAdmin || parsedAdmin.role === 'SuperAdmin' || !loggedAdminCampusId || loggedAdminCampusId === campusId;
+
   // Main pathway (campus-level) data
   const [mainNodes, setMainNodes] = useState([]);
   const [mainPaths, setMainPaths] = useState([]);
@@ -423,10 +435,49 @@ export default function GuidedMapBuilder() {
   const [stairsLoading, setStairsLoading] = useState(false);
 
   useEffect(() => {
+    if (!isAuthorized) return;
     getCampus(campusId).then(r => setCampus(r.data)).catch(() => { });
     loadBlocks();
     loadMainPathway();
-  }, [campusId]);
+  }, [campusId, isAuthorized]);
+
+  // Periodic Auto-Save hook (Phase 9)
+  useEffect(() => {
+    if (!isAuthorized) return;
+    const autoSaveTimer = setInterval(async () => {
+      if (isBlockDirty && activeBlock) {
+        try {
+          await updateBlock(activeBlock._id, { 
+            shape: activeBlock.shape, 
+            domain: blockForm.domain, 
+            name: blockForm.name 
+          });
+          setIsBlockDirty(false);
+          setLastAutoSaved(new Date().toLocaleTimeString());
+          loadBlocks();
+        } catch (e) {
+          console.warn('Auto-save block failed:', e);
+        }
+      }
+
+      if (isRoomDirty && activeRoom && activeFloor) {
+        try {
+          await updateRoom(activeRoom._id, { 
+            name: activeRoom.name, 
+            type: activeRoom.type, 
+            shape: activeRoom.shape 
+          });
+          setIsRoomDirty(false);
+          setLastAutoSaved(new Date().toLocaleTimeString());
+          loadFloorData(activeFloor._id);
+        } catch (e) {
+          console.warn('Auto-save room failed:', e);
+        }
+      }
+    }, 5000);
+
+    return () => clearInterval(autoSaveTimer);
+  }, [isBlockDirty, isRoomDirty, activeBlock, activeRoom, blockForm, activeFloor, isAuthorized]);
 
   const [allNodes, setAllNodes] = useState([]);
 
@@ -848,11 +899,13 @@ export default function GuidedMapBuilder() {
       if (activeBlock) {
         await updateBlock(activeBlock._id, { shape: activeBlock.shape, domain: blockForm.domain, name: blockForm.name });
         toast.success('Block Updated!');
+        setIsBlockDirty(false);
         setStep(2);
       } else {
         const res = await createBlock({ name: blockForm.name, description: 'Block Shape stored', domain: blockForm.domain, campusId, shape: tempBlockShape });
         setActiveBlock({ ...res.data, shape: tempBlockShape });
         toast.success('Block Locked & Saved!');
+        setIsBlockDirty(false);
         await loadBlocks();
         setStep(2);
       }
@@ -889,7 +942,9 @@ export default function GuidedMapBuilder() {
     setSaving(true);
     try {
       await updateRoom(activeRoom._id, { name: activeRoom.name, type: activeRoom.type, shape: activeRoom.shape });
-      toast.success('Room updated'); loadFloorData(activeFloor._id);
+      toast.success('Room updated'); 
+      setIsRoomDirty(false);
+      loadFloorData(activeFloor._id);
     } catch (e) { toast.error('Update failed'); }
     setSaving(false);
   };
@@ -1113,13 +1168,17 @@ export default function GuidedMapBuilder() {
                 isSelected={isSelected} 
                 isLocked={isLocked} 
                 onUpdate={(id, s) => {
-                  if (isActive) setActiveBlock(p => ({ ...p, shape: s }));
+                  if (isActive) {
+                    setActiveBlock(p => ({ ...p, shape: s }));
+                    setIsBlockDirty(true);
+                  }
                 }} 
                 onClick={() => {
                   if (step === 1) {
                     setActiveBlock(b);
                     setTempBlockShape(null);
                     setBlockForm({ name: b.name, domain: b.domain || 'Academic Blocks', id: b._id });
+                    setIsBlockDirty(false);
                   }
                 }} 
                 activeMode={drawMode} 
@@ -1137,8 +1196,14 @@ export default function GuidedMapBuilder() {
               onUpdate={(id, s) => {
                 setRooms(prev => prev.map(x => x._id === id ? { ...x, shape: s } : x));
                 setActiveRoom(p => p?._id === id ? { ...p, shape: s } : { ...r, shape: s });
+                setIsRoomDirty(true);
               }}
-              onClick={(roomData) => { if (step === 3) setActiveRoom(p => p?._id === roomData._id ? p : roomData); }}
+              onClick={(roomData) => { 
+                if (step === 3) {
+                  setActiveRoom(p => p?._id === roomData._id ? p : roomData);
+                  setIsRoomDirty(false);
+                } 
+              }}
               activeMode={drawMode} />;
           })}
 
@@ -1253,7 +1318,7 @@ export default function GuidedMapBuilder() {
                 <div style={{ marginBottom: 20 }}>
                   <label style={S.label}>Existing Blocks</label>
                   {blocks.map(b => (
-                    <div key={b._id} style={{ display: 'flex', justifyContent: 'space-between', padding: 12, background: '#1a2235', borderRadius: 8, marginBottom: 8, border: '1px solid #2a3352', cursor: 'pointer' }} onClick={() => { setActiveBlock(b); setTempBlockShape(null); setBlockForm({ name: b.name, domain: b.domain || 'Academic Blocks', id: b._id }); }}>
+                    <div key={b._id} style={{ display: 'flex', justifyContent: 'space-between', padding: 12, background: '#1a2235', borderRadius: 8, marginBottom: 8, border: '1px solid #2a3352', cursor: 'pointer' }} onClick={() => { setActiveBlock(b); setTempBlockShape(null); setBlockForm({ name: b.name, domain: b.domain || 'Academic Blocks', id: b._id }); setIsBlockDirty(false); }}>
                       <div>
                         <div style={{ fontWeight: 600, color: '#fff' }}>{b.name}</div>
                         <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>{b.domain || 'Academic Blocks'}</div>
@@ -1264,7 +1329,7 @@ export default function GuidedMapBuilder() {
                       </div>
                     </div>
                   ))}
-                  <button style={{ ...S.primaryBtn, background: '#1a2235', border: '1px solid #1e2d40' }} onClick={() => { setActiveBlock(null); setTempBlockShape(null); setBlockForm({ name: '', domain: 'Academic Blocks', id: '' }); }}>+ Draw New Block</button>
+                  <button style={{ ...S.primaryBtn, background: '#1a2235', border: '1px solid #1e2d40' }} onClick={() => { setActiveBlock(null); setTempBlockShape(null); setBlockForm({ name: '', domain: 'Academic Blocks', id: '' }); setIsBlockDirty(false); }}>+ Draw New Block</button>
                 </div>
               )}
 
@@ -1272,11 +1337,11 @@ export default function GuidedMapBuilder() {
                 <>
                   <div style={S.formGroup}>
                     <label style={S.label}>New Block Name</label>
-                    <input style={S.input} placeholder="e.g. CSE Block" value={blockForm.name} onChange={e => setBlockForm({ ...blockForm, name: e.target.value })} />
+                    <input style={S.input} placeholder="e.g. CSE Block" value={blockForm.name} onChange={e => { setBlockForm({ ...blockForm, name: e.target.value }); setIsBlockDirty(true); }} />
                   </div>
                   <div style={S.formGroup}>
                     <label style={S.label}>Domain / Category</label>
-                    <select style={S.input} value={blockForm.domain} onChange={e => setBlockForm({ ...blockForm, domain: e.target.value })}>
+                    <select style={S.input} value={blockForm.domain} onChange={e => { setBlockForm({ ...blockForm, domain: e.target.value }); setIsBlockDirty(true); }}>
                       {(VENUE_DOMAINS[venueType] || VENUE_DOMAINS.campus).map(d => (
                         <option key={d} value={d}>{d}</option>
                       ))}
@@ -1290,11 +1355,11 @@ export default function GuidedMapBuilder() {
                 <>
                   <div style={S.formGroup}>
                     <label style={S.label}>Block Name</label>
-                    <input style={S.input} value={blockForm.name} onChange={e => setBlockForm({ ...blockForm, name: e.target.value })} placeholder="Block name" />
+                    <input style={S.input} value={blockForm.name} onChange={e => { setBlockForm({ ...blockForm, name: e.target.value }); setIsBlockDirty(true); }} placeholder="Block name" />
                   </div>
                   <div style={S.formGroup}>
                     <label style={S.label}>Domain / Category</label>
-                    <select style={S.input} value={blockForm.domain} onChange={e => setBlockForm({ ...blockForm, domain: e.target.value })}>
+                    <select style={S.input} value={blockForm.domain} onChange={e => { setBlockForm({ ...blockForm, domain: e.target.value }); setIsBlockDirty(true); }}>
                       {(VENUE_DOMAINS[venueType] || VENUE_DOMAINS.campus).map(d => (
                         <option key={d} value={d}>{d}</option>
                       ))}

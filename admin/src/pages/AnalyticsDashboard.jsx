@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useOutletContext } from 'react-router-dom';
 import { FiBarChart2, FiNavigation, FiSearch } from 'react-icons/fi';
 import { MdQrCode2 } from 'react-icons/md';
 import * as api from '../api';
@@ -7,18 +8,24 @@ export default function AnalyticsDashboard({ admin }) {
   const [campuses, setCampuses] = useState([]);
   const [selectedCampus, setSelectedCampus] = useState(null);
   const [summary, setSummary] = useState(null);
+  const context = useOutletContext() || {};
 
   useEffect(() => { 
-    api.getCampuses().then(r => { 
-      let campusList = r.data;
-      if (admin && admin.role === 'CampusAdmin' && admin.campusId) {
-        const cId = admin.campusId._id || admin.campusId;
-        campusList = campusList.filter(c => c._id === cId);
-      }
-      setCampuses(campusList); 
-      if (campusList.length) setSelectedCampus(campusList[0]); 
-    }); 
-  }, []);
+    if (context.campus) {
+      setCampuses([context.campus]);
+      setSelectedCampus(context.campus);
+    } else {
+      api.getCampuses().then(r => { 
+        let campusList = r.data;
+        if (admin && (admin.role === 'CampusAdmin' || admin.role === 'VenueAdmin' || admin.role === 'campus_admin') && admin.campusId) {
+          const cId = admin.campusId._id || admin.campusId;
+          campusList = campusList.filter(c => c._id === cId);
+        }
+        setCampuses(campusList); 
+        if (campusList.length) setSelectedCampus(campusList[0]); 
+      }); 
+    }
+  }, [context.campus]);
 
   useEffect(() => {
     if (selectedCampus) {
@@ -37,11 +44,13 @@ export default function AnalyticsDashboard({ admin }) {
       <div className="page-header">
         <div>
           <h1 className="page-title">Analytics</h1>
-          <p className="page-subtitle">Navigation usage and popular routes</p>
+          <p className="page-subtitle">Navigation usage and popular routes {context.campus ? `for ${context.campus.campusName}` : ''}</p>
         </div>
-        <select className="input" style={{ width: 200 }} value={selectedCampus?._id || ''} onChange={e => setSelectedCampus(campuses.find(c => c._id === e.target.value))}>
-          {campuses.map(c => <option key={c._id} value={c._id}>{c.name}</option>)}
-        </select>
+        {!context.campus && (
+          <select className="input" style={{ width: 200 }} value={selectedCampus?._id || ''} onChange={e => setSelectedCampus(campuses.find(c => c._id === e.target.value))}>
+            {campuses.map(c => <option key={c._id} value={c._id}>{c.name}</option>)}
+          </select>
+        )}
       </div>
 
       {!summary ? (

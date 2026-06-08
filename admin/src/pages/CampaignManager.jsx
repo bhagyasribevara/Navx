@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useOutletContext } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import {
   FiPlus, FiEdit2, FiTrash2, FiEye, FiEyeOff, FiNavigation,
@@ -218,7 +219,8 @@ function CampaignCard({ c, onEdit, onDelete, onToggle, onAddSub, onEditSub, onDe
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function CampaignManager({ admin }) {
-  const campusId = admin?.campusId;
+  const context = useOutletContext() || {};
+  const campusId = context.campus?._id || admin?.campusId?._id || admin?.campusId;
   const [campaigns, setCampaigns] = useState([]);
   const [blocks, setBlocks] = useState([]);
   const [floors, setFloors] = useState([]);

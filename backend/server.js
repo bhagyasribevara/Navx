@@ -30,7 +30,9 @@ io.on('connection', (socket) => {
 });
 
 // Middleware
-app.use(cors());
+const cookieParser = require('cookie-parser');
+app.use(cors({ origin: true, credentials: true }));
+app.use(cookieParser());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
@@ -120,6 +122,9 @@ app.use('/api/ai', require('./routes/ai'));
 app.use('/api/admin', require('./routes/admin'));
 app.use('/api/weather', require('./routes/weather'));
 app.use('/api/mapLayers', require('./routes/mapLayers'));
+app.use('/api/landmarks', require('./routes/landmarks'));
+app.use('/api/announcements', require('./routes/announcements'));
+app.use('/api/navigationGraphs', require('./routes/navigationGraphs'));
 
 // Health check (includes MongoDB status)
 app.get('/api/health', (req, res) => {
