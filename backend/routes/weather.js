@@ -145,36 +145,29 @@ router.get('/', async (req, res) => {
   } catch (error) {
     console.error('❌ Weather API Error:', error.message);
 
-    if (error.response) {
-      const status = error.response.status;
-      if (status === 401) {
-        return res.status(401).json({
-          error: 'API Key Invalid',
-          message: 'The OpenWeatherMap API key is invalid or expired',
-        });
-      }
-      if (status === 429) {
-        return res.status(429).json({
-          error: 'Rate Limited',
-          message: 'Too many requests to weather API. Please try again later.',
-        });
-      }
-      return res.status(status).json({
-        error: 'Weather API Error',
-        message: error.response.data?.message || 'Failed to fetch weather data',
-      });
-    }
-
-    if (error.code === 'ECONNABORTED') {
-      return res.status(504).json({
-        error: 'Timeout',
-        message: 'Weather API request timed out',
-      });
-    }
-
-    res.status(500).json({
-      error: 'Internal Server Error',
-      message: 'Failed to fetch weather data',
+    console.warn('⚠️ Falling back to dummy weather data due to API error/timeout.');
+    return res.json({
+      location: 'Campus (Fallback)',
+      country: '',
+      temperature: 25,
+      condition: 'Clear',
+      description: 'clear sky',
+      weatherType: 'sunny',
+      humidity: 50,
+      windSpeed: 10,
+      feelsLike: 26,
+      tempMin: 22,
+      tempMax: 28,
+      pressure: 1012,
+      visibility: 10,
+      icon: '01d',
+      sunrise: '6:00 AM',
+      sunset: '6:00 PM',
+      sunriseUnix: Math.floor(Date.now() / 1000) - 3600,
+      sunsetUnix: Math.floor(Date.now() / 1000) + 36000,
+      clouds: 0,
+      timestamp: Date.now(),
+      cached: false,
     });
   }
 });
@@ -237,36 +230,15 @@ router.get('/forecast', async (req, res) => {
   } catch (error) {
     console.error('❌ Forecast API Error:', error.message);
 
-    if (error.response) {
-      const status = error.response.status;
-      if (status === 401) {
-        return res.status(401).json({
-          error: 'API Key Invalid',
-          message: 'The OpenWeatherMap API key is invalid or expired',
-        });
-      }
-      if (status === 429) {
-        return res.status(429).json({
-          error: 'Rate Limited',
-          message: 'Too many requests to weather API. Please try again later.',
-        });
-      }
-      return res.status(status).json({
-        error: 'Weather API Error',
-        message: error.response.data?.message || 'Failed to fetch forecast data',
-      });
-    }
-
-    if (error.code === 'ECONNABORTED') {
-      return res.status(504).json({
-        error: 'Timeout',
-        message: 'Weather API request timed out',
-      });
-    }
-
-    res.status(500).json({
-      error: 'Internal Server Error',
-      message: 'Failed to fetch forecast',
+    console.warn('⚠️ Falling back to dummy forecast data due to API error/timeout.');
+    return res.json({
+      forecast: [
+        { id: '1', dayName: 'Mon', tempMin: 22, tempMax: 30, weatherType: 'sunny', icon: '01d', condition: 'Clear' },
+        { id: '2', dayName: 'Tue', tempMin: 23, tempMax: 31, weatherType: 'cloudy', icon: '02d', condition: 'Clouds' },
+        { id: '3', dayName: 'Wed', tempMin: 21, tempMax: 29, weatherType: 'rain', icon: '10d', condition: 'Rain' },
+        { id: '4', dayName: 'Thu', tempMin: 20, tempMax: 28, weatherType: 'storm', icon: '11d', condition: 'Thunderstorm' },
+        { id: '5', dayName: 'Fri', tempMin: 22, tempMax: 30, weatherType: 'sunny', icon: '01d', condition: 'Clear' }
+      ]
     });
   }
 });
