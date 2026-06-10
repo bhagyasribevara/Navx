@@ -11,8 +11,8 @@ if (Constants?.expoConfig?.hostUri) {
   devHost = Constants.expoConfig.hostUri.split(':')[0];
 }
 
-let API_BASE = process.env.EXPO_PUBLIC_API_BASE_URL || `https://navx-backend-f8wa.onrender.com/api`;
-let SOCKET_URL = process.env.EXPO_PUBLIC_API_BASE_URL ? process.env.EXPO_PUBLIC_API_BASE_URL.replace('/api', '') : `https://navx-backend-f8wa.onrender.com`;
+let API_BASE = process.env.EXPO_PUBLIC_API_BASE_URL || `http://10.95.196.232:5001/api`;
+let SOCKET_URL = process.env.EXPO_PUBLIC_API_BASE_URL ? process.env.EXPO_PUBLIC_API_BASE_URL.replace('/api', '') : `http://10.95.196.232:5001`;
 
 if (__DEV__) {
   API_BASE = `http://${devHost}:5001/api`;

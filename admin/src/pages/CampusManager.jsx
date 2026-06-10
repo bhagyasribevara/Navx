@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams, useOutletContext } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { FiPlus, FiEdit2, FiTrash2, FiMap, FiSearch } from 'react-icons/fi';
 import { MapContainer, TileLayer, CircleMarker, Popup, useMap, useMapEvents } from 'react-leaflet';
@@ -48,6 +48,7 @@ export default function CampusManager({ admin }) {
   const [mapCenter, setMapCenter] = useState([18.4665, 83.6629]);
   const [markerPos, setMarkerPos] = useState(null);
   const navigate = useNavigate();
+  const context = useOutletContext();
 
   const handleSearchLocation = async () => {
     const searchTerms = [];
@@ -117,10 +118,17 @@ export default function CampusManager({ admin }) {
   const load = () => {
     getCampuses().then(r => {
       let campusList = r.data;
-      if (admin && (admin.role === 'CampusAdmin' || admin.role === 'VenueAdmin' || admin.role === 'campus_admin') && admin.campusId) {
+      
+      // Isolate view if we are inside a specific workspace route (regardless of admin role)
+      if (context && context.campus) {
+        campusList = campusList.filter(c => c._id === context.campus._id);
+      } 
+      // Fallback isolation for restricted admins
+      else if (admin && (admin.role === 'CampusAdmin' || admin.role === 'VenueAdmin' || admin.role === 'campus_admin') && admin.campusId) {
         const cId = admin.campusId._id || admin.campusId;
         campusList = campusList.filter(c => c._id === cId);
       }
+      
       setCampuses(campusList);
     }).catch(e => toast.error('Failed to load'));
   };
@@ -202,7 +210,7 @@ export default function CampusManager({ admin }) {
               <div style={{ marginTop: 16, display: 'flex', flexWrap: 'wrap', gap: 8, position: 'relative', zIndex: 10 }}>
                 <button type="button" className="btn btn-primary btn-sm" onClick={(e) => { 
                   e.stopPropagation(); 
-                  const targetCode = admin?.campus?.campusCode || admin?.campusId?.campusCode;
+                  const targetCode = context?.campus?.campusCode || admin?.campus?.campusCode || admin?.campusId?.campusCode;
                   if (targetCode) {
                     navigate(`/campus/${targetCode}/editor/${c._id}`);
                   } else {

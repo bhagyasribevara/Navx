@@ -253,16 +253,17 @@ export default function SuperAdminDashboard({ admin, onLogout }) {
     }
   };
 
-  const handleCopyUrl = (url) => {
-    if (!url) return;
-    navigator.clipboard.writeText(url);
-    toast.success('URL copied to clipboard!');
-  };
-
   const getWorkspaceLocalLink = (url) => {
     if (!url) return '#';
     // Map production url to local dev server in development
     return url.replace('https://admin.navx.com', window.location.origin);
+  };
+
+  const handleCopyUrl = (url) => {
+    if (!url) return;
+    const finalUrl = getWorkspaceLocalLink(url);
+    navigator.clipboard.writeText(finalUrl);
+    toast.success('URL copied to clipboard!');
   };
 
   return (
@@ -476,7 +477,7 @@ export default function SuperAdminDashboard({ admin, onLogout }) {
                                       fontFamily: 'monospace' 
                                     }}>
                                       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '80%' }}>
-                                        {a.campusId.adminUrl}
+                                        {getWorkspaceLocalLink(a.campusId.adminUrl)}
                                       </span>
                                       <div style={{ display: 'flex', gap: 6 }}>
                                         <button 

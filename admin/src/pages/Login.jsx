@@ -75,10 +75,8 @@ export default function Login({ onLogin, campus }) {
           </button>
         </form>
         <div className="login-footer">
-          {campus ? (
+          {campus && (
             <p>Dedicated workspace path: /campus/{campus.campusCode}</p>
-          ) : (
-            <p>Default SuperAdmin: superadmin / admin123</p>
           )}
         </div>
       </div>

@@ -322,12 +322,26 @@ export default function QRScanScreen({ navigation }) {
                           timestamp: Date.now()
                         }));
                       } catch (e) {}
-                      navigation.navigate("Navigation", { campusId: result.campusId || result.floorId?.campusId, userPosition: result.position, floorId: result.floorId?._id });
+
+                      const campusId = result.campusId || result.floorId?.campusId;
+                      // Activate the campus first so GeofenceContext knows we're inside
+                      try {
+                        await activateCampus({ _id: campusId });
+                      } catch (e) {}
+
+                      navigation.navigate("MainTabs", { 
+                        screen: "Map", 
+                        params: { 
+                          campusId, 
+                          floorId: result.floorId?._id,
+                          blockId: result.blockId?._id 
+                        } 
+                      });
                     }
                   }}
                 >
-                  <Ionicons name={isCampusQR ? "arrow-forward" : "navigate"} size={18} color="#fff" />
-                  <Text style={s.navigateBtnText}>{isCampusQR ? "Enter Campus" : "Go to Map"}</Text>
+                  <Ionicons name={isCampusQR ? "arrow-forward" : "map"} size={18} color="#fff" />
+                  <Text style={s.navigateBtnText}>{isCampusQR ? "Enter Campus" : "View Floor Details"}</Text>
                 </TouchableOpacity>
               )}
             </>

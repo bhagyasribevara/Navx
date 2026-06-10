@@ -180,6 +180,22 @@ export default function MapScreen({ navigation, route }) {
     }
   }, [campusId]);
 
+  useEffect(() => {
+    if (mapData) {
+      if (route.params?.floorId) {
+        const targetFloor = mapData.floors?.find(f => f._id === route.params.floorId);
+        if (targetFloor) {
+          setSelectedFloor(targetFloor);
+          const parentBlock = mapData.blocks?.find(b => b._id === targetFloor.blockId);
+          if (parentBlock) setSelectedBlock(parentBlock);
+        }
+      } else if (route.params?.blockId) {
+        const targetBlock = mapData.blocks?.find(b => b._id === route.params.blockId);
+        if (targetBlock) setSelectedBlock(targetBlock);
+      }
+    }
+  }, [mapData, route.params?.floorId, route.params?.blockId]);
+
   const onRefresh = async () => {
     if (!campusId) return;
     setRefreshing(true);

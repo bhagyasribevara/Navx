@@ -75,7 +75,7 @@ function App() {
   }
 
   // SuperAdmin layout
-  if (admin && admin.role === 'SuperAdmin' && !isCampusSpecificWorkspace) {
+  if (admin && admin.role === 'SuperAdmin' && !isCampusSpecificWorkspace && !isEditorPage) {
     return (
       <>
         <ToastContainer position="bottom-right" theme="dark" autoClose={3000} />

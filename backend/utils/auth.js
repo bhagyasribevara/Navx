@@ -92,7 +92,10 @@ const optionalAuthenticateJWT = async (req, res, next) => {
     }
     next();
   } catch (err) {
-    // If token is invalid or expired, fallback to public guest silently
+    if (err.name === 'TokenExpiredError') {
+      return res.status(401).json({ error: 'Access token expired', code: 'TOKEN_EXPIRED' });
+    }
+    // If token is invalid for other reasons, fallback to public guest silently
     next();
   }
 };
