@@ -12,6 +12,7 @@ const qrCodeSchema = new mongoose.Schema({
   },
   // Links to nearest nav node for positioning
   nearestNodeId: { type: mongoose.Schema.Types.ObjectId, ref: 'NavNode', default: null },
+  image: { type: String, default: '' },
   description: { type: String, default: '' },
   isActive: { type: Boolean, default: true }
 }, { timestamps: true });

@@ -39,6 +39,12 @@ router.post('/', authenticateJWT, enforceCampusIsolation, async (req, res) => {
     if (!req.body.code) {
       req.body.code = `NAVX-${uuidv4().substring(0, 8).toUpperCase()}`;
     }
+    // Pre-generate QR code image and save it in document
+    req.body.image = await qrcode.toDataURL(req.body.code, {
+      width: 300,
+      margin: 2,
+      color: { dark: '#1a1a2e', light: '#ffffff' }
+    });
     const qr = new QRCode(req.body);
     await qr.save();
     res.status(201).json(qr);
@@ -53,11 +59,16 @@ router.get('/:id/image', optionalAuthenticateJWT, enforceCampusIsolation, async 
     const qr = await QRCode.findById(req.params.id);
     if (!qr) return res.status(404).json({ error: 'QR code not found' });
     
-    const qrDataUrl = await qrcode.toDataURL(qr.code, {
-      width: 300,
-      margin: 2,
-      color: { dark: '#1a1a2e', light: '#ffffff' }
-    });
+    let qrDataUrl = qr.image;
+    if (!qrDataUrl) {
+      qrDataUrl = await qrcode.toDataURL(qr.code, {
+        width: 300,
+        margin: 2,
+        color: { dark: '#1a1a2e', light: '#ffffff' }
+      });
+      qr.image = qrDataUrl;
+      await qr.save();
+    }
     
     res.json({ 
       code: qr.code, 
@@ -82,10 +93,15 @@ router.get('/export/:floorId', authenticateJWT, async (req, res) => {
 
     const qrcodes = await QRCode.find({ floorId: req.params.floorId, isActive: true });
     const results = await Promise.all(qrcodes.map(async (qr) => {
-      const image = await qrcode.toDataURL(qr.code, {
-        width: 300, margin: 2,
-        color: { dark: '#1a1a2e', light: '#ffffff' }
-      });
+      let image = qr.image;
+      if (!image) {
+        image = await qrcode.toDataURL(qr.code, {
+          width: 300, margin: 2,
+          color: { dark: '#1a1a2e', light: '#ffffff' }
+        });
+        qr.image = image;
+        await qr.save();
+      }
       return { code: qr.code, label: qr.label, position: qr.position, image };
     }));
     res.json(results);

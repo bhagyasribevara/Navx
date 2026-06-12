@@ -224,7 +224,7 @@ export default function PositioningSetup() {
                     </td>
                     <td style={{ fontSize: 13 }}>({qr.position.x?.toFixed(6)}, {qr.position.y?.toFixed(6)})</td>
                     <td>
-                      {qrImages[qr._id] ? <img src={qrImages[qr._id]} style={{ width: 80 }} alt="QR" /> : <button className="btn btn-secondary btn-sm" onClick={() => showQRImage(qr)}>Generate</button>}
+                      {qrImages[qr._id] || qr.image ? <img src={qrImages[qr._id] || qr.image} style={{ width: 80 }} alt="QR" /> : <button className="btn btn-secondary btn-sm" onClick={() => showQRImage(qr)}>Generate</button>}
                     </td>
                     <td><button type="button" className="btn btn-danger btn-sm" onClick={(e) => { e.preventDefault(); e.stopPropagation(); deleteQR(qr._id); }}><FiTrash2 /></button></td>
                   </tr>
