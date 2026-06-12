@@ -53,7 +53,7 @@ export default function Dashboard({ admin }) {
             const floorsPerBlock = await Promise.all(
               blocks.map(async (block) => {
                 try {
-                  const floorsRes = await getFloors(block._id);
+                  const floorsRes = await getFloors(block._id, campusId);
                   return floorsRes.data.length;
                 } catch {
                   return 0;

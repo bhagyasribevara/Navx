@@ -501,7 +501,7 @@ export default function GuidedMapBuilder() {
     setBlocks(r.data);
   };
   const loadFloors = async (bid) => {
-    const r = await getFloors(bid).catch(() => ({ data: [] }));
+    const r = await getFloors(bid, campusId).catch(() => ({ data: [] }));
     setFloors(r.data);
     if (r.data.length && !activeFloor) setActiveFloor(r.data[0]);
   };

@@ -252,7 +252,7 @@ export default function CampaignManager({ admin }) {
   // Block → Floor → Room cascade
   useEffect(() => {
     if (form.destination.blockId) {
-      getFloors(form.destination.blockId).then(res => setFloors(res.data)).catch(console.error);
+      getFloors(form.destination.blockId, campusId).then(res => setFloors(res.data)).catch(console.error);
     } else { setFloors([]); setRooms([]); }
   }, [form.destination.blockId]);
 

@@ -56,7 +56,7 @@ export default function PositioningSetup() {
   useEffect(() => {
     if (selectedBlock) {
       console.log('Fetching floors for block:', selectedBlock._id);
-      api.getFloors(selectedBlock._id)
+      api.getFloors(selectedBlock._id, campusId)
         .then(r => { 
           console.log('Got floors:', r.data);
           setFloors(r.data); 

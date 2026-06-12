@@ -124,6 +124,27 @@ const enforceCampusIsolation = async (req, res, next) => {
       const isBypassed = bypassPublicRoutes.some(route => req.baseUrl.startsWith(route));
       
       if (!isBypassed && !req.params.id && !req.query.campusId) {
+        const mongoose = require('mongoose');
+        if (req.query.blockId && mongoose.Types.ObjectId.isValid(req.query.blockId)) {
+          try {
+            const Block = require('../models/Block');
+            const block = await Block.findById(req.query.blockId);
+            if (block) {
+              req.query.campusId = block.campusId.toString();
+            }
+          } catch (e) {}
+        } else if (req.query.floorId && req.query.floorId !== 'null' && mongoose.Types.ObjectId.isValid(req.query.floorId)) {
+          try {
+            const Floor = require('../models/Floor');
+            const floor = await Floor.findById(req.query.floorId);
+            if (floor) {
+              req.query.campusId = floor.campusId.toString();
+            }
+          } catch (e) {}
+        }
+      }
+      
+      if (!isBypassed && !req.params.id && !req.query.campusId) {
         return res.status(400).json({ error: 'campusId parameter is required for this query.' });
       }
       return next();

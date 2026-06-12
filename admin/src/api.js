@@ -138,7 +138,7 @@ export const updateBlock = (id, data) => api.put(`/blocks/${id}`, data);
 export const deleteBlock = (id) => api.delete(`/blocks/${id}`);
 
 // Floors
-export const getFloors = (blockId) => api.get(`/floors?blockId=${blockId}`);
+export const getFloors = (blockId, campusId) => api.get(`/floors?blockId=${blockId}${campusId ? `&campusId=${campusId}` : ''}`);
 export const createFloor = (data) => api.post("/floors", data);
 export const updateFloor = (id, data) => api.put(`/floors/${id}`, data);
 export const deleteFloor = (id) => api.delete(`/floors/${id}`);
