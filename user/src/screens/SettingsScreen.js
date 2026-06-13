@@ -1,22 +1,80 @@
 import React, { useContext, useState } from "react";
 import {
-  View, Text, ScrollView, TouchableOpacity, StyleSheet, Switch, Platform,
+  View, Text, ScrollView, TouchableOpacity, StyleSheet, Modal, TextInput, ActivityIndicator, Alert, Platform, KeyboardAvoidingView
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { ThemeContext } from "../context/ThemeContext";
+import { AuthContext } from "../context/AuthContext";
 import { SHADOWS, RADIUS } from "../theme/designSystem";
-
-
+import api from '../api';
+import Toast from 'react-native-root-toast';
 
 export default function SettingsScreen({ navigation }) {
   const { colors } = useContext(ThemeContext);
-  const [voiceNav, setVoiceNav] = useState(true);
-  const [highContrast, setHighContrast] = useState(false);
-  const [largeText, setLargeText] = useState(false);
-  const [offlineMode, setOfflineMode] = useState(false);
-  const [avoidStairs, setAvoidStairs] = useState(false);
-  const [hapticFeedback, setHapticFeedback] = useState(true);
-  const [analytics, setAnalytics] = useState(true);
+  const { user, logout } = useContext(AuthContext);
+
+  // OTP Flow States
+  const [showOtpModal, setShowOtpModal] = useState(false);
+  const [otpStep, setOtpStep] = useState(1); // 1 = request, 2 = verify
+  const [loadingOtp, setLoadingOtp] = useState(false);
+  
+  const [mobileNumber, setMobileNumber] = useState(user?.mobileNumber || "");
+  const [otpCode, setOtpCode] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+
+  const handleRequestOtp = async () => {
+    if (!mobileNumber) {
+      Alert.alert("Error", "Please enter your registered mobile number");
+      return;
+    }
+
+    setLoadingOtp(true);
+    try {
+      const res = await api.post("/app-auth/request-otp", { mobileNumber });
+      if (res.data.success) {
+        setOtpStep(2);
+        
+        // Show an elegant in-app drop-down toast notification
+        Toast.show(`💬 New Message\nYour NavX password reset OTP is: ${res.data.devOtp}`, {
+          duration: Toast.durations.LONG,
+          position: Toast.positions.TOP,
+          shadow: true,
+          animation: true,
+          hideOnPress: true,
+          delay: 0,
+          backgroundColor: '#3b82f6',
+          opacity: 1,
+        });
+      }
+    } catch (e) {
+      Alert.alert("Error", e.response?.data?.error || "Failed to send OTP");
+    } finally {
+      setLoadingOtp(false);
+    }
+  };
+
+  const handleVerifyOtp = async () => {
+    if (!otpCode || !newPassword) {
+      Alert.alert("Error", "OTP and New Password are required");
+      return;
+    }
+    setLoadingOtp(true);
+    try {
+      const res = await api.post("/app-auth/verify-otp", { mobileNumber, otpCode, newPassword });
+      if (res.data.success) {
+        Alert.alert("Success", "Password updated successfully!");
+        setShowOtpModal(false);
+        setOtpStep(1);
+        setOtpCode("");
+        setNewPassword("");
+      }
+    } catch (e) {
+      Alert.alert("Error", e.response?.data?.error || "Failed to verify OTP");
+    } finally {
+      setLoadingOtp(false);
+    }
+  };
 
   const s = StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.bg },
@@ -42,12 +100,7 @@ export default function SettingsScreen({ navigation }) {
     },
     profileName: { fontSize: 17, fontWeight: "800", color: colors.text },
     profileSub: { fontSize: 13, color: colors.textSec, marginTop: 2 },
-    editBtn: {
-      paddingHorizontal: 14, paddingVertical: 7, borderRadius: 99,
-      borderWidth: 1.5, borderColor: colors.primary + "40",
-      backgroundColor: colors.primary + "12",
-    },
-    editBtnText: { fontSize: 13, fontWeight: "700", color: colors.primary },
+    
     secLabel: {
       fontSize: 11, fontWeight: "700", color: colors.textMuted,
       textTransform: "uppercase", letterSpacing: 1.4,
@@ -70,23 +123,32 @@ export default function SettingsScreen({ navigation }) {
     },
     rowLabel: { flex: 1, fontSize: 15, fontWeight: "600", color: colors.text },
     rowValue: { fontSize: 13, color: colors.textMuted },
-
-    // Version
     versionText: {
       textAlign: "center", color: colors.textMuted,
       fontSize: 12, marginTop: 20, marginBottom: 40,
     },
+    
+    // Modal Styles
+    modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", padding: 20 },
+    modalContent: { backgroundColor: colors.card, borderRadius: RADIUS.lg, padding: 24, ...SHADOWS.lg },
+    modalTitle: { fontSize: 20, fontWeight: "bold", color: colors.text, marginBottom: 16, textAlign: "center" },
+    input: { backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.border, borderRadius: 8, padding: 12, color: colors.text, marginBottom: 12 },
+    btnPrimary: { backgroundColor: colors.primary, padding: 14, borderRadius: 8, alignItems: "center", marginTop: 8 },
+    btnPrimaryText: { color: "#fff", fontWeight: "bold", fontSize: 16 },
+    btnSecondary: { padding: 14, alignItems: "center", marginTop: 4 },
+    btnSecondaryText: { color: colors.textSec, fontSize: 14, fontWeight: "600" },
+    passwordInputContainer: { flexDirection: "row", alignItems: "center", backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.border, borderRadius: 8, marginBottom: 12 },
+    passwordInput: { flex: 1, padding: 12, color: colors.text }
   });
 
-  const Row = ({ icon, iconBg, label, value, last, children }) => (
-    <View style={[s.row, last && s.rowLast]}>
+  const RowAction = ({ icon, iconBg, label, onPress, last }) => (
+    <TouchableOpacity style={[s.row, last && s.rowLast]} onPress={onPress} activeOpacity={0.7}>
       <View style={[s.iconBox, { backgroundColor: iconBg || colors.primary + "15" }]}>
         <Ionicons name={icon} size={18} color={iconBg ? "#fff" : colors.primary} />
       </View>
       <Text style={s.rowLabel}>{label}</Text>
-      {value && <Text style={s.rowValue}>{value}</Text>}
-      {children}
-    </View>
+      <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+    </TouchableOpacity>
   );
 
   return (
@@ -105,62 +167,112 @@ export default function SettingsScreen({ navigation }) {
           <Ionicons name="person" size={26} color={colors.primary} />
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={s.profileName}>NavX User</Text>
-          <Text style={s.profileSub}>Student · Indoor Navigator</Text>
+          <Text style={s.profileName}>{user?.username || "NavX User"}</Text>
+          <Text style={s.profileSub}>{user?.mobileNumber || "No mobile number linked"}</Text>
         </View>
-        <TouchableOpacity style={s.editBtn}>
-          <Text style={s.editBtnText}>Edit</Text>
-        </TouchableOpacity>
       </View>
 
-
-
-
-
-      {/* Accessibility */}
-      <Text style={s.secLabel}>Accessibility</Text>
+      {/* Account Security */}
+      <Text style={s.secLabel}>Account Security</Text>
       <View style={s.group}>
-        <Row icon="volume-high" iconBg="#22c55e" label="Voice Navigation">
-          <Switch value={voiceNav} onValueChange={setVoiceNav} trackColor={{ false: "#374151", true: "#22c55e60" }} thumbColor={voiceNav ? "#22c55e" : "#6b7280"} />
-        </Row>
-        <Row icon="contrast" iconBg="#f59e0b" label="High Contrast">
-          <Switch value={highContrast} onValueChange={setHighContrast} trackColor={{ false: "#374151", true: colors.primary + "60" }} thumbColor={highContrast ? colors.primary : "#6b7280"} />
-        </Row>
-        <Row icon="text" iconBg="#3b82f6" label="Large Text">
-          <Switch value={largeText} onValueChange={setLargeText} trackColor={{ false: "#374151", true: colors.primary + "60" }} thumbColor={largeText ? colors.primary : "#6b7280"} />
-        </Row>
-        <Row icon="phone-portrait" iconBg="#8b5cf6" label="Haptic Feedback" last>
-          <Switch value={hapticFeedback} onValueChange={setHapticFeedback} trackColor={{ false: "#374151", true: colors.primary + "60" }} thumbColor={hapticFeedback ? colors.primary : "#6b7280"} />
-        </Row>
-      </View>
-
-      {/* Navigation */}
-      <Text style={s.secLabel}>Navigation</Text>
-      <View style={s.group}>
-        <Row icon="walk" iconBg="#f97316" label="Avoid Stairs">
-          <Switch value={avoidStairs} onValueChange={setAvoidStairs} trackColor={{ false: "#374151", true: colors.primary + "60" }} thumbColor={avoidStairs ? colors.primary : "#6b7280"} />
-        </Row>
-        <Row icon="cloud-offline" iconBg="#64748b" label="Offline Mode">
-          <Switch value={offlineMode} onValueChange={setOfflineMode} trackColor={{ false: "#374151", true: colors.primary + "60" }} thumbColor={offlineMode ? colors.primary : "#6b7280"} />
-        </Row>
-        <Row icon="analytics" iconBg="#06b6d4" label="Share Analytics" last>
-          <Switch value={analytics} onValueChange={setAnalytics} trackColor={{ false: "#374151", true: colors.primary + "60" }} thumbColor={analytics ? colors.primary : "#6b7280"} />
-        </Row>
+        <RowAction 
+          icon="lock-closed" iconBg="#f59e0b" label="Change Password (OTP)" 
+          onPress={() => {
+            setOtpStep(1);
+            setMobileNumber(user?.mobileNumber || "");
+            setShowOtpModal(true);
+          }} 
+        />
+        <RowAction 
+          icon="log-out" iconBg="#ef4444" label="Sign Out" last
+          onPress={() => {
+            Alert.alert("Sign Out", "Are you sure you want to log out?", [
+              { text: "Cancel", style: "cancel" },
+              { text: "Log Out", style: "destructive", onPress: logout }
+            ]);
+          }} 
+        />
       </View>
 
       {/* About */}
-      <Text style={s.secLabel}>About</Text>
+      <Text style={s.secLabel}>About NavX</Text>
       <View style={s.group}>
-        <Row icon="information-circle" iconBg="#6366f1" label="Version" value="1.0.0" />
-        <Row icon="code-slash" iconBg="#8b5cf6" label="Build" value="2026.05.01" />
-        <Row icon="shield-checkmark" iconBg="#22c55e" label="Privacy Policy" last>
-          <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
-        </Row>
+        <View style={s.row}>
+          <View style={[s.iconBox, { backgroundColor: "#6366f1" }]}><Ionicons name="information-circle" size={18} color="#fff" /></View>
+          <Text style={s.rowLabel}>Version</Text>
+          <Text style={s.rowValue}>1.0.0</Text>
+        </View>
+        <View style={[s.row, s.rowLast]}>
+          <View style={[s.iconBox, { backgroundColor: "#8b5cf6" }]}><Ionicons name="code-slash" size={18} color="#fff" /></View>
+          <Text style={s.rowLabel}>Build</Text>
+          <Text style={s.rowValue}>2026.05.01</Text>
+        </View>
       </View>
 
       <Text style={s.versionText}>
         NavX Indoor Navigation v1.0{"\n"}Built by Team NavX 
       </Text>
+
+      {/* OTP Password Reset Modal */}
+      <Modal visible={showOtpModal} transparent animationType="fade">
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={s.modalOverlay}>
+          <View style={s.modalContent}>
+            <Text style={s.modalTitle}>Change Password</Text>
+
+            {otpStep === 1 ? (
+              <>
+                <Text style={{ color: colors.textSec, marginBottom: 12 }}>Enter your registered mobile number to receive a 6-digit OTP code.</Text>
+                <TextInput
+                  style={s.input}
+                  placeholder="Mobile Number"
+                  placeholderTextColor={colors.textMuted}
+                  value={mobileNumber}
+                  onChangeText={setMobileNumber}
+                  keyboardType="phone-pad"
+                  editable={!user?.mobileNumber} // Lock it if already set
+                />
+                <TouchableOpacity style={s.btnPrimary} onPress={handleRequestOtp} disabled={loadingOtp}>
+                  {loadingOtp ? <ActivityIndicator color="#fff" /> : <Text style={s.btnPrimaryText}>Send OTP</Text>}
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <Text style={{ color: colors.textSec, marginBottom: 12 }}>Enter the OTP sent to your mobile terminal and your new password.</Text>
+                <TextInput
+                  style={s.input}
+                  placeholder="6-Digit OTP"
+                  placeholderTextColor={colors.textMuted}
+                  value={otpCode}
+                  onChangeText={setOtpCode}
+                  keyboardType="number-pad"
+                  maxLength={6}
+                />
+                <View style={s.passwordInputContainer}>
+                  <TextInput
+                    style={s.passwordInput}
+                    placeholder="New Password"
+                    placeholderTextColor={colors.textMuted}
+                    value={newPassword}
+                    onChangeText={setNewPassword}
+                    secureTextEntry={!showPassword}
+                  />
+                  <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={{ padding: 12 }}>
+                    <Ionicons name={showPassword ? "eye-off-outline" : "eye-outline"} size={20} color={colors.textMuted} />
+                  </TouchableOpacity>
+                </View>
+                <TouchableOpacity style={s.btnPrimary} onPress={handleVerifyOtp} disabled={loadingOtp}>
+                  {loadingOtp ? <ActivityIndicator color="#fff" /> : <Text style={s.btnPrimaryText}>Update Password</Text>}
+                </TouchableOpacity>
+              </>
+            )}
+
+            <TouchableOpacity style={s.btnSecondary} onPress={() => setShowOtpModal(false)} disabled={loadingOtp}>
+              <Text style={s.btnSecondaryText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
     </ScrollView>
   );
 }

@@ -14,7 +14,7 @@ if (Constants?.expoConfig?.hostUri) {
 let API_BASE = process.env.EXPO_PUBLIC_API_BASE_URL || `http://10.95.196.232:5001/api`;
 let SOCKET_URL = process.env.EXPO_PUBLIC_API_BASE_URL ? process.env.EXPO_PUBLIC_API_BASE_URL.replace('/api', '') : `http://10.95.196.232:5001`;
 
-if (__DEV__) {
+if (__DEV__ && !process.env.EXPO_PUBLIC_API_BASE_URL) {
   API_BASE = `http://${devHost}:5001/api`;
   SOCKET_URL = `http://${devHost}:5001`;
 }
@@ -137,6 +137,12 @@ export const getMapData = async (campusId) => {
     throw error;
   }
 };
+
+// Live Meet API
+export const createMeetSession = (data) => api.post(`/meet/create`, data).then(r => r.data);
+export const joinMeetSession = (sessionId, data) => api.post(`/meet/join/${sessionId}`, data).then(r => r.data);
+export const getMeetSession = (sessionId) => api.get(`/meet/${sessionId}`).then(r => r.data);
+export const endMeetSession = (sessionId, status) => api.post(`/meet/${sessionId}/end`, { status }).then(r => r.data);
 
 export const getGeoJSONMapData = async (campusId) => {
   return await api.get(`/campus/geojson/${campusId}`).then((r) => r.data);

@@ -1,9 +1,6 @@
 import axios from "axios";
 
-let API_BASE = import.meta.env.VITE_API_BASE_URL || "/api";
-if (API_BASE.startsWith("http") && !API_BASE.endsWith("/api")) {
-  API_BASE = API_BASE.replace(/\/$/, "") + "/api";
-}
+let API_BASE = "/api";
 
 const api = axios.create({
   baseURL: API_BASE,
@@ -175,11 +172,16 @@ export const deleteMapLayer = (id) => api.delete(`/mapLayers/${id}`);
 
 // QR Codes
 export const getQRCodes = (floorId) => api.get(`/qrcodes?floorId=${floorId}`);
+export const getQRCodesByBlock = (blockId) => api.get(`/qrcodes?blockId=${blockId}`);
 export const createQRCode = (data) => api.post("/qrcodes", data);
 export const updateQRCode = (id, data) => api.put(`/qrcodes/${id}`, data);
 export const deleteQRCode = (id) => api.delete(`/qrcodes/${id}`);
 export const getQRImage = (id) => api.get(`/qrcodes/${id}/image`);
 export const exportFloorQR = (floorId) => api.get(`/qrcodes/export/${floorId}`);
+
+// Campus QR
+export const generateCampusQR = (campusId) => api.post(`/campus/${campusId}/campus-qr`);
+export const getCampusQR = (campusId) => api.get(`/campus/${campusId}/campus-qr`);
 
 // Beacons
 export const getBeacons = (floorId) => api.get(`/beacons?floorId=${floorId}`);

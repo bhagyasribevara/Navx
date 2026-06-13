@@ -123,7 +123,7 @@ const enforceCampusIsolation = async (req, res, next) => {
       const bypassPublicRoutes = ['/api/campus', '/api/weather', '/api/ai'];
       const isBypassed = bypassPublicRoutes.some(route => req.baseUrl.startsWith(route));
       
-      if (!isBypassed && !req.params.id && !req.query.campusId) {
+      if (!isBypassed && !req.params.id && !req.params.campusId && !req.query.campusId) {
         const mongoose = require('mongoose');
         if (req.query.blockId && mongoose.Types.ObjectId.isValid(req.query.blockId)) {
           try {
@@ -144,7 +144,7 @@ const enforceCampusIsolation = async (req, res, next) => {
         }
       }
       
-      if (!isBypassed && !req.params.id && !req.query.campusId) {
+      if (!isBypassed && !req.params.id && !req.params.campusId && !req.query.campusId) {
         return res.status(400).json({ error: 'campusId parameter is required for this query.' });
       }
       return next();

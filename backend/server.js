@@ -20,10 +20,12 @@ app.set('io', io);
 
 io.on('connection', (socket) => {
   console.log('Socket client connected:', socket.id);
+  
   socket.on('join_campus', (campusId) => {
     socket.join(campusId);
     console.log(`Socket ${socket.id} joined campus ${campusId}`);
   });
+
   socket.on('disconnect', () => {
     console.log('Socket client disconnected:', socket.id);
   });
@@ -106,6 +108,7 @@ process.on('SIGTERM', async () => {
 connectWithRetry();
 
 // Routes
+app.use('/api/app-auth', require('./routes/appAuth'));
 app.use('/api/campus', require('./routes/campus'));
 app.use('/api/blocks', require('./routes/blocks'));
 app.use('/api/floors', require('./routes/floors'));
@@ -125,6 +128,7 @@ app.use('/api/mapLayers', require('./routes/mapLayers'));
 app.use('/api/landmarks', require('./routes/landmarks'));
 app.use('/api/announcements', require('./routes/announcements'));
 app.use('/api/navigationGraphs', require('./routes/navigationGraphs'));
+app.use('/api/meet', require('./routes/liveMeet'));
 
 // Health check (includes MongoDB status)
 app.get('/api/health', (req, res) => {

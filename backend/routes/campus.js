@@ -5,6 +5,7 @@ const Room = require('../models/Room');
 const NavPath = require('../models/NavPath');
 const MapLayer = require('../models/MapLayer');
 const Admin = require('../models/Admin');
+const qrcode = require('qrcode');
 const { authenticateJWT, enforceCampusIsolation } = require('../utils/auth');
 
 // GET all campuses (Phase 13: Scalability - public)
@@ -362,6 +363,39 @@ router.post('/:id/publish', async (req, res) => {
       req.app.get('io').to(req.params.id.toString()).emit('map_updated', { type: 'map_published' });
     }
     res.json({ success: true, message: 'Map published live successfully' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST generate & save campus entry QR code to DB (Admin)
+router.post('/:id/campus-qr', authenticateJWT, enforceCampusIsolation, async (req, res) => {
+  try {
+    const campus = await Campus.findById(req.params.id);
+    if (!campus) return res.status(404).json({ error: 'Campus not found' });
+
+    const qrData = `navx://campus/${campus._id}`;
+    const image = await qrcode.toDataURL(qrData, {
+      width: 400,
+      margin: 2,
+      color: { dark: '#1a1a2e', light: '#ffffff' }
+    });
+
+    campus.campusQRImage = image;
+    await campus.save();
+
+    res.json({ success: true, image, campusId: campus._id, campusName: campus.name });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET retrieve saved campus QR image
+router.get('/:id/campus-qr', async (req, res) => {
+  try {
+    const campus = await Campus.findById(req.params.id).select('campusQRImage name _id');
+    if (!campus) return res.status(404).json({ error: 'Campus not found' });
+    res.json({ image: campus.campusQRImage, campusName: campus.name });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

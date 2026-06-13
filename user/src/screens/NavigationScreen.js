@@ -374,7 +374,7 @@ export default function NavigationScreen({ navigation, route }) {
       let usedQR = false;
 
       // Check for explicitly passed position or recent QR scan
-      if (route.params?.userPosition) {
+      if (route.params?.userPosition && (route.params.userPosition.x !== 0 || route.params.userPosition.y !== 0)) {
         uLat = route.params.userPosition.x;
         uLng = route.params.userPosition.y;
         usedQR = true;
@@ -383,8 +383,8 @@ export default function NavigationScreen({ navigation, route }) {
           const lastScanStr = await AsyncStorage.getItem('navx_last_scan');
           if (lastScanStr) {
             const lastScan = JSON.parse(lastScanStr);
-            // If scanned within the last 1 minute
-            if (Date.now() - lastScan.timestamp < 60000) {
+            // If scanned within the last 1 minute and coordinates are valid
+            if (Date.now() - lastScan.timestamp < 60000 && (lastScan.x !== 0 || lastScan.y !== 0)) {
               uLat = lastScan.x;
               uLng = lastScan.y;
               usedQR = true;

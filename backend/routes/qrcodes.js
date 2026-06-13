@@ -49,6 +49,7 @@ router.post('/', authenticateJWT, enforceCampusIsolation, async (req, res) => {
     await qr.save();
     res.status(201).json(qr);
   } catch (err) {
+    console.error('❌ QR Create Error:', err.message, '| Body:', JSON.stringify(req.body, null, 2));
     res.status(400).json({ error: err.message });
   }
 });

@@ -6,7 +6,7 @@ import {
   Dimensions, Animated, Platform, StatusBar
 } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
-import { Accelerometer, Magnetometer } from "expo-sensors";
+import { Accelerometer, Magnetometer, Gyroscope } from "expo-sensors";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import * as Speech from "expo-speech";
@@ -306,6 +306,7 @@ var lastTime   = 0;
 // Smoothed values for jitter-free rendering
 var smoothPitch   = 25;
 var smoothBearing = 0;
+var smoothRoll    = 0;
 var PITCH_SMOOTH   = 0.15;
 
 var VPY = 0;  // vanishing point Y (horizon from pitch)
@@ -372,6 +373,12 @@ var CHEVRON_COUNT = 11;
 
 function render() {
   ctx.clearRect(0, 0, W, H);
+
+  ctx.save();
+  // Counteract phone roll to keep the floor level
+  ctx.translate(CX, H * 0.5);
+  ctx.rotate(-smoothRoll * Math.PI / 180);
+  ctx.translate(-CX, -H * 0.5);
 
   // ── 1. GROUND PLANE GLOW — creates the "floor detected" illusion ──
   // A wide gradient from the bottom of the screen that fades upward
@@ -531,6 +538,8 @@ function render() {
     ctx.fillStyle = 'rgba(0, 160, 255, ' + dAlpha + ')';
     ctx.fill();
   }
+  
+  ctx.restore();
 }
 
 function animate(ts) {
@@ -543,6 +552,9 @@ function animate(ts) {
 
   // Smooth pitch
   smoothPitch += (pitchDeg - smoothPitch) * PITCH_SMOOTH;
+
+  // Smooth roll
+  smoothRoll += (rollDeg - smoothRoll) * PITCH_SMOOTH;
 
   // Smooth bearing tracking
   smoothBearing += (bearingDiff - smoothBearing) * 0.1;
@@ -566,13 +578,15 @@ function animate(ts) {
 }
 requestAnimationFrame(animate);
 
-window.updateARPath = function(newDir, nearTurn, newPitch, newBearing) {
+var rollDeg = 0;
+window.updateARPath = function(newDir, nearTurn, newPitch, newBearing, newRoll) {
   dirType    = newDir || 'straight';
   isNearTurn = nearTurn == 1 || nearTurn === true;
   
   // newPitch: 0 = upright. Positive = tilted down towards floor.
   pitchDeg = newPitch || 0;
   bearingDiff = newBearing || 0;
+  rollDeg = newRoll || 0;
 };
 </script>
 </body></html>`;
@@ -615,6 +629,7 @@ export default function ARScreen({ navigation, route }) {
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [showMiniMap, setShowMiniMap] = useState(false);
   const [pitch, setPitch] = useState(25);
+  const [roll, setRoll] = useState(0);
 
   // Tilt detection for auto mini-map (0=upright/AR, 1=partial, 2=horizontal/map)
   const [tiltLevel, setTiltLevel] = useState(0);
@@ -627,11 +642,18 @@ export default function ARScreen({ navigation, route }) {
   const miniMapRef = useRef(null);
   const arPathRef = useRef(null);
   const accelSub = useRef(null);
+  const gyroSub = useRef(null);
   const magSub = useRef(null);
   const locWatcher = useRef(null);
   const posEngine = useRef(new PositionEngine()).current;
   const stepDetector = useRef(null);
+  
   const accelYRef = useRef(0);
+  const lastGyroTime = useRef(0);
+  const accelPitchRef = useRef(25);
+  const accelRollRef = useRef(0);
+  const fusedPitchRef = useRef(25);
+  const fusedRollRef = useRef(0);
 
   // Smooth heading ref to avoid jitter
   const smoothHeadingRef = useRef(initialHeading || 0);
@@ -694,31 +716,50 @@ export default function ARScreen({ navigation, route }) {
       posEngine.processStep(posEngine.heading);
     });
 
-    Accelerometer.setUpdateInterval(100);
+    Accelerometer.setUpdateInterval(50);
     accelSub.current = Accelerometer.addListener(({ x, y, z }) => {
       accelYRef.current = y;
       
       // Step detection
       stepDetector.current?.processAccelerometer(x, y, z);
 
-      // Pitch calculation for AR Horizon.
-      // Phone vertical (y ~ -1, z ~ 0) -> pitch = 0 (looking straight ahead)
-      // Phone flat on table screen up (y ~ 0, z ~ -1 or 1) -> pitch = 90 (looking down)
-      // We want pitch in degrees.
+      // Pitch & Roll Calculation
       const pitchRad = Math.atan2(Math.abs(z), Math.abs(y) + 0.001);
-      const pitchDegCalc = pitchRad * (180 / Math.PI);
-      setPitch(pitchDegCalc);
+      accelPitchRef.current = pitchRad * (180 / Math.PI);
 
-      // Tilt level for auto mini-map (uses Y axis to detect phone orientation)
-      // |y| > 0.72 → phone is upright → AR mode, hide mini-map
-      // |y| > 0.38 → phone tilting → partial mini-map
-      // |y| < 0.38 → phone horizontal → full mini-map
+      const rollRad = Math.atan2(x, Math.abs(y) + 0.001);
+      accelRollRef.current = rollRad * (180 / Math.PI);
+
+      // Tilt level for auto mini-map
       const absY = Math.abs(y);
       let newTilt;
-      if      (absY > 0.72) newTilt = 0;   // upright → AR only
-      else if (absY > 0.38) newTilt = 1;   // tilting → partial map
-      else                  newTilt = 2;   // horizontal → full map
+      if      (absY > 0.72) newTilt = 0;   
+      else if (absY > 0.38) newTilt = 1;   
+      else                  newTilt = 2;   
       setTiltLevel(prev => prev === newTilt ? prev : newTilt);
+    });
+
+    Gyroscope.setUpdateInterval(50);
+    gyroSub.current = Gyroscope.addListener(({ x, y, z }) => {
+      const now = Date.now();
+      if (lastGyroTime.current === 0) {
+        lastGyroTime.current = now;
+        return;
+      }
+      const dt = (now - lastGyroTime.current) / 1000;
+      lastGyroTime.current = now;
+
+      // x is pitch rate, y is roll rate in rad/s
+      const gyroPitchRate = x * (180 / Math.PI);
+      const gyroRollRate = y * (180 / Math.PI);
+
+      // Complementary filter for smooth, disturbance-free orientation
+      // Integrates smooth gyroscope data with absolute accelerometer data
+      fusedPitchRef.current = 0.95 * (fusedPitchRef.current + gyroPitchRate * dt) + 0.05 * accelPitchRef.current;
+      fusedRollRef.current = 0.95 * (fusedRollRef.current + gyroRollRate * dt) + 0.05 * accelRollRef.current;
+
+      setPitch(fusedPitchRef.current);
+      setRoll(fusedRollRef.current);
     });
 
     Magnetometer.setUpdateInterval(200);
@@ -757,6 +798,7 @@ export default function ARScreen({ navigation, route }) {
 
     return () => {
       accelSub.current?.remove();
+      gyroSub.current?.remove();
       magSub.current?.remove();
       if (locWatcher.current) {
         locWatcher.current.remove();
@@ -877,11 +919,11 @@ export default function ARScreen({ navigation, route }) {
     if (!arPathRef.current) return;
     arPathRef.current.injectJavaScript(`
       if (typeof window.updateARPath === 'function') {
-        window.updateARPath('${arDirType}', ${isNearTurn ? 1 : 0}, ${pitch}, ${bearingDiff});
+        window.updateARPath('${arDirType}', ${isNearTurn ? 1 : 0}, ${pitch}, ${bearingDiff}, ${roll});
       }
       true;
     `);
-  }, [arDirType, isNearTurn, pitch, bearingDiff]);
+  }, [arDirType, isNearTurn, pitch, bearingDiff, roll]);
 
   const miniMapHtml = React.useMemo(() =>
     buildMiniMapHTML(routeData?.path, initialUserPos, targetRoom, geoJSONData),

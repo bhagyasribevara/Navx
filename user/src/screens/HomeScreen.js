@@ -2,16 +2,17 @@ import React, { useState, useEffect, useContext, useRef, useCallback } from "rea
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
   Dimensions, ActivityIndicator, TextInput, Animated,
-  Platform, StatusBar, Image, RefreshControl
+  Platform, StatusBar, Image, RefreshControl, Share
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { ThemeContext } from "../context/ThemeContext";
 import { useGeofence } from "../context/GeofenceContext";
-import { getCampuses, cachedGet, downloadCampusOffline, getRoomsByCat, getCampaigns, SOCKET_URL } from "../api";
+import { getCampuses, cachedGet, downloadCampusOffline, getRoomsByCat, getCampaigns, SOCKET_URL, createMeetSession } from "../api";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SHADOWS, RADIUS, QUICK_ACTIONS, ROOM_COLORS } from "../theme/designSystem";
 import WeatherWidget from "../components/WeatherWidget";
+import * as Location from 'expo-location';
 
 
 
@@ -65,8 +66,11 @@ const VENUE_CATS = {
 
 const VENUE_ICONS_MAP = { campus: 'school', hospital: 'medkit', airport: 'airplane', mall: 'cart', building: 'business' };
 
+import { useAuth } from "../context/AuthContext";
+
 export default function HomeScreen({ navigation }) {
   const { colors } = useContext(ThemeContext);
+  const { user } = useAuth();
   const { activeCampusId, deactivateCampus } = useGeofence();
   const [campuses, setCampuses] = useState([]);
   const [recentRooms, setRecentRooms] = useState([]);
@@ -75,6 +79,9 @@ export default function HomeScreen({ navigation }) {
   const [refreshing, setRefreshing] = useState(false);
   const [downloadingCampus, setDownloadingCampus] = useState(false);
   const [downloadedStatus, setDownloadedStatus] = useState({});
+  const [showMeetModal, setShowMeetModal] = useState(false);
+  const [meetDuration, setMeetDuration] = useState('30');
+  const [creatingMeet, setCreatingMeet] = useState(false);
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const headerAnim = useRef(new Animated.Value(0)).current;
   const cardAnims = useRef(QUICK_ACTIONS.map(() => new Animated.Value(0))).current;
@@ -400,6 +407,34 @@ export default function HomeScreen({ navigation }) {
 
   const GRAD_BARS = [["#6366f1", "#4f46e5"], ["#22c55e", "#16a34a"], ["#3b82f6", "#2563eb"]];
 
+  const handleCreateMeet = async () => {
+    if (!activeCampusId) return;
+    setCreatingMeet(true);
+    try {
+      const loc = await Location.getCurrentPositionAsync({});
+      // Mock device ID fallback
+      const mockDeviceId = 'device_' + Math.random().toString(36).substr(2, 9);
+      
+      const res = await createMeetSession({
+        campusId: activeCampusId,
+        creatorDevice: mockDeviceId,
+        creatorName: user?.username || 'Host',
+        creatorLocation: { lat: loc.coords.latitude, lng: loc.coords.longitude },
+        durationMinutes: parseInt(meetDuration)
+      });
+
+      const url = `https://navx.com/meet/${res.sessionId}`;
+      await Share.share({
+        message: `I'm at the campus! Click here to navigate to my live location using NavX:\n\n${url}`,
+      });
+      setShowMeetModal(false);
+    } catch (e) {
+      console.log('Error creating meet:', e);
+    } finally {
+      setCreatingMeet(false);
+    }
+  };
+
   return (
     <>
       <ScrollView
@@ -463,7 +498,11 @@ export default function HomeScreen({ navigation }) {
                   { translateY: cardAnims[i].interpolate({ inputRange: [0, 1], outputRange: [18, 0] }) }
                 ],
               }}>
-                <TouchableOpacity style={s.quickCard} onPress={() => navigation.navigate(a.screen)} activeOpacity={0.78}>
+                <TouchableOpacity 
+                  style={s.quickCard} 
+                  onPress={() => a.screen === 'MeetModal' ? setShowMeetModal(true) : navigation.navigate(a.screen)} 
+                  activeOpacity={0.78}
+                >
                   <View style={[s.quickIcon, { backgroundColor: a.bg }]}>
                     <Ionicons name={a.icon} size={24} color={a.color} />
                   </View>
@@ -665,6 +704,51 @@ export default function HomeScreen({ navigation }) {
               </View>
             ))}
           </Animated.View>
+        </View>
+      )}
+
+      {/* ── Live Meet Modal ──────────────────────────────── */}
+      {showMeetModal && (
+        <View style={{ position: "absolute", top: 0, bottom: 0, left: 0, right: 0, zIndex: 100, justifyContent: 'flex-end' }}>
+          <TouchableOpacity style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.5)" }} activeOpacity={1} onPress={() => setShowMeetModal(false)} />
+          <View style={{ backgroundColor: colors.card, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40, ...SHADOWS.lg }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <Text style={{ fontSize: 20, fontWeight: '800', color: colors.text }}>Meet Someone</Text>
+              <TouchableOpacity onPress={() => setShowMeetModal(false)}>
+                <Ionicons name="close-circle" size={28} color={colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+            
+            <Text style={{ fontSize: 14, color: colors.textSec, marginBottom: 20 }}>
+              Share your live location. Your friend will be guided step-by-step to exactly where you are inside the campus.
+            </Text>
+
+            <Text style={{ fontSize: 13, fontWeight: '700', color: colors.text, marginBottom: 8 }}>Session Expiry (Minutes)</Text>
+            <View style={{ flexDirection: 'row', gap: 10, marginBottom: 24 }}>
+              {['15', '30', '60'].map(m => (
+                <TouchableOpacity 
+                  key={m} 
+                  style={{ flex: 1, paddingVertical: 12, borderRadius: 12, borderWidth: 2, borderColor: meetDuration === m ? colors.primary : colors.border, alignItems: 'center', backgroundColor: meetDuration === m ? colors.primary + '10' : colors.card }}
+                  onPress={() => setMeetDuration(m)}
+                >
+                  <Text style={{ fontSize: 16, fontWeight: '700', color: meetDuration === m ? colors.primary : colors.textSec }}>{m}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <TouchableOpacity 
+              style={{ backgroundColor: colors.primary, paddingVertical: 16, borderRadius: 16, flexDirection: 'row', justifyContent: 'center', alignItems: 'center' }}
+              onPress={handleCreateMeet}
+              disabled={creatingMeet}
+            >
+              {creatingMeet ? <ActivityIndicator color="#fff" /> : (
+                <>
+                  <Ionicons name="share-social" size={20} color="#fff" />
+                  <Text style={{ color: '#fff', fontSize: 16, fontWeight: '800', marginLeft: 8 }}>Create & Share Link</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
         </View>
       )}
     </>

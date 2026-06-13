@@ -1,11 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams, useOutletContext } from 'react-router-dom';
 import { toast } from 'react-toastify';
-import { FiPlus, FiEdit2, FiTrash2, FiMap, FiSearch } from 'react-icons/fi';
+import { FiPlus, FiEdit2, FiTrash2, FiMap, FiSearch, FiDownload } from 'react-icons/fi';
 import { MapContainer, TileLayer, CircleMarker, Popup, useMap, useMapEvents } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
-import { QRCodeSVG } from 'qrcode.react';
-import { getCampuses, createCampus, updateCampus, deleteCampus } from '../api';
+import { getCampuses, createCampus, updateCampus, deleteCampus, generateCampusQR, getCampusQR } from '../api';
 
 const VENUE_TYPES = [
   { value: 'campus', label: '🎓 Campus', color: '#6366f1' },
@@ -43,12 +42,15 @@ export default function CampusManager({ admin }) {
   const [showModal, setShowModal] = useState(false);
   const [showQRModal, setShowQRModal] = useState(false);
   const [selectedQR, setSelectedQR] = useState(null);
+  const [qrImage, setQrImage] = useState('');
+  const [qrLoading, setQrLoading] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({ name: '', description: '', address: '', venueType: 'campus' });
   const [mapCenter, setMapCenter] = useState([18.4665, 83.6629]);
   const [markerPos, setMarkerPos] = useState(null);
   const navigate = useNavigate();
   const context = useOutletContext();
+
 
   const handleSearchLocation = async () => {
     const searchTerms = [];
@@ -219,7 +221,17 @@ export default function CampusManager({ admin }) {
                 }}>
                   <FiMap /> Open Editor
                 </button>
-                <button type="button" className="btn btn-secondary btn-sm" onClick={(e) => { e.stopPropagation(); setSelectedQR(c); setShowQRModal(true); }}>
+                <button type="button" className="btn btn-secondary btn-sm" onClick={async (e) => {
+                  e.stopPropagation();
+                  setSelectedQR(c);
+                  setQrImage('');
+                  setShowQRModal(true);
+                  // Try to load saved QR from DB
+                  try {
+                    const r = await getCampusQR(c._id);
+                    if (r.data.image) setQrImage(r.data.image);
+                  } catch {}
+                }}>
                   QR Code
                 </button>
                     <button type="button" className="btn btn-secondary btn-sm" onClick={(e) => { e.stopPropagation(); openEdit(c); }}>
@@ -238,28 +250,92 @@ export default function CampusManager({ admin }) {
 
       {showQRModal && selectedQR && (
         <div className="modal-overlay" onClick={() => setShowQRModal(false)}>
-          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '400px', textAlign: 'center' }}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '440px', textAlign: 'center' }}>
             <div className="modal-header">
               <h2 className="modal-title">Campus QR Code</h2>
               <button className="btn-icon" onClick={() => setShowQRModal(false)}>✕</button>
             </div>
-            <div style={{ padding: '20px', background: '#fff', borderRadius: '8px', margin: '20px auto', display: 'inline-block' }}>
-              <QRCodeSVG 
-                value={`navx://campus/${selectedQR._id}`} 
-                size={256} 
-                level="H" 
-                includeMargin={true}
-              />
-            </div>
-            <p style={{ marginTop: '10px', fontSize: '14px', color: 'var(--text-muted)' }}>
-              Scan this QR to open the map for <strong>{selectedQR.name}</strong>.
+
+            <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 16 }}>
+              Entry QR for <strong>{selectedQR.name}</strong> — scan to launch NavX navigation
             </p>
-            <div className="modal-actions" style={{ marginTop: '20px' }}>
-              <button className="btn btn-primary" onClick={() => setShowQRModal(false)} style={{ width: '100%' }}>Close</button>
+
+            {/* QR image display */}
+            <div style={{
+              padding: '20px',
+              background: '#fff',
+              borderRadius: 12,
+              margin: '0 auto 20px',
+              display: 'inline-block',
+              boxShadow: '0 4px 24px rgba(0,0,0,0.15)',
+              minWidth: 200,
+              minHeight: 200,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              {qrImage
+                ? <img src={qrImage} alt="Campus QR" style={{ width: 220, height: 220, borderRadius: 4 }} />
+                : <div style={{ width: 220, height: 220, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', gap: 8 }}>
+                    <div style={{ fontSize: 48 }}>📱</div>
+                    <div style={{ fontSize: 13 }}>No QR generated yet</div>
+                  </div>
+              }
+            </div>
+
+            {qrImage && (
+              <p style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 16 }}>
+                ✅ Saved to MongoDB Atlas — ready to use
+              </p>
+            )}
+
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
+              <button
+                className="btn btn-primary"
+                disabled={qrLoading}
+                onClick={async () => {
+                  setQrLoading(true);
+                  try {
+                    const r = await generateCampusQR(selectedQR._id);
+                    setQrImage(r.data.image);
+                    // Update campus in list
+                    setCampuses(prev => prev.map(c => c._id === selectedQR._id ? { ...c, campusQRImage: r.data.image } : c));
+                    toast.success('Campus QR generated and saved to DB ✅');
+                  } catch (err) {
+                    toast.error(err.response?.data?.error || 'Failed to generate QR');
+                  } finally {
+                    setQrLoading(false);
+                  }
+                }}
+                style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+              >
+                {qrLoading ? '⏳ Generating...' : (qrImage ? '🔄 Regenerate & Save' : '⚡ Generate & Save to DB')}
+              </button>
+
+              {qrImage && (
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => {
+                    const a = document.createElement('a');
+                    a.href = qrImage;
+                    a.download = `campus_qr_${selectedQR.name.replace(/\s+/g, '_')}.png`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    toast.success('QR downloaded to your system 📥');
+                  }}
+                  style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+                >
+                  <FiDownload size={14} /> Download to System
+                </button>
+              )}
+
+              <button className="btn btn-secondary" onClick={() => setShowQRModal(false)}>Close</button>
             </div>
           </div>
         </div>
       )}
+
 
       {showModal && (
         <div className="modal-overlay" onClick={() => setShowModal(false)}>

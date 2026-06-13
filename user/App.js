@@ -1,4 +1,5 @@
 import React, { useState, useContext, useCallback } from "react";
+import { RootSiblingParent } from 'react-native-root-siblings';
 import { View, Platform } from "react-native";
 import { NavigationContainer } from "@react-navigation/native";
 import { DefaultTheme } from "@react-navigation/native";
@@ -21,9 +22,15 @@ import SettingsScreen from "./src/screens/SettingsScreen";
 import SplashScreen from "./src/screens/SplashScreen";
 import OfflineMapsScreen from "./src/screens/OfflineMapsScreen";
 import CampaignDetailScreen from "./src/screens/CampaignDetailScreen";
+import LiveMeetScreen from "./src/screens/LiveMeetScreen";
+import ARMeetScreen from "./src/screens/ARMeetScreen";
+import { LiveMeetProvider } from "./src/context/LiveMeetContext";
 import EmergencyOverlay from "./src/components/EmergencyOverlay";
 import GeofenceGuard from "./src/components/GeofenceGuard";
 import NotificationBanner from "./src/components/NotificationBanner";
+
+import AuthScreen from "./src/screens/AuthScreen";
+import { AuthProvider, useAuth } from "./src/context/AuthContext";
 
 const LIGHT = {
   bg: "#f0f4ff",
@@ -96,13 +103,11 @@ function MainTabs() {
   );
 }
 
-export default function App() {
-  const [language, setLanguage] = useState("en");
-  const [showSplash, setShowSplash] = useState(true);
-  const colors = LIGHT;
-  const isDark = false;
+function AppNavigator() {
+  const { colors } = useContext(ThemeContext);
+  const { user, loading } = useAuth();
+  
   const baseTheme = DefaultTheme;
-
   const navTheme = {
     ...baseTheme,
     colors: {
@@ -116,57 +121,103 @@ export default function App() {
     },
   };
 
+  const linking = {
+    prefixes: ['navx://', 'https://navx.com', 'http://navx.com'],
+    config: {
+      screens: {
+        LiveMeet: 'meet/:sessionId',
+      },
+    },
+  };
+
+  if (loading) {
+    return <SplashScreen onFinish={() => {}} />;
+  }
+
+  return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }} edges={['top']}>
+      <NavigationContainer theme={navTheme} linking={linking}>
+        <StatusBar style="dark" />
+        <Stack.Navigator screenOptions={{ headerShown: false }}>
+          {!user ? (
+            <Stack.Screen name="Auth" component={AuthScreen} options={{ animation: "fade" }} />
+          ) : (
+            <>
+              <Stack.Screen name="MainTabs" component={MainTabs} />
+              <Stack.Screen
+                name="QRScan"
+                component={QRScanScreen}
+                options={{ animation: "fade", gestureEnabled: false }}
+              />
+              <Stack.Screen
+                name="Navigation"
+                component={NavigationScreen}
+                options={{ animation: "slide_from_bottom", gestureEnabled: true }}
+              />
+              <Stack.Screen
+                name="AR"
+                component={ARScreen}
+                options={{ animation: "slide_from_bottom", gestureEnabled: true }}
+              />
+              <Stack.Screen
+                name="OfflineMaps"
+                component={OfflineMapsScreen}
+                options={{ animation: "slide_from_bottom", gestureEnabled: true }}
+              />
+              <Stack.Screen
+                name="CampaignDetail"
+                component={CampaignDetailScreen}
+                options={{ animation: "slide_from_right" }}
+              />
+              <Stack.Screen
+                name="Search"
+                component={SearchScreen}
+                options={{ animation: "slide_from_bottom", gestureEnabled: true }}
+              />
+              <Stack.Screen
+                name="LiveMeet"
+                component={LiveMeetScreen}
+                options={{ animation: "slide_from_bottom", gestureEnabled: true }}
+              />
+              <Stack.Screen
+                name="ARMeet"
+                component={ARMeetScreen}
+                options={{ animation: "slide_from_bottom", gestureEnabled: true }}
+              />
+            </>
+          )}
+        </Stack.Navigator>
+        {user && <EmergencyOverlay />}
+        {user && <GeofenceGuard />}
+        {user && <NotificationBanner />}
+      </NavigationContainer>
+    </SafeAreaView>
+  );
+}
+
+export default function App() {
+  const [language, setLanguage] = useState("en");
+  const [showSplash, setShowSplash] = useState(true);
+  const colors = LIGHT;
+  const isDark = false;
+
   if (showSplash) {
     return <SplashScreen onFinish={() => setShowSplash(false)} />;
   }
 
   return (
     <SafeAreaProvider>
-      <ThemeContext.Provider value={{ colors, isDark, language, setLanguage }}>
-        <GeofenceProvider>
-          <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }} edges={['top']}>
-            <NavigationContainer theme={navTheme}>
-              <StatusBar style="dark" />
-              <Stack.Navigator screenOptions={{ headerShown: false }}>
-                <Stack.Screen name="MainTabs" component={MainTabs} />
-                <Stack.Screen
-                  name="Navigation"
-                  component={NavigationScreen}
-                  options={{ animation: "slide_from_bottom", gestureEnabled: true }}
-                />
-                <Stack.Screen
-                  name="AR"
-                  component={ARScreen}
-                  options={{ animation: "slide_from_bottom", gestureEnabled: true }}
-                />
-                <Stack.Screen
-                  name="QRScan"
-                  component={QRScanScreen}
-                  options={{ animation: "slide_from_bottom", gestureEnabled: true }}
-                />
-                <Stack.Screen
-                  name="OfflineMaps"
-                  component={OfflineMapsScreen}
-                  options={{ animation: "slide_from_bottom", gestureEnabled: true }}
-                />
-                <Stack.Screen
-                  name="CampaignDetail"
-                  component={CampaignDetailScreen}
-                  options={{ animation: "slide_from_right" }}
-                />
-                <Stack.Screen
-                  name="Search"
-                  component={SearchScreen}
-                  options={{ animation: "slide_from_bottom", gestureEnabled: true }}
-                />
-              </Stack.Navigator>
-              <EmergencyOverlay />
-              <GeofenceGuard />
-              <NotificationBanner />
-            </NavigationContainer>
-          </SafeAreaView>
-        </GeofenceProvider>
-      </ThemeContext.Provider>
+      <AuthProvider>
+        <ThemeContext.Provider value={{ colors, isDark, language, setLanguage }}>
+          <GeofenceProvider>
+            <LiveMeetProvider>
+              <RootSiblingParent>
+                <AppNavigator />
+              </RootSiblingParent>
+            </LiveMeetProvider>
+          </GeofenceProvider>
+        </ThemeContext.Provider>
+      </AuthProvider>
     </SafeAreaProvider>
   );
 }
