@@ -423,7 +423,7 @@ export default function HomeScreen({ navigation }) {
         durationMinutes: parseInt(meetDuration)
       });
 
-      const url = `https://navx.com/meet/${res.sessionId}`;
+      const url = `navx://meet/${res.sessionId}`;
       await Share.share({
         message: `I'm at the campus! Click here to navigate to my live location using NavX:\n\n${url}`,
       });
