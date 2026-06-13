@@ -67,11 +67,13 @@ const VENUE_CATS = {
 const VENUE_ICONS_MAP = { campus: 'school', hospital: 'medkit', airport: 'airplane', mall: 'cart', building: 'business' };
 
 import { useAuth } from "../context/AuthContext";
+import { useLiveMeet } from "../context/LiveMeetContext";
 
 export default function HomeScreen({ navigation }) {
   const { colors } = useContext(ThemeContext);
   const { user } = useAuth();
   const { activeCampusId, deactivateCampus } = useGeofence();
+  const { enterMeetSession } = useLiveMeet() || {};
   const [campuses, setCampuses] = useState([]);
   const [recentRooms, setRecentRooms] = useState([]);
   const [campaigns, setCampaigns] = useState([]);
@@ -82,6 +84,8 @@ export default function HomeScreen({ navigation }) {
   const [showMeetModal, setShowMeetModal] = useState(false);
   const [meetDuration, setMeetDuration] = useState('30');
   const [creatingMeet, setCreatingMeet] = useState(false);
+  const [inviteInput, setInviteInput] = useState('');
+  const [joiningMeet, setJoiningMeet] = useState(false);
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const headerAnim = useRef(new Animated.Value(0)).current;
   const cardAnims = useRef(QUICK_ACTIONS.map(() => new Animated.Value(0))).current;
@@ -424,14 +428,49 @@ export default function HomeScreen({ navigation }) {
       });
 
       const url = `navx://meet/${res.sessionId}`;
+      
+      if (enterMeetSession) {
+        await enterMeetSession(res, 'creator');
+      }
+
       await Share.share({
-        message: `I'm at the campus! Click here to navigate to my live location using NavX:\n\n${url}`,
+        message: url,
       });
       setShowMeetModal(false);
+      navigation.navigate("LiveMeet", { sessionId: res.sessionId });
     } catch (e) {
       console.log('Error creating meet:', e);
     } finally {
       setCreatingMeet(false);
+    }
+  };
+
+  const handleJoinMeetLink = async () => {
+    if (!inviteInput.trim()) return;
+    setJoiningMeet(true);
+    try {
+      let sessionId = inviteInput.trim();
+      
+      // Parse out sessionId if full url is pasted
+      if (sessionId.includes('meet/')) {
+        const parts = sessionId.split('meet/');
+        if (parts.length > 1) {
+          sessionId = parts[1].split(/[?#]/)[0];
+        }
+      }
+      
+      if (!sessionId) {
+        alert("Invalid invite link or code");
+        return;
+      }
+      
+      setShowMeetModal(false);
+      setInviteInput('');
+      navigation.navigate("LiveMeet", { sessionId });
+    } catch (e) {
+      console.log("Error joining meet:", e);
+    } finally {
+      setJoiningMeet(false);
     }
   };
 
@@ -748,6 +787,61 @@ export default function HomeScreen({ navigation }) {
                 </>
               )}
             </TouchableOpacity>
+
+            <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 20 }} />
+
+            <Text style={{ fontSize: 16, fontWeight: '800', color: colors.text, marginBottom: 4 }}>Been Invited?</Text>
+            <Text style={{ fontSize: 13, color: colors.textSec, marginBottom: 12 }}>
+              Paste the invite link or session ID below to join the live tracking.
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
+              <View style={{
+                flex: 1,
+                flexDirection: 'row',
+                alignItems: 'center',
+                backgroundColor: colors.bg,
+                borderRadius: 12,
+                borderWidth: 1.5,
+                borderColor: colors.border,
+                paddingHorizontal: 12,
+                height: 48,
+              }}>
+                <Ionicons name="link" size={18} color={colors.textMuted} style={{ marginRight: 8 }} />
+                <TextInput
+                  style={{ flex: 1, fontSize: 14, color: colors.text, paddingVertical: 8 }}
+                  placeholder="Paste navx://meet/... or code"
+                  placeholderTextColor={colors.textMuted}
+                  value={inviteInput}
+                  onChangeText={setInviteInput}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                {inviteInput.length > 0 && (
+                  <TouchableOpacity onPress={() => setInviteInput('')}>
+                    <Ionicons name="close-circle" size={16} color={colors.textMuted} />
+                  </TouchableOpacity>
+                )}
+              </View>
+              
+              <TouchableOpacity
+                style={{
+                  backgroundColor: inviteInput.trim() ? colors.primary : colors.border,
+                  height: 48,
+                  paddingHorizontal: 20,
+                  borderRadius: 12,
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                }}
+                disabled={!inviteInput.trim() || joiningMeet}
+                onPress={handleJoinMeetLink}
+              >
+                {joiningMeet ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <Text style={{ color: inviteInput.trim() ? '#fff' : colors.textMuted, fontSize: 14, fontWeight: '800' }}>Join</Text>
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       )}

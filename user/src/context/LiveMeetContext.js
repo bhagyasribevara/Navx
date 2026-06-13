@@ -12,7 +12,8 @@ export function LiveMeetProvider({ children }) {
   const [activeSession, setActiveSession] = useState(null);
   const [remoteParticipant, setRemoteParticipant] = useState(null);
   const [locationSub, setLocationSub] = useState(null);
-  const { currentPos, currentFloorId } = useGeofence();
+  const [currentPos, setCurrentPos] = useState(null);
+  const { currentFloorId } = useGeofence();
   const { user } = useAuth();
   
   // Refs to keep track of listeners to clean them up properly
@@ -85,13 +86,14 @@ export function LiveMeetProvider({ children }) {
         distanceInterval: 5,
       },
       (location) => {
+        setCurrentPos({ x: location.coords.latitude, y: location.coords.longitude });
         const payload = {
           location: {
             lat: location.coords.latitude,
             lng: location.coords.longitude,
-            heading: location.coords.heading,
-            speed: location.coords.speed,
-            floorId: currentFloorId, 
+            heading: location.coords.heading || 0,
+            speed: location.coords.speed || 0,
+            floorId: currentFloorId || null, 
           }
         };
         update(locRef, payload);
@@ -153,6 +155,7 @@ export function LiveMeetProvider({ children }) {
     <LiveMeetContext.Provider value={{
       activeSession,
       remoteParticipant,
+      currentPos,
       enterMeetSession,
       leaveMeetSession,
       broadcastStatus
