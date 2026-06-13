@@ -430,7 +430,12 @@ export default function HomeScreen({ navigation }) {
       const url = `navx://meet/${res.sessionId}`;
       
       if (enterMeetSession) {
-        await enterMeetSession(res, 'creator');
+        await enterMeetSession({
+          ...res,
+          campusId: activeCampusId,
+          creatorName: user?.username || 'Host',
+          creatorLocation: { lat: loc.coords.latitude, lng: loc.coords.longitude }
+        }, 'creator');
       }
 
       await Share.share({

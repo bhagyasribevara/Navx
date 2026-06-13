@@ -214,8 +214,13 @@ export default function LiveMeetScreen({ route, navigation }) {
         if (activeSession && activeSession.sessionId === sessionId) {
           // Already in this session
           if (!geoJSONData) {
-            const geojson = await getGeoJSONMapData(activeSession.campusId);
-            setGeoJSONData(geojson);
+            const activeCampusId = typeof activeSession.campusId === 'object' && activeSession.campusId !== null
+              ? activeSession.campusId._id
+              : activeSession.campusId;
+            if (activeCampusId) {
+              const geojson = await getGeoJSONMapData(activeCampusId);
+              setGeoJSONData(geojson);
+            }
           }
           setLoading(false);
           return;
@@ -243,8 +248,13 @@ export default function LiveMeetScreen({ route, navigation }) {
         }
 
         await enterMeetSession(sessionData, role);
-        const geojson = await getGeoJSONMapData(sessionData.campusId);
-        setGeoJSONData(geojson);
+        const activeCampusId = typeof sessionData.campusId === 'object' && sessionData.campusId !== null
+          ? sessionData.campusId._id
+          : sessionData.campusId;
+        if (activeCampusId) {
+          const geojson = await getGeoJSONMapData(activeCampusId);
+          setGeoJSONData(geojson);
+        }
         setLoading(false);
 
       } catch (err) {
