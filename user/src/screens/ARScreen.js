@@ -128,7 +128,7 @@ function buildMiniMapHTML(pathPoints, userPos, targetRoom, geoJSONData) {
     ? `L.circleMarker([${destX},${destY}],{radius:7,color:'#fff',weight:2,fillColor:'#22c55e',fillOpacity:1}).addTo(map);`
     : "";
 
-  const mapboxUrl = process.env.EXPO_PUBLIC_MAPBOX_URL || "https://api.mapbox.com/styles/v1/mapbox/streets-v11/tiles/256/{z}/{x}/{y}@2x?access_token=pk.eyJ1IjoidmVua2F0YS1rcmlzaG5hIiwiYSI6ImNtZnYycHN0bTAzY28yanFxeG4wOXVsenAifQ.w1yd6XuvWvarYj33rP1LkA";
+  const mapboxUrl = process.env.EXPO_PUBLIC_MAPBOX_URL || "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
 
   const initialHeading = 0;
   const userMarkerInit = userPos

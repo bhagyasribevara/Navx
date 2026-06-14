@@ -76,36 +76,32 @@ export function LiveMeetProvider({ children }) {
     onValue(rRef, (snapshot) => {
       const data = snapshot.val();
       if (data) {
-        setRemoteParticipant(prev => {
-          const nextParticipant = {
-            ...prev,
-            location: data.location,
-            status: data.status || prev?.status,
-            name: data.name || prev?.name
-          };
+        setRemoteParticipant(prev => ({
+          ...prev,
+          location: data.location,
+          status: data.status || prev?.status,
+          name: data.name || prev?.name
+        }));
 
-          // Trigger dynamic notifications if creator and joiner joins (status is active)
-          if (role === 'creator' && data.status === 'active') {
-            const notifId = `${sessionId}_joined`;
-            setNotifications(prevNotifs => {
-              if (prevNotifs.some(n => n.id === notifId)) return prevNotifs;
-              const newNotif = {
-                id: notifId,
-                title: "Participant Joined",
-                desc: `${data.name || "Someone"} has joined your Live Meet.`,
-                time: "Just now",
-                unread: true,
-                type: "live_meet",
-                sessionId: sessionId
-              };
-              const updated = [newNotif, ...prevNotifs];
-              AsyncStorage.setItem('navx_notifications', JSON.stringify(updated)).catch(() => {});
-              return updated;
-            });
-          }
-
-          return nextParticipant;
-        });
+        // Trigger dynamic notifications if creator and joiner joins (status is active)
+        if (role === 'creator' && data.status === 'active') {
+          const notifId = `${sessionId}_joined`;
+          setNotifications(prevNotifs => {
+            if (prevNotifs.some(n => n.id === notifId)) return prevNotifs;
+            const newNotif = {
+              id: notifId,
+              title: "Participant Joined",
+              desc: `${data.name || "Someone"} has joined your Live Meet.`,
+              time: "Just now",
+              unread: true,
+              type: "live_meet",
+              sessionId: sessionId
+            };
+            const updated = [newNotif, ...prevNotifs];
+            AsyncStorage.setItem('navx_notifications', JSON.stringify(updated)).catch(() => {});
+            return updated;
+          });
+        }
       }
     });
 
@@ -136,18 +132,40 @@ export function LiveMeetProvider({ children }) {
         }
       });
     } catch (e) {
-      console.log("Error getting initial location in context:", e);
-      await set(locRef, {
-        name,
-        status: 'active'
-      });
+      console.log("Error getting initial location in context, trying last known:", e);
+      let lastKnown = null;
+      try {
+        lastKnown = await Location.getLastKnownPositionAsync({});
+      } catch (err) {
+        console.log("Error getting last known position:", err);
+      }
+
+      if (lastKnown) {
+        setCurrentPos({ x: lastKnown.coords.latitude, y: lastKnown.coords.longitude });
+        await set(locRef, {
+          name,
+          status: 'active',
+          location: {
+            lat: lastKnown.coords.latitude,
+            lng: lastKnown.coords.longitude,
+            heading: lastKnown.coords.heading || 0,
+            speed: lastKnown.coords.speed || 0,
+            floorId: currentFloorId || null, 
+          }
+        });
+      } else {
+        await set(locRef, {
+          name,
+          status: 'active'
+        });
+      }
     }
 
     const sub = await Location.watchPositionAsync(
       {
-        accuracy: Location.Accuracy.High,
-        timeInterval: 3000,
-        distanceInterval: 5,
+        accuracy: Location.Accuracy.BestForNavigation,
+        timeInterval: 1500,
+        distanceInterval: 0.5,
       },
       (location) => {
         setCurrentPos({ x: location.coords.latitude, y: location.coords.longitude });

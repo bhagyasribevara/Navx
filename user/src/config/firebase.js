@@ -3,7 +3,7 @@ import { getDatabase } from "firebase/database";
 // We exclude getAnalytics to prevent errors in Expo if not configured correctly for native.
 
 const firebaseConfig = {
-  apiKey: "AIzaSyDcJLPgSFzC1mg_uDTpECbgJPBM-hOlcNs",
+  apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
   authDomain: "navx-b6994.firebaseapp.com",
   databaseURL: "https://navx-b6994-default-rtdb.firebaseio.com",
   projectId: "navx-b6994",

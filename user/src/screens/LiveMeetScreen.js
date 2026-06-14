@@ -12,7 +12,7 @@ import * as Haptics from 'expo-haptics';
 
 const { width: SW, height: SH } = Dimensions.get('window');
 
-const MAPBOX_URL = process.env.EXPO_PUBLIC_MAPBOX_URL || "https://api.mapbox.com/styles/v1/mapbox/streets-v11/tiles/256/{z}/{x}/{y}@2x?access_token=pk.eyJ1IjoidmVua2F0YS1rcmlzaG5hIiwiYSI6ImNtZnYycHN0bTAzY28yanFxeG4wOXVsenAifQ.w1yd6XuvWvarYj33rP1LkA";
+const MAPBOX_URL = process.env.EXPO_PUBLIC_MAPBOX_URL || "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
 
 function getHaversineDistance(lat1, lon1, lat2, lon2) {
   if (!lat1 || !lon1 || !lat2 || !lon2) return null;
@@ -27,7 +27,7 @@ function getHaversineDistance(lat1, lon1, lat2, lon2) {
   return R * c;
 }
 
-function buildLiveMeetMapHTML(geoJSONData, centerCoords) {
+function buildLiveMeetMapHTML(centerCoords) {
   const center = centerCoords ? [centerCoords.x, centerCoords.y] : [18.4665, 83.6629];
   
   return `<!DOCTYPE html>
@@ -177,8 +177,6 @@ window.updateRoutePath = function(coordsJson) {
   }
 };
 
-${geoJSONData ? `window.updateGeoJSON(${JSON.stringify(geoJSONData)}, '');` : ''}
-
 </script></body></html>`;
 }
 
@@ -192,17 +190,15 @@ export default function LiveMeetScreen({ route, navigation }) {
   const [geoJSONData, setGeoJSONData] = useState(null);
   const [routePath, setRoutePath] = useState([]);
   const webViewRef = useRef(null);
-  const [initialCenter, setInitialCenter] = useState(null);
+  const initialCenterRef = useRef(null);
 
-  useEffect(() => {
-    if (currentPos && !initialCenter) {
-      setInitialCenter({ x: currentPos.x, y: currentPos.y });
-    }
-  }, [currentPos, initialCenter]);
+  if (currentPos && !initialCenterRef.current) {
+    initialCenterRef.current = { x: currentPos.x, y: currentPos.y };
+  }
 
   const htmlSource = useMemo(() => {
-    return buildLiveMeetMapHTML(geoJSONData, initialCenter);
-  }, [geoJSONData, initialCenter]);
+    return buildLiveMeetMapHTML(initialCenterRef.current);
+  }, []);
 
   const handleWebViewLoad = () => {
     if (webViewRef.current) {
@@ -221,22 +217,12 @@ export default function LiveMeetScreen({ route, navigation }) {
         true;
       `);
 
-      if (routePath && routePath.length > 0) {
-        webViewRef.current.injectJavaScript(`
-          if (typeof window.updateRoutePath === 'function') {
-            window.updateRoutePath(${JSON.stringify(routePath)});
-          }
-          true;
-        `);
-      } else if (localLat !== null && localLng !== null && remoteLat !== null && remoteLng !== null) {
-        const fallbackPath = [{ lat: localLat, lng: localLng }, { lat: remoteLat, lng: remoteLng }];
-        webViewRef.current.injectJavaScript(`
-          if (typeof window.updateRoutePath === 'function') {
-            window.updateRoutePath(${JSON.stringify(fallbackPath)});
-          }
-          true;
-        `);
-      }
+      webViewRef.current.injectJavaScript(`
+        if (typeof window.updateRoutePath === 'function') {
+          window.updateRoutePath(${JSON.stringify(routePath)});
+        }
+        true;
+      `);
     }
   };
 
@@ -341,7 +327,7 @@ export default function LiveMeetScreen({ route, navigation }) {
         true;
       `);
     }
-  }, [currentPos, remoteParticipant, geoJSONData]);
+  }, [currentPos, remoteParticipant]);
 
   // Inject geojson when it loads
   useEffect(() => {
@@ -379,9 +365,12 @@ export default function LiveMeetScreen({ route, navigation }) {
         if (active && res && res.path) {
           const coords = res.path.map(n => ({ lat: n.x, lng: n.y }));
           setRoutePath(coords);
+        } else if (active) {
+          setRoutePath([]);
         }
       } catch (err) {
         console.log("Failed to fetch route between coordinates:", err);
+        if (active) setRoutePath([]);
       }
     }
 
@@ -393,36 +382,19 @@ export default function LiveMeetScreen({ route, navigation }) {
     };
   }, [currentPos?.x, currentPos?.y, remoteParticipant?.location?.lat, remoteParticipant?.location?.lng]);
 
-  // Inject route path when it updates, with straight line fallback
+  // Inject route path when it updates
   useEffect(() => {
     if (webViewRef.current) {
-      if (routePath && routePath.length > 0) {
-        webViewRef.current.injectJavaScript(`
-          if (typeof window.updateRoutePath === 'function') {
-            window.updateRoutePath(${JSON.stringify(routePath)});
-          }
-          true;
-        `);
-      } else {
-        // Fallback: straight line
-        const localLat = currentPos?.x ?? null;
-        const localLng = currentPos?.y ?? null;
-        const remoteLat = remoteParticipant?.location?.lat ?? null;
-        const remoteLng = remoteParticipant?.location?.lng ?? null;
-        if (localLat !== null && localLng !== null && remoteLat !== null && remoteLng !== null) {
-          const fallbackPath = [{ lat: localLat, lng: localLng }, { lat: remoteLat, lng: remoteLng }];
-          webViewRef.current.injectJavaScript(`
-            if (typeof window.updateRoutePath === 'function') {
-              window.updateRoutePath(${JSON.stringify(fallbackPath)});
-            }
-            true;
-          `);
+      webViewRef.current.injectJavaScript(`
+        if (typeof window.updateRoutePath === 'function') {
+          window.updateRoutePath(${JSON.stringify(routePath)});
         }
-      }
+        true;
+      `);
     }
-  }, [routePath, currentPos, remoteParticipant]);
+  }, [routePath]);
 
-  if (loading) {
+  if (loading || !currentPos) {
     return (
       <View style={[s.center, { backgroundColor: colors.bg }]}>
         <ActivityIndicator size="large" color={colors.primary} />
