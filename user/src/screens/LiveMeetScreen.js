@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useContext, useRef } from 'react';
+import React, { useEffect, useState, useContext, useRef, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Dimensions, Animated, Platform, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { WebView } from 'react-native-webview';
@@ -192,6 +192,17 @@ export default function LiveMeetScreen({ route, navigation }) {
   const [geoJSONData, setGeoJSONData] = useState(null);
   const [routePath, setRoutePath] = useState([]);
   const webViewRef = useRef(null);
+  const [initialCenter, setInitialCenter] = useState(null);
+
+  useEffect(() => {
+    if (currentPos && !initialCenter) {
+      setInitialCenter({ x: currentPos.x, y: currentPos.y });
+    }
+  }, [currentPos, initialCenter]);
+
+  const htmlSource = useMemo(() => {
+    return buildLiveMeetMapHTML(geoJSONData, initialCenter);
+  }, [geoJSONData, initialCenter]);
 
   const handleWebViewLoad = () => {
     if (webViewRef.current) {
@@ -276,17 +287,21 @@ export default function LiveMeetScreen({ route, navigation }) {
           role = 'creator';
         }
 
+        let activeSessionData = sessionData;
         if (role === 'joiner') {
           // Join the session via API
           const loc = await Location.getCurrentPositionAsync({});
-          await joinMeetSession(sessionId, {
+          const joinResult = await joinMeetSession(sessionId, {
             joinerDevice: deviceId,
             joinerName: 'Friend',
             joinerLocation: { lat: loc.coords.latitude, lng: loc.coords.longitude }
           });
+          if (joinResult && joinResult.session) {
+            activeSessionData = joinResult.session;
+          }
         }
 
-        await enterMeetSession(sessionData, role);
+        await enterMeetSession(activeSessionData, role);
         const activeCampusId = typeof sessionData.campusId === 'object' && sessionData.campusId !== null
           ? sessionData.campusId._id
           : sessionData.campusId;
@@ -435,7 +450,7 @@ export default function LiveMeetScreen({ route, navigation }) {
         <WebView
           ref={webViewRef}
           originWhitelist={['*']}
-          source={{ html: buildLiveMeetMapHTML(geoJSONData, currentPos) }}
+          source={{ html: htmlSource }}
           style={{ flex: 1, backgroundColor: '#0a0e17' }}
           javaScriptEnabled={true}
           domStorageEnabled={true}

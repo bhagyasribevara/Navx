@@ -21,35 +21,42 @@ export function LiveMeetProvider({ children }) {
   const fbListenersRef = useRef([]);
 
   useEffect(() => {
-    // Check if there is an active session stored
-    AsyncStorage.getItem('navx_active_meet').then(res => {
-      if (res) {
-        try {
-          const s = JSON.parse(res);
-          // Auto clear if expired
+    async function loadInitialData() {
+      try {
+        // 1. Load stored notifications first to avoid race condition with firebase listener
+        const storedNotifs = await AsyncStorage.getItem('navx_notifications');
+        let initialNotifs = [];
+        if (storedNotifs) {
+          initialNotifs = JSON.parse(storedNotifs);
+        } else {
+          initialNotifs = [
+            { id: 'notif_1', title: "Map Updated", desc: "Admin published new navigation paths for CSE Block.", time: "Just now", unread: true },
+            { id: 'notif_2', title: "New Floor Added", desc: "Floor 2 was added to Block A.", time: "1d ago", unread: false },
+          ];
+          await AsyncStorage.setItem('navx_notifications', JSON.stringify(initialNotifs));
+        }
+        setNotifications(initialNotifs);
+
+        // 2. Load active meet after notifications are loaded and set
+        const storedMeet = await AsyncStorage.getItem('navx_active_meet');
+        if (storedMeet) {
+          const s = JSON.parse(storedMeet);
           if (new Date(s.expiresAt) > new Date()) {
             setActiveSession(s);
+            // Re-start location sharing on app startup!
+            const myName = user?.username || (s.role === 'creator' ? s.creatorName : s.joinerName);
+            startSharingLocation(s.sessionId, s.role, myName);
             listenToFirebase(s.sessionId, s.role);
           } else {
-            AsyncStorage.removeItem('navx_active_meet');
+            await AsyncStorage.removeItem('navx_active_meet');
           }
-        } catch (e) {}
+        }
+      } catch (e) {
+        console.log("Error loading initial data in LiveMeetContext:", e);
       }
-    });
+    }
 
-    // Load stored notifications
-    AsyncStorage.getItem('navx_notifications').then(res => {
-      if (res) {
-        setNotifications(JSON.parse(res));
-      } else {
-        const defaultNotifs = [
-          { id: 'notif_1', title: "Map Updated", desc: "Admin published new navigation paths for CSE Block.", time: "Just now", unread: true },
-          { id: 'notif_2', title: "New Floor Added", desc: "Floor 2 was added to Block A.", time: "1d ago", unread: false },
-        ];
-        setNotifications(defaultNotifs);
-        AsyncStorage.setItem('navx_notifications', JSON.stringify(defaultNotifs)).catch(() => {});
-      }
-    }).catch(() => {});
+    loadInitialData();
 
     return () => {
       if (locationSub) locationSub.remove();
