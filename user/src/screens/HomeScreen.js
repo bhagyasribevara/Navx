@@ -174,10 +174,7 @@ export default function HomeScreen({ navigation }) {
   }, [activeCampusId]);
 
   const [showNotifs, setShowNotifs] = useState(false);
-  const MOCK_NOTIFS = [
-    { id: 1, title: "Map Updated", desc: "Admin published new navigation paths for CSE Block.", time: "Just now", unread: true },
-    { id: 2, title: "New Floor Added", desc: "Floor 2 was added to Block A.", time: "1d ago", unread: false },
-  ];
+  const { notifications, markNotifRead, hasUnread } = useLiveMeet() || { notifications: [], markNotifRead: () => {}, hasUnread: false };
 
   const s = StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.bg },
@@ -416,12 +413,17 @@ export default function HomeScreen({ navigation }) {
     setCreatingMeet(true);
     try {
       const loc = await Location.getCurrentPositionAsync({});
-      // Mock device ID fallback
-      const mockDeviceId = 'device_' + Math.random().toString(36).substr(2, 9);
+      
+      // Get persistent device ID
+      let deviceId = await AsyncStorage.getItem('navx_device_id');
+      if (!deviceId) {
+        deviceId = 'device_' + Math.random().toString(36).substr(2, 9);
+        await AsyncStorage.setItem('navx_device_id', deviceId);
+      }
       
       const res = await createMeetSession({
         campusId: activeCampusId,
-        creatorDevice: mockDeviceId,
+        creatorDevice: deviceId,
         creatorName: user?.username || 'Host',
         creatorLocation: { lat: loc.coords.latitude, lng: loc.coords.longitude },
         durationMinutes: parseInt(meetDuration)
@@ -507,7 +509,7 @@ export default function HomeScreen({ navigation }) {
               <WeatherWidget />
               <TouchableOpacity style={[s.avatar, { width: 42, height: 42 }]} onPress={() => setShowNotifs(true)}>
                 <Ionicons name="notifications" size={20} color={colors.primary} />
-                <View style={s.notifDot} />
+                {hasUnread && <View style={s.notifDot} />}
               </TouchableOpacity>
               <TouchableOpacity style={[s.avatar, { width: 42, height: 42 }]} onPress={() => navigation.navigate("Settings")}>
                 <Ionicons name="person" size={20} color={colors.primary} />
@@ -737,15 +739,25 @@ export default function HomeScreen({ navigation }) {
                 <Ionicons name="close" size={20} color={colors.textSec} />
               </TouchableOpacity>
             </View>
-            {MOCK_NOTIFS.map(n => (
-              <View key={n.id} style={{ paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+            {notifications.map(n => (
+              <TouchableOpacity 
+                key={n.id} 
+                onPress={() => {
+                  markNotifRead(n.id);
+                  if (n.type === 'live_meet' && n.sessionId) {
+                    setShowNotifs(false);
+                    navigation.navigate("LiveMeet", { sessionId: n.sessionId });
+                  }
+                }}
+                style={{ paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.border }}
+              >
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 4 }}>
                   {n.unread && <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: "#ef4444" }} />}
                   <Text style={{ fontSize: 14, fontWeight: "700", color: colors.text }}>{n.title}</Text>
                   <Text style={{ fontSize: 11, color: colors.textMuted, marginLeft: "auto" }}>{n.time}</Text>
                 </View>
-                <Text style={{ fontSize: 13, color: colors.textSec, lineHeight: 18 }}>{n.desc}</Text>
-              </View>
+                <Text style={{ fontSize: 13, color: colors.textSec, lineHeight: 18 }}>{n.desc || n.message}</Text>
+              </TouchableOpacity>
             ))}
           </Animated.View>
         </View>

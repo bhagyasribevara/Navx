@@ -156,6 +156,10 @@ export const findRoute = async (data) => {
   }
 };
 
+export const findRouteBetweenCoords = async (data) => {
+  return await api.post("/navigation/route-coords", data).then((r) => r.data);
+};
+
 export const findRouteToRoom = async (data) => {
   try {
     return await api.post("/navigation/route-to-room", data).then((r) => r.data);

@@ -2,10 +2,11 @@ import React, { useEffect, useState, useContext, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Dimensions, Animated, Platform, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { WebView } from 'react-native-webview';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ThemeContext } from '../context/ThemeContext';
 import { useLiveMeet } from '../context/LiveMeetContext';
 import { useGeofence } from '../context/GeofenceContext';
-import { joinMeetSession, getMeetSession, endMeetSession, getGeoJSONMapData } from '../api';
+import { joinMeetSession, getMeetSession, endMeetSession, getGeoJSONMapData, findRouteBetweenCoords } from '../api';
 import * as Location from 'expo-location';
 import * as Haptics from 'expo-haptics';
 
@@ -131,11 +132,8 @@ window.remoteMarker = null;
 window.connectingLine = null;
 
 window.updateParticipants = function(localLat, localLng, remoteLat, remoteLng) {
-  var latlngs = [];
-  
   if (localLat !== null && localLng !== null) {
     var localPos = [localLat, localLng];
-    latlngs.push(localPos);
     if (!window.localMarker) {
       window.localMarker = L.marker(localPos, {icon: localIcon, zIndexOffset: 1000}).addTo(map);
     } else {
@@ -148,7 +146,6 @@ window.updateParticipants = function(localLat, localLng, remoteLat, remoteLng) {
 
   if (remoteLat !== null && remoteLng !== null) {
     var remotePos = [remoteLat, remoteLng];
-    latlngs.push(remotePos);
     if (!window.remoteMarker) {
       window.remoteMarker = L.marker(remotePos, {icon: remoteIcon, zIndexOffset: 900}).addTo(map);
     } else {
@@ -158,24 +155,25 @@ window.updateParticipants = function(localLat, localLng, remoteLat, remoteLng) {
     map.removeLayer(window.remoteMarker);
     window.remoteMarker = null;
   }
+};
 
+window.updateRoutePath = function(coordsJson) {
   if (window.connectingLine) {
     map.removeLayer(window.connectingLine);
     window.connectingLine = null;
   }
-
-  if (latlngs.length === 2) {
+  
+  if (coordsJson && coordsJson.length > 0) {
+    var latlngs = coordsJson.map(function(pt) { return [pt.lat, pt.lng]; });
     window.connectingLine = L.polyline(latlngs, {
       color: '#6366f1',
-      weight: 3,
+      weight: 5,
       dashArray: '5, 8',
       opacity: 0.8
     }).addTo(map);
     
     var bounds = L.latLngBounds(latlngs);
     map.fitBounds(bounds, { padding: [50, 50], maxZoom: 20 });
-  } else if (latlngs.length === 1) {
-    map.setView(latlngs[0], 20);
   }
 };
 
@@ -192,7 +190,44 @@ export default function LiveMeetScreen({ route, navigation }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [geoJSONData, setGeoJSONData] = useState(null);
+  const [routePath, setRoutePath] = useState([]);
   const webViewRef = useRef(null);
+
+  const handleWebViewLoad = () => {
+    if (webViewRef.current) {
+      const localLat = currentPos?.x ?? null;
+      const localLng = currentPos?.y ?? null;
+      const remoteLat = remoteParticipant?.location?.lat ?? null;
+      const remoteLng = remoteParticipant?.location?.lng ?? null;
+
+      webViewRef.current.injectJavaScript(`
+        if (typeof window.updateParticipants === 'function') {
+          window.updateParticipants(${localLat}, ${localLng}, ${remoteLat}, ${remoteLng});
+        }
+        if (typeof window.updateGeoJSON === 'function' && ${geoJSONData ? 'true' : 'false'}) {
+          window.updateGeoJSON(${JSON.stringify(geoJSONData)}, '');
+        }
+        true;
+      `);
+
+      if (routePath && routePath.length > 0) {
+        webViewRef.current.injectJavaScript(`
+          if (typeof window.updateRoutePath === 'function') {
+            window.updateRoutePath(${JSON.stringify(routePath)});
+          }
+          true;
+        `);
+      } else if (localLat !== null && localLng !== null && remoteLat !== null && remoteLng !== null) {
+        const fallbackPath = [{ lat: localLat, lng: localLng }, { lat: remoteLat, lng: remoteLng }];
+        webViewRef.current.injectJavaScript(`
+          if (typeof window.updateRoutePath === 'function') {
+            window.updateRoutePath(${JSON.stringify(fallbackPath)});
+          }
+          true;
+        `);
+      }
+    }
+  };
 
   const distance = currentPos && remoteParticipant?.location
     ? getHaversineDistance(
@@ -229,11 +264,15 @@ export default function LiveMeetScreen({ route, navigation }) {
         // Fetch session data
         const sessionData = await getMeetSession(sessionId);
         
-        // Mock Device ID
-        const mockDeviceId = 'device_' + Math.random().toString(36).substr(2, 9);
+        // Get persistent device ID
+        let deviceId = await AsyncStorage.getItem('navx_device_id');
+        if (!deviceId) {
+          deviceId = 'device_' + Math.random().toString(36).substr(2, 9);
+          await AsyncStorage.setItem('navx_device_id', deviceId);
+        }
         
         let role = 'joiner';
-        if (sessionData.creatorDevice === mockDeviceId) {
+        if (sessionData.creatorDevice === deviceId) {
           role = 'creator';
         }
 
@@ -241,7 +280,7 @@ export default function LiveMeetScreen({ route, navigation }) {
           // Join the session via API
           const loc = await Location.getCurrentPositionAsync({});
           await joinMeetSession(sessionId, {
-            joinerDevice: mockDeviceId,
+            joinerDevice: deviceId,
             joinerName: 'Friend',
             joinerLocation: { lat: loc.coords.latitude, lng: loc.coords.longitude }
           });
@@ -301,6 +340,73 @@ export default function LiveMeetScreen({ route, navigation }) {
     }
   }, [geoJSONData]);
 
+  // Dynamic path routing strictly following campus pathways
+  useEffect(() => {
+    if (!currentPos || !remoteParticipant?.location) return;
+
+    const activeCampusId = typeof activeSession?.campusId === 'object' && activeSession?.campusId !== null
+      ? activeSession.campusId._id
+      : (activeSession?.campusId || activeSession?.campusId);
+
+    if (!activeCampusId) return;
+
+    let active = true;
+
+    async function fetchRoute() {
+      try {
+        const res = await findRouteBetweenCoords({
+          startX: currentPos.x,
+          startY: currentPos.y,
+          endX: remoteParticipant.location.lat,
+          endY: remoteParticipant.location.lng,
+          campusId: activeCampusId
+        });
+        if (active && res && res.path) {
+          const coords = res.path.map(n => ({ lat: n.x, lng: n.y }));
+          setRoutePath(coords);
+        }
+      } catch (err) {
+        console.log("Failed to fetch route between coordinates:", err);
+      }
+    }
+
+    const timer = setTimeout(fetchRoute, 1000);
+
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [currentPos?.x, currentPos?.y, remoteParticipant?.location?.lat, remoteParticipant?.location?.lng]);
+
+  // Inject route path when it updates, with straight line fallback
+  useEffect(() => {
+    if (webViewRef.current) {
+      if (routePath && routePath.length > 0) {
+        webViewRef.current.injectJavaScript(`
+          if (typeof window.updateRoutePath === 'function') {
+            window.updateRoutePath(${JSON.stringify(routePath)});
+          }
+          true;
+        `);
+      } else {
+        // Fallback: straight line
+        const localLat = currentPos?.x ?? null;
+        const localLng = currentPos?.y ?? null;
+        const remoteLat = remoteParticipant?.location?.lat ?? null;
+        const remoteLng = remoteParticipant?.location?.lng ?? null;
+        if (localLat !== null && localLng !== null && remoteLat !== null && remoteLng !== null) {
+          const fallbackPath = [{ lat: localLat, lng: localLng }, { lat: remoteLat, lng: remoteLng }];
+          webViewRef.current.injectJavaScript(`
+            if (typeof window.updateRoutePath === 'function') {
+              window.updateRoutePath(${JSON.stringify(fallbackPath)});
+            }
+            true;
+          `);
+        }
+      }
+    }
+  }, [routePath, currentPos, remoteParticipant]);
+
   if (loading) {
     return (
       <View style={[s.center, { backgroundColor: colors.bg }]}>
@@ -333,6 +439,7 @@ export default function LiveMeetScreen({ route, navigation }) {
           style={{ flex: 1, backgroundColor: '#0a0e17' }}
           javaScriptEnabled={true}
           domStorageEnabled={true}
+          onLoad={handleWebViewLoad}
         />
       </View>
 

@@ -159,6 +159,117 @@ router.post('/route', async (req, res) => {
   }
 });
 
+// POST find route between coordinates (for Live Meet / dynamic routing)
+router.post('/route-coords', async (req, res) => {
+  try {
+    const { startX, startY, endX, endY, campusId, accessible = false } = req.body;
+
+    if (startX == null || startY == null || endX == null || endY == null || !campusId) {
+      return res.status(400).json({ error: 'Missing required fields: startX, startY, endX, endY, campusId' });
+    }
+
+    const cached = await getCachedGraph(campusId);
+    // Deep copy/clone graph to prevent polluting the cache with virtual nodes/edges
+    const graph = JSON.parse(JSON.stringify(cached.graph));
+
+    if (Object.keys(graph).length === 0) {
+      return res.status(400).json({ error: 'No navigation nodes found on this campus.' });
+    }
+
+    const allNodes = Object.values(graph);
+
+    // Find nearest nodes to start coordinate
+    const startDists = allNodes.map(n => ({
+      node: n,
+      dist: haversineDistMeters(startX, startY, n.x, n.y)
+    })).sort((a, b) => a.dist - b.dist);
+
+    if (startDists.length === 0) {
+      return res.status(404).json({ error: 'No graph nodes found near starting location' });
+    }
+
+    const virtualStartId = 'user_gps_start';
+    graph[virtualStartId] = {
+      id: virtualStartId,
+      x: startX,
+      y: startY,
+      floorId: null,
+      floorLevel: null,
+      type: 'user',
+      neighbors: []
+    };
+
+    // Connect virtual start to nearest 3 nodes
+    const kNearestStart = startDists.slice(0, Math.min(3, startDists.length));
+    kNearestStart.forEach(n => {
+      graph[virtualStartId].neighbors.push({
+        nodeId: n.node.id,
+        distance: n.dist,
+        weight: n.dist,
+        pathType: 'connector',
+        accessible: true
+      });
+    });
+
+    // Find nearest nodes to end coordinate
+    const endDists = allNodes.map(n => ({
+      node: n,
+      dist: haversineDistMeters(endX, endY, n.x, n.y)
+    })).sort((a, b) => a.dist - b.dist);
+
+    if (endDists.length === 0) {
+      return res.status(404).json({ error: 'No graph nodes found near ending location' });
+    }
+
+    const virtualEndId = 'user_gps_end';
+    graph[virtualEndId] = {
+      id: virtualEndId,
+      x: endX,
+      y: endY,
+      floorId: null,
+      floorLevel: null,
+      type: 'user',
+      neighbors: []
+    };
+
+    // Connect nearest 3 nodes TO virtual end node (since graph neighbors are directed)
+    const kNearestEnd = endDists.slice(0, Math.min(3, endDists.length));
+    kNearestEnd.forEach(n => {
+      if (graph[n.node.id]) {
+        graph[n.node.id].neighbors.push({
+          nodeId: virtualEndId,
+          distance: n.dist,
+          weight: n.dist,
+          pathType: 'connector',
+          accessible: true
+        });
+      }
+    });
+
+    // Run A* search
+    let result = astar(graph, virtualStartId, virtualEndId, { requireAccessible: accessible });
+
+    if (!result.found) {
+      return res.status(404).json({ error: 'No route found between coordinates' });
+    }
+
+    const directions = generateDirections(result.path);
+    const summary = computeRouteSummary(directions);
+
+    res.json({
+      ...result,
+      distance: summary.totalDistance,
+      directions,
+      eta: summary.totalEta,
+      totalSteps: summary.totalSteps
+    });
+
+  } catch (err) {
+    console.error('[Navigation Route-Coords Error]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST find route to a room — with multi-level fallback
 router.post('/route-to-room', async (req, res) => {
   try {
