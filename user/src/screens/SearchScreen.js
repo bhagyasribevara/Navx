@@ -27,7 +27,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 export default function SearchScreen({ navigation, route }) {
   const { colors } = useContext(ThemeContext);
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(route.params?.initialQuery || "");
   const [results, setResults] = useState([]);
   const { activeCampusId } = useGeofence();
   const campusId = activeCampusId || route.params?.campusId;

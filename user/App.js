@@ -28,6 +28,7 @@ import { LiveMeetProvider } from "./src/context/LiveMeetContext";
 import EmergencyOverlay from "./src/components/EmergencyOverlay";
 import GeofenceGuard from "./src/components/GeofenceGuard";
 import NotificationBanner from "./src/components/NotificationBanner";
+import AIChatOverlay from "./src/components/AIChatOverlay";
 
 import AuthScreen from "./src/screens/AuthScreen";
 import { AuthProvider, useAuth } from "./src/context/AuthContext";
@@ -190,6 +191,7 @@ function AppNavigator() {
         {user && <EmergencyOverlay />}
         {user && <GeofenceGuard />}
         {user && <NotificationBanner />}
+        {user && <AIChatOverlay />}
       </NavigationContainer>
     </SafeAreaView>
   );

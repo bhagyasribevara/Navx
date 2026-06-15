@@ -187,11 +187,35 @@ export default function MapScreen({ navigation, route }) {
         if (targetFloor) {
           setSelectedFloor(targetFloor);
           const parentBlock = mapData.blocks?.find(b => b._id === targetFloor.blockId);
-          if (parentBlock) setSelectedBlock(parentBlock);
+          if (parentBlock) {
+            setSelectedBlock(parentBlock);
+            if (parentBlock.shape?.points?.[0]) {
+              setTimeout(() => {
+                webViewRef.current?.injectJavaScript(`
+                  if (typeof window.panTo === 'function') {
+                    window.panTo(${parentBlock.shape.points[0].x}, ${parentBlock.shape.points[0].y});
+                  }
+                  true;
+                `);
+              }, 500);
+            }
+          }
         }
       } else if (route.params?.blockId) {
         const targetBlock = mapData.blocks?.find(b => b._id === route.params.blockId);
-        if (targetBlock) setSelectedBlock(targetBlock);
+        if (targetBlock) {
+          setSelectedBlock(targetBlock);
+          if (targetBlock.shape?.points?.[0]) {
+            setTimeout(() => {
+              webViewRef.current?.injectJavaScript(`
+                if (typeof window.panTo === 'function') {
+                  window.panTo(${targetBlock.shape.points[0].x}, ${targetBlock.shape.points[0].y});
+                }
+                true;
+              `);
+            }, 500);
+          }
+        }
       }
     }
   }, [mapData, route.params?.floorId, route.params?.blockId]);

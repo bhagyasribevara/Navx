@@ -31,6 +31,24 @@ io.on('connection', (socket) => {
   });
 });
 
+// AI Chat WebSocket namespace
+const aiChatNs = io.of('/ai-chat');
+aiChatNs.on('connection', (socket) => {
+  console.log('AI Chat client connected:', socket.id);
+
+  socket.on('join_session', (sessionId) => {
+    socket.join(sessionId);
+  });
+
+  socket.on('typing', (data) => {
+    socket.to(data.sessionId).emit('typing', data);
+  });
+
+  socket.on('disconnect', () => {
+    console.log('AI Chat client disconnected:', socket.id);
+  });
+});
+
 // Middleware
 const cookieParser = require('cookie-parser');
 app.use(cors({ origin: true, credentials: true }));

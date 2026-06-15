@@ -22,7 +22,7 @@ if (__DEV__ && !process.env.EXPO_PUBLIC_API_BASE_URL) {
 export { SOCKET_URL };
 const api = axios.create({
   baseURL: API_BASE,
-  timeout: 30000,
+  timeout: 60000,
   headers: { "Content-Type": "application/json" },
 });
 
@@ -190,7 +190,7 @@ export const logAnalytics = (data) =>
   api.post("/analytics", data).catch(() => {});
 
 // AI Chatbot
-export const chatWithAI = (message, sessionId, context) =>
-  api.post("/ai/chat", { message, sessionId, context }).then((r) => r.data);
+export const chatWithAI = (message, sessionId, campusId, context) =>
+  api.post("/ai/chat", { message, sessionId, campusId, context }).then((r) => r.data);
 
 export default api;

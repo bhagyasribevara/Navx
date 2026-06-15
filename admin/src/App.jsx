@@ -3,6 +3,7 @@ import { Routes, Route, NavLink, useLocation, useNavigate, useParams, Outlet } f
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import { FiMap, FiGrid, FiLayers, FiNavigation, FiBarChart2, FiSettings, FiHome, FiAlertCircle } from 'react-icons/fi';
+import NavXAIChat from './components/NavXAIChat';
 import Dashboard from './pages/Dashboard';
 import CampusManager from './pages/CampusManager';
 import MapEditor from './pages/MapEditor';
@@ -84,9 +85,14 @@ function App() {
     );
   }
 
+  // Derive campusId from admin state for AI chatbot context
+  const adminCampusId = admin?.campusId?._id || admin?.campusId || admin?.campus?._id || null;
+  const adminCampusName = admin?.campus?.name || admin?.campus?.campusName || null;
+
   return (
     <>
       <ToastContainer position="bottom-right" theme="dark" autoClose={3000} />
+      <NavXAIChat campusId={adminCampusId} campusName={adminCampusName} />
       <Routes>
         {/* Default SuperAdmin or Legacy Routes */}
         <Route

@@ -41,7 +41,6 @@ const wipeAllCampusData = async (campusId) => {
 };
 
 export function GeofenceProvider({ children }) {
-  // Active campus: { id, name, location: { lat, lng }, radius }
   const [activeCampus, setActiveCampus] = useState(null);
   const [sessionRevoked, setSessionRevoked] = useState(false);
   const [revokedCampusName, setRevokedCampusName] = useState(null);
@@ -209,6 +208,14 @@ export function GeofenceProvider({ children }) {
     await wipeAllCampusData(campusId);
     setActiveCampus(null);
   }, [activeCampus?.id]);
+
+  // Auto-deactivate campus if user logs out
+  const { user } = require("./AuthContext").useAuth();
+  useEffect(() => {
+    if (user === null && activeCampus) {
+      deactivateCampus();
+    }
+  }, [user, activeCampus, deactivateCampus]);
 
   // Clear the revoked state (user acknowledged and wants to rescan)
   const clearRevocation = useCallback(() => {

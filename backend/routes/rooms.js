@@ -34,13 +34,21 @@ router.get('/search/:query', optionalAuthenticateJWT, enforceCampusIsolation, as
     const filter = { isActive: true };
     if (req.query.campusId) filter.campusId = req.query.campusId;
     
+    const Block = require('../models/Block');
+    const matchingBlocks = await Block.find({
+      ...filter,
+      name: { $regex: query, $options: 'i' }
+    });
+    const blockIds = matchingBlocks.map(b => b._id);
+
     const rooms = await Room.find({
       ...filter,
       $or: [
         { name: { $regex: query, $options: 'i' } },
         { roomNumber: { $regex: query, $options: 'i' } },
         { description: { $regex: query, $options: 'i' } },
-        { type: { $regex: query, $options: 'i' } }
+        { type: { $regex: query, $options: 'i' } },
+        ...(blockIds.length > 0 ? [{ blockId: { $in: blockIds } }] : [])
       ]
     })
     .populate('floorId', 'name level')

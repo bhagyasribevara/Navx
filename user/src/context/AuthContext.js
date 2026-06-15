@@ -69,7 +69,15 @@ export function AuthProvider({ children }) {
   const logout = async () => {
     setUser(null);
     setToken(null);
-    await AsyncStorage.removeItem('navx_user_token');
+    try {
+      const keys = await AsyncStorage.getAllKeys();
+      const navxKeys = keys.filter(k => k.startsWith('navx_'));
+      if (navxKeys.length > 0) {
+        await AsyncStorage.multiRemove(navxKeys);
+      }
+    } catch (e) {
+      console.warn("Failed to wipe local storage on logout", e);
+    }
   };
 
   return (
