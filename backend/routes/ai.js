@@ -311,7 +311,6 @@ router.post('/chat', async (req, res) => {
 
     res.json(parsed);
   } catch (err) {
-    require('fs').writeFileSync('C:/Users/Punit/.gemini/antigravity-ide/brain/ea80a6b1-155e-43a1-ae6f-c4c26e1d46a9/scratch/ai_error.log', err.stack);
     console.error('[AI Chat Error]', err);
     res.status(200).json({
       text: "I'm currently assisting many students right now and the network is a bit crowded. Please give me a few seconds and try again!",
