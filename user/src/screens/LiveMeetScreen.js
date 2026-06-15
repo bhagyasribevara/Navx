@@ -191,6 +191,17 @@ export default function LiveMeetScreen({ route, navigation }) {
   const [routePath, setRoutePath] = useState([]);
   const webViewRef = useRef(null);
   const initialCenterRef = useRef(null);
+  const webViewReady = useRef(false);
+
+  // Keep refs for latest values so handleWebViewLoad doesn't use stale closures
+  const currentPosRef = useRef(currentPos);
+  const remoteParticipantRef = useRef(remoteParticipant);
+  const geoJSONDataRef = useRef(geoJSONData);
+  const routePathRef = useRef(routePath);
+  currentPosRef.current = currentPos;
+  remoteParticipantRef.current = remoteParticipant;
+  geoJSONDataRef.current = geoJSONData;
+  routePathRef.current = routePath;
 
   if (currentPos && !initialCenterRef.current) {
     initialCenterRef.current = { x: currentPos.x, y: currentPos.y };
@@ -200,26 +211,39 @@ export default function LiveMeetScreen({ route, navigation }) {
     return buildLiveMeetMapHTML(initialCenterRef.current);
   }, []);
 
-  const handleWebViewLoad = () => {
-    if (webViewRef.current) {
-      const localLat = currentPos?.x ?? null;
-      const localLng = currentPos?.y ?? null;
-      const remoteLat = remoteParticipant?.location?.lat ?? null;
-      const remoteLng = remoteParticipant?.location?.lng ?? null;
+  // Safe injection helper — only calls injectJavaScript when WebView is loaded
+  const safeInject = (js) => {
+    if (webViewReady.current && webViewRef.current) {
+      webViewRef.current.injectJavaScript(js);
+    }
+  };
 
+  const handleWebViewLoad = () => {
+    webViewReady.current = true;
+
+    // Read from refs to get the LATEST values (not stale closure values)
+    const cp = currentPosRef.current;
+    const rp = remoteParticipantRef.current;
+    const geo = geoJSONDataRef.current;
+    const rp2 = routePathRef.current;
+
+    const localLat = cp?.x ?? null;
+    const localLng = cp?.y ?? null;
+    const remoteLat = rp?.location?.lat ?? null;
+    const remoteLng = rp?.location?.lng ?? null;
+
+    console.log('[LiveMeet] WebView loaded. Injecting initial state:', { localLat, localLng, remoteLat, remoteLng, hasGeoJSON: !!geo, routePoints: rp2?.length });
+
+    if (webViewRef.current) {
       webViewRef.current.injectJavaScript(`
         if (typeof window.updateParticipants === 'function') {
           window.updateParticipants(${localLat}, ${localLng}, ${remoteLat}, ${remoteLng});
         }
-        if (typeof window.updateGeoJSON === 'function' && ${geoJSONData ? 'true' : 'false'}) {
-          window.updateGeoJSON(${JSON.stringify(geoJSONData)}, '');
+        if (typeof window.updateGeoJSON === 'function' && ${geo ? 'true' : 'false'}) {
+          window.updateGeoJSON(${JSON.stringify(geo)}, '');
         }
-        true;
-      `);
-
-      webViewRef.current.injectJavaScript(`
         if (typeof window.updateRoutePath === 'function') {
-          window.updateRoutePath(${JSON.stringify(routePath)});
+          window.updateRoutePath(${JSON.stringify(rp2 || [])});
         }
         true;
       `);
@@ -314,25 +338,27 @@ export default function LiveMeetScreen({ route, navigation }) {
 
   // Sync positions to WebView map
   useEffect(() => {
-    if (webViewRef.current) {
-      const localLat = currentPos?.x ?? null;
-      const localLng = currentPos?.y ?? null;
-      const remoteLat = remoteParticipant?.location?.lat ?? null;
-      const remoteLng = remoteParticipant?.location?.lng ?? null;
+    if (!webViewReady.current) return; // Don't inject before WebView is loaded
 
-      webViewRef.current.injectJavaScript(`
-        if (typeof window.updateParticipants === 'function') {
-          window.updateParticipants(${localLat}, ${localLng}, ${remoteLat}, ${remoteLng});
-        }
-        true;
-      `);
-    }
+    const localLat = currentPos?.x ?? null;
+    const localLng = currentPos?.y ?? null;
+    const remoteLat = remoteParticipant?.location?.lat ?? null;
+    const remoteLng = remoteParticipant?.location?.lng ?? null;
+
+    console.log('[LiveMeet] Syncing positions:', { localLat, localLng, remoteLat, remoteLng });
+
+    safeInject(`
+      if (typeof window.updateParticipants === 'function') {
+        window.updateParticipants(${localLat}, ${localLng}, ${remoteLat}, ${remoteLng});
+      }
+      true;
+    `);
   }, [currentPos, remoteParticipant]);
 
   // Inject geojson when it loads
   useEffect(() => {
-    if (geoJSONData && webViewRef.current) {
-      webViewRef.current.injectJavaScript(`
+    if (geoJSONData) {
+      safeInject(`
         if (typeof window.updateGeoJSON === 'function') {
           window.updateGeoJSON(${JSON.stringify(geoJSONData)}, '');
         }
@@ -384,14 +410,12 @@ export default function LiveMeetScreen({ route, navigation }) {
 
   // Inject route path when it updates
   useEffect(() => {
-    if (webViewRef.current) {
-      webViewRef.current.injectJavaScript(`
-        if (typeof window.updateRoutePath === 'function') {
-          window.updateRoutePath(${JSON.stringify(routePath)});
-        }
-        true;
-      `);
-    }
+    safeInject(`
+      if (typeof window.updateRoutePath === 'function') {
+        window.updateRoutePath(${JSON.stringify(routePath)});
+      }
+      true;
+    `);
   }, [routePath]);
 
   if (loading || !currentPos) {

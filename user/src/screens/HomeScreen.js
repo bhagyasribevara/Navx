@@ -435,6 +435,7 @@ export default function HomeScreen({ navigation }) {
         await enterMeetSession({
           ...res,
           campusId: activeCampusId,
+          creatorDevice: deviceId,
           creatorName: user?.username || 'Host',
           creatorLocation: { lat: loc.coords.latitude, lng: loc.coords.longitude }
         }, 'creator');
@@ -444,7 +445,6 @@ export default function HomeScreen({ navigation }) {
         message: url,
       });
       setShowMeetModal(false);
-      navigation.navigate("LiveMeet", { sessionId: res.sessionId });
     } catch (e) {
       console.log('Error creating meet:', e);
     } finally {

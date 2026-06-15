@@ -73,12 +73,16 @@ export function LiveMeetProvider({ children }) {
     const remotePath = `meets/${sessionId}/${remoteRole}`;
     const rRef = ref(database, remotePath);
     
+    console.log(`[LiveMeet] Firebase listener started on path: ${remotePath}`);
+    
     onValue(rRef, (snapshot) => {
       const data = snapshot.val();
+      console.log(`[LiveMeet] Firebase data received on ${remotePath}:`, data ? { hasLocation: !!data.location, status: data.status, name: data.name } : 'null');
+      
       if (data) {
         setRemoteParticipant(prev => ({
           ...prev,
-          location: data.location,
+          location: data.location || prev?.location,
           status: data.status || prev?.status,
           name: data.name || prev?.name
         }));
@@ -103,6 +107,8 @@ export function LiveMeetProvider({ children }) {
           });
         }
       }
+    }, (error) => {
+      console.error(`[LiveMeet] Firebase listener error on ${remotePath}:`, error);
     });
 
     fbListenersRef.current.push({ path: remotePath });
@@ -110,11 +116,16 @@ export function LiveMeetProvider({ children }) {
 
   const startSharingLocation = async (sessionId, role, name) => {
     const { status } = await Location.requestForegroundPermissionsAsync();
-    if (status !== 'granted') return;
+    if (status !== 'granted') {
+      console.log('[LiveMeet] Location permission denied');
+      return;
+    }
 
     if (locationSub) locationSub.remove();
 
-    const locRef = ref(database, `meets/${sessionId}/${role}`);
+    const fbPath = `meets/${sessionId}/${role}`;
+    const locRef = ref(database, fbPath);
+    console.log(`[LiveMeet] Starting location sharing on Firebase path: ${fbPath}`);
 
     // Fetch initial location immediately
     try {
@@ -186,6 +197,7 @@ export function LiveMeetProvider({ children }) {
 
   const enterMeetSession = async (sessionData, role) => {
     const s = { ...sessionData, role };
+    console.log(`[LiveMeet] enterMeetSession called. Role: ${role}, SessionId: ${s.sessionId}, HasCreatorDevice: ${!!s.creatorDevice}`);
     setActiveSession(s);
     await AsyncStorage.setItem('navx_active_meet', JSON.stringify(s));
     
