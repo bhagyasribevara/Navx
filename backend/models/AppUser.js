@@ -27,6 +27,24 @@ const AppUserSchema = new mongoose.Schema({
   createdAt: {
     type: Date,
     default: Date.now
+  },
+  isGuest: {
+    type: Boolean,
+    default: false
+  },
+  guestStatus: {
+    type: String,
+    enum: ['active', 'inactive'],
+    default: 'inactive'
+  },
+  lastHeartbeat: {
+    type: Date,
+    default: null
+  },
+  activeCampusId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Campus',
+    default: null
   }
 });
 

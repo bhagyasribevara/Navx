@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useRef, useCallback, useEff
 import * as Location from "expo-location";
 import * as Haptics from "expo-haptics";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import api from "../api";
 
 const GeofenceContext = createContext();
 
@@ -45,6 +46,8 @@ export function GeofenceProvider({ children }) {
   const [sessionRevoked, setSessionRevoked] = useState(false);
   const [revokedCampusName, setRevokedCampusName] = useState(null);
   const watcherRef = useRef(null);
+
+  const { user, token, logout } = require("./AuthContext").useAuth();
 
   // Restore campus session from AsyncStorage on app launch — but VALIDATE location first
   useEffect(() => {
@@ -144,14 +147,20 @@ export function GeofenceProvider({ children }) {
               // Haptic alert
               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
 
-              // Wipe all data
-              await wipeAllCampusData(activeCampus.id);
+              // If guest, log out immediately
+              if (user?.isGuest) {
+                console.log("Logging out guest user due to local boundary exit.");
+                logout();
+              } else {
+                // Wipe all data
+                await wipeAllCampusData(activeCampus.id);
 
-              // Set revoked state
-              const campusName = activeCampus.name;
-              setRevokedCampusName(campusName);
-              setActiveCampus(null);
-              setSessionRevoked(true);
+                // Set revoked state
+                const campusName = activeCampus.name;
+                setRevokedCampusName(campusName);
+                setActiveCampus(null);
+                setSessionRevoked(true);
+              }
 
               // Stop watcher
               if (watcherRef.current) {
@@ -175,7 +184,101 @@ export function GeofenceProvider({ children }) {
         watcherRef.current = null;
       }
     };
-  }, [activeCampus?.id, activeCampus?.location?.lat, activeCampus?.radius]);
+  }, [activeCampus?.id, activeCampus?.location?.lat, activeCampus?.radius, user?.isGuest, logout]);
+
+  // Guest heartbeat monitor (sends periodic location coordinates to backend)
+  useEffect(() => {
+    if (!user?.isGuest) return;
+
+    let isMounted = true;
+    let guestWatcher = null;
+
+    const startGuestMonitoring = async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== "granted") {
+          console.warn("Location permission not granted for guest geofence monitoring");
+          return;
+        }
+
+        // Immediately send an initial heartbeat on mount/login
+        try {
+          const currentLoc = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+            timeout: 5000,
+          });
+          if (isMounted) {
+            const response = await api.post(
+              "/app-auth/heartbeat",
+              {
+                location: {
+                  lat: currentLoc.coords.latitude,
+                  lng: currentLoc.coords.longitude
+                },
+                campusId: activeCampus?.id || null
+              },
+              {
+                headers: { Authorization: `Bearer ${token}` }
+              }
+            );
+            if (response.data.success && response.data.active === false) {
+              console.log("Guest session deactivated by backend on initial check.");
+              logout();
+              return;
+            }
+          }
+        } catch (initialErr) {
+          console.warn("Failed to send initial guest heartbeat:", initialErr?.message);
+        }
+
+        guestWatcher = await Location.watchPositionAsync(
+          {
+            accuracy: Location.Accuracy.Balanced,
+            timeInterval: 10000, // send heartbeat every 10 seconds
+            distanceInterval: 10,
+          },
+          async (loc) => {
+            if (!isMounted) return;
+
+            // Send heartbeat to backend
+            try {
+              const response = await api.post(
+                "/app-auth/heartbeat",
+                {
+                  location: {
+                    lat: loc.coords.latitude,
+                    lng: loc.coords.longitude
+                  },
+                  campusId: activeCampus?.id || null
+                },
+                {
+                  headers: { Authorization: `Bearer ${token}` }
+                }
+              );
+
+              if (response.data.success && response.data.active === false) {
+                console.log("🚫 Guest session deactivated by backend (exited boundary or expired)");
+                logout();
+              }
+            } catch (err) {
+              console.warn("Guest heartbeat ping failed:", err?.message);
+            }
+          }
+        );
+      } catch (e) {
+        console.error("Guest geofence monitoring failed to start:", e);
+      }
+    };
+
+    startGuestMonitoring();
+
+    return () => {
+      isMounted = false;
+      if (guestWatcher) {
+        guestWatcher.remove();
+      }
+    };
+  }, [user?.isGuest, activeCampus?.id, token, logout]);
 
   // Activate a campus session (called after QR scan + geofence verification)
   const activateCampus = useCallback(async (campus) => {
@@ -210,7 +313,6 @@ export function GeofenceProvider({ children }) {
   }, [activeCampus?.id]);
 
   // Auto-deactivate campus if user logs out
-  const { user } = require("./AuthContext").useAuth();
   useEffect(() => {
     if (user === null && activeCampus) {
       deactivateCampus();

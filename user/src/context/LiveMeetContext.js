@@ -11,6 +11,7 @@ export const LiveMeetContext = createContext();
 export function LiveMeetProvider({ children }) {
   const [activeSession, setActiveSession] = useState(null);
   const [remoteParticipant, setRemoteParticipant] = useState(null);
+  const [showMeetModal, setShowMeetModal] = useState(false);
   const [locationSub, setLocationSub] = useState(null);
   const [currentPos, setCurrentPos] = useState(null);
   const [notifications, setNotifications] = useState([]);
@@ -265,7 +266,9 @@ export function LiveMeetProvider({ children }) {
       broadcastStatus,
       notifications,
       markNotifRead,
-      hasUnread
+      hasUnread,
+      showMeetModal,
+      setShowMeetModal
     }}>
       {children}
     </LiveMeetContext.Provider>

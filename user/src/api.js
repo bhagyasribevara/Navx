@@ -26,6 +26,56 @@ const api = axios.create({
   headers: { "Content-Type": "application/json" },
 });
 
+let cachedConfig = null;
+
+export async function fetchAppConfig() {
+  try {
+    const res = await api.get("/config");
+    const config = res.data;
+    await AsyncStorage.setItem("navx_app_config", JSON.stringify(config));
+    cachedConfig = config;
+    
+    // Initialize Firebase dynamically if API key is provided
+    if (config.EXPO_PUBLIC_FIREBASE_API_KEY) {
+      try {
+        const { initializeFirebase } = require("./config/firebase");
+        initializeFirebase(config.EXPO_PUBLIC_FIREBASE_API_KEY);
+      } catch (e) {
+        console.warn("Could not dynamically initialize Firebase:", e);
+      }
+    }
+    return config;
+  } catch (err) {
+    console.warn("Failed to fetch config from server, loading from cache...", err);
+    try {
+      const stored = await AsyncStorage.getItem("navx_app_config");
+      if (stored) {
+        const config = JSON.parse(stored);
+        cachedConfig = config;
+        if (config.EXPO_PUBLIC_FIREBASE_API_KEY) {
+          try {
+            const { initializeFirebase } = require("./config/firebase");
+            initializeFirebase(config.EXPO_PUBLIC_FIREBASE_API_KEY);
+          } catch (e) {
+            console.warn("Could not dynamically initialize Firebase from cache:", e);
+          }
+        }
+        return config;
+      }
+    } catch (e) {
+      console.warn("AsyncStorage read failed:", e);
+    }
+    return {};
+  }
+}
+
+export function getCachedConfigValue(key, fallback) {
+  if (cachedConfig && cachedConfig[key]) {
+    return cachedConfig[key];
+  }
+  return fallback;
+}
+
 // Cache helpers
 const CACHE_DURATION = 30 * 60 * 1000; // 30 min
 
@@ -119,7 +169,7 @@ export const getRooms = (floorId) =>
 export const getRoomsByCat = (campusId, type) =>
   api.get(`/rooms?campusId=${campusId}&type=${type}`).then((r) => r.data);
 export const searchRooms = (query, campusId) =>
-  api.get(`/rooms/search/${query}?campusId=${campusId}`).then((r) => r.data);
+  api.get(`/rooms/search/${encodeURIComponent(query.trim())}?campusId=${campusId}`).then((r) => r.data);
 export const getCampaigns = (campusId) =>
   api.get(`/campaigns/campus/${campusId}?active=true`).then((r) => r.data);
 export const getSubCampaigns = (parentId) =>

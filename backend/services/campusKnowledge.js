@@ -221,14 +221,21 @@ async function searchFacilities(campusId, query) {
   if (!campusId || !query) return [];
 
   try {
+    const cleanQuery = query.trim().replace(/\s+/g, ' ');
+    if (!cleanQuery) return [];
+
+    const escapeRegExp = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const escapedWords = cleanQuery.split(' ').map(w => escapeRegExp(w));
+    const regex = new RegExp(escapedWords.map(w => `(?=.*${w})`).join(''), 'i');
+
     const rooms = await Room.find({
       campusId,
       isActive: true,
       $or: [
-        { name: { $regex: query, $options: 'i' } },
-        { roomNumber: { $regex: query, $options: 'i' } },
-        { description: { $regex: query, $options: 'i' } },
-        { type: { $regex: query, $options: 'i' } },
+        { name: { $regex: regex } },
+        { roomNumber: { $regex: regex } },
+        { description: { $regex: regex } },
+        { type: { $regex: regex } },
       ],
     })
       .populate('floorId', 'name level')

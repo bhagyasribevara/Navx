@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { ThemeContext } from '../context/ThemeContext';
 import { useLiveMeet } from '../context/LiveMeetContext';
 import { useGeofence } from '../context/GeofenceContext';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const { width: SW, height: SH } = Dimensions.get('window');
 
@@ -29,6 +30,7 @@ export default function ARMeetScreen({ navigation }) {
   const { colors } = useContext(ThemeContext);
   const { activeSession, remoteParticipant } = useLiveMeet();
   const { currentPos } = useGeofence();
+  const insets = useSafeAreaInsets();
   const [hasPermission, setHasPermission] = useState(null);
   const [heading, setHeading] = useState(0);
 
@@ -77,7 +79,7 @@ export default function ARMeetScreen({ navigation }) {
       <CameraView style={StyleSheet.absoluteFill} facing="back" />
       
       {/* Header */}
-      <View style={s.header}>
+      <View style={[s.header, { top: Math.max(insets.top, 16) }]}>
         <TouchableOpacity style={s.backBtn} onPress={() => navigation.goBack()}>
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>

@@ -6,13 +6,12 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ThemeContext } from '../context/ThemeContext';
 import { useLiveMeet } from '../context/LiveMeetContext';
 import { useGeofence } from '../context/GeofenceContext';
-import { joinMeetSession, getMeetSession, endMeetSession, getGeoJSONMapData, findRouteBetweenCoords } from '../api';
+import { joinMeetSession, getMeetSession, endMeetSession, getGeoJSONMapData, findRouteBetweenCoords, getCachedConfigValue } from '../api';
 import * as Location from 'expo-location';
 import * as Haptics from 'expo-haptics';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const { width: SW, height: SH } = Dimensions.get('window');
-
-const MAPBOX_URL = process.env.EXPO_PUBLIC_MAPBOX_URL || "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
 
 function getHaversineDistance(lat1, lon1, lat2, lon2) {
   if (!lat1 || !lon1 || !lat2 || !lon2) return null;
@@ -27,7 +26,7 @@ function getHaversineDistance(lat1, lon1, lat2, lon2) {
   return R * c;
 }
 
-function buildLiveMeetMapHTML(centerCoords) {
+function buildLiveMeetMapHTML(centerCoords, mapboxUrl) {
   const center = centerCoords ? [centerCoords.x, centerCoords.y] : [18.4665, 83.6629];
   
   return `<!DOCTYPE html>
@@ -48,7 +47,7 @@ function buildLiveMeetMapHTML(centerCoords) {
 </head><body><div id="map"></div>
 <script>
 var map=L.map('map',{zoomControl:false}).setView([${center[0]},${center[1]}], 18);
-L.tileLayer('${MAPBOX_URL}',{maxZoom:22}).addTo(map);
+L.tileLayer('${mapboxUrl}',{maxZoom:22}).addTo(map);
 
 var geojsonLayer = null;
 function styleFeature(feature) {
@@ -183,6 +182,7 @@ window.updateRoutePath = function(coordsJson) {
 export default function LiveMeetScreen({ route, navigation }) {
   const { sessionId } = route.params || {};
   const { colors } = useContext(ThemeContext);
+  const insets = useSafeAreaInsets();
   const { activeSession, remoteParticipant, enterMeetSession, leaveMeetSession, broadcastStatus, currentPos } = useLiveMeet();
   const { currentFloorId } = useGeofence();
   const [loading, setLoading] = useState(true);
@@ -207,9 +207,10 @@ export default function LiveMeetScreen({ route, navigation }) {
     initialCenterRef.current = { x: currentPos.x, y: currentPos.y };
   }
 
+  const mapboxUrl = getCachedConfigValue("EXPO_PUBLIC_MAPBOX_URL", "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png");
   const htmlSource = useMemo(() => {
-    return buildLiveMeetMapHTML(initialCenterRef.current);
-  }, []);
+    return buildLiveMeetMapHTML(initialCenterRef.current, mapboxUrl);
+  }, [mapboxUrl]);
 
   // Safe injection helper — only calls injectJavaScript when WebView is loaded
   const safeInject = (js) => {
@@ -455,7 +456,7 @@ export default function LiveMeetScreen({ route, navigation }) {
       </View>
 
       {/* Header */}
-      <View style={s.header}>
+      <View style={[s.header, { top: Math.max(insets.top, 16) }]}>
         <TouchableOpacity style={s.backBtn} onPress={() => navigation.goBack()}>
           <Ionicons name="arrow-back" size={24} color={colors.text} />
         </TouchableOpacity>
@@ -472,7 +473,7 @@ export default function LiveMeetScreen({ route, navigation }) {
       {/* AR Button Trigger */}
       {distance !== null && distance < 30 && (
         <TouchableOpacity 
-          style={s.arBtn}
+          style={[s.arBtn, { bottom: (insets.bottom > 0 ? insets.bottom + 10 : 20) + 140 }]}
           onPress={() => navigation.navigate('ARMeet')}
         >
           <Ionicons name="scan" size={24} color="#fff" />
@@ -481,7 +482,8 @@ export default function LiveMeetScreen({ route, navigation }) {
       )}
 
       {/* Progress Bottom Sheet */}
-      <View style={[s.bottomSheet, { backgroundColor: colors.card }]}>
+      {!loading && (
+        <View style={[s.bottomSheet, { backgroundColor: colors.card, bottom: insets.bottom > 0 ? insets.bottom + 10 : 20 }]}>
         <Text style={[s.sheetTitle, { color: colors.text }]}>
           Meeting {remoteParticipant?.name || 'Participant'}
         </Text>
@@ -512,6 +514,7 @@ export default function LiveMeetScreen({ route, navigation }) {
           </View>
         )}
       </View>
+      )}
     </View>
   );
 }

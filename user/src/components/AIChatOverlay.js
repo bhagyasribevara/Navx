@@ -7,9 +7,12 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { chatWithAI, searchRooms, getBlocks } from '../api';
 import { ThemeContext } from '../context/ThemeContext';
 import { useGeofence } from '../context/GeofenceContext';
+import { useLiveMeet } from '../context/LiveMeetContext';
+import { navigationRef } from '../utils/navigation';
 
 const { width, height } = Dimensions.get('window');
 
@@ -24,8 +27,28 @@ const DEFAULT_CHIPS = [
 
 export default function AIChatOverlay() {
   const { colors } = useContext(ThemeContext);
+  const insets = useSafeAreaInsets();
   const { activeCampusId } = useGeofence();
   const navigation = useNavigation();
+  const { showMeetModal } = useLiveMeet() || {};
+
+  const [currentRouteName, setCurrentRouteName] = useState(null);
+
+  useEffect(() => {
+    const checkRoute = () => {
+      if (navigationRef.isReady()) {
+        const route = navigationRef.getCurrentRoute();
+        setCurrentRouteName(route?.name || null);
+      }
+    };
+
+    // Check once initially
+    checkRoute();
+
+    // Listen for state changes
+    const unsubscribe = navigationRef.addListener('state', checkRoute);
+    return unsubscribe;
+  }, []);
 
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState([]);
@@ -33,6 +56,16 @@ export default function AIChatOverlay() {
   const [isLoading, setIsLoading] = useState(false);
   const [sessionId, setSessionId] = useState(null);
   const [chips, setChips] = useState(DEFAULT_CHIPS);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+
+  useEffect(() => {
+    const showSub = Keyboard.addListener('keyboardDidShow', () => setKeyboardVisible(true));
+    const hideSub = Keyboard.addListener('keyboardDidHide', () => setKeyboardVisible(false));
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
   
   const slideAnim = useRef(new Animated.Value(height)).current;
   const flatListRef = useRef(null);
@@ -141,7 +174,7 @@ export default function AIChatOverlay() {
     }
   };
 
-  const handleAction = async (action, destination) => {
+  const handleAction = async (action, destination, startAR = false) => {
     closeChat();
     if (action === 'navigate' && destination) {
       if (!activeCampusId) {
@@ -161,7 +194,7 @@ export default function AIChatOverlay() {
         const results = await searchRooms(destination, activeCampusId);
         // If there is exactly one perfect match, bypass the search screen and jump directly to Navigation
         if (results && results.length === 1) {
-          navigation.navigate('Navigation', { room: results[0], campusId: activeCampusId });
+          navigation.navigate('Navigation', { room: results[0], campusId: activeCampusId, startAR });
         } else if (results && results.length > 1) {
           // If multiple rooms were returned, check if they all belong to the EXACT same Block
           // This happens when the user clicks a generic block name like "CSE block" or "Boys Hostel"
@@ -188,6 +221,36 @@ export default function AIChatOverlay() {
     } else if (action === 'emergency') {
       navigation.navigate('Search', { initialQuery: 'exit', autoSearch: true });
     }
+  };
+
+  const handleSuggestionPress = (suggestionText, msgItem) => {
+    const text = suggestionText.toLowerCase();
+    const dest = msgItem.destination || (msgItem.locations && msgItem.locations[0]);
+    
+    if (dest && (text.includes('ar navigation') || text.includes('start ar'))) {
+      handleAction('navigate', dest, true);
+    } else if (dest && (text.includes('view on map') || text.includes('view campus map') || text.includes('map view'))) {
+      handleAction('navigate', dest, false);
+    } else {
+      handleSend(suggestionText);
+    }
+  };
+
+  const handleBottomChipPress = (chip) => {
+    const queryText = chip.query.toLowerCase();
+    const lastAiMsg = [...messages].reverse().find(m => m.role === 'ai' && (m.destination || (m.locations && m.locations.length > 0)));
+    
+    if (lastAiMsg) {
+      const dest = lastAiMsg.destination || lastAiMsg.locations[0];
+      if (dest && (queryText.includes('ar navigation') || queryText.includes('start ar'))) {
+        handleAction('navigate', dest, true);
+        return;
+      } else if (dest && (queryText.includes('view on map') || queryText.includes('view campus map') || queryText.includes('map view'))) {
+        handleAction('navigate', dest, false);
+        return;
+      }
+    }
+    handleSend(chip.query);
   };
 
   const clearChat = async () => {
@@ -217,29 +280,29 @@ export default function AIChatOverlay() {
             {item.text.replace(/\*\*/g, '') /* Simple markdown strip */}
           </Text>
           
-          {/* Multiple Locations Navigation */}
-          {!isUser && item.locations && item.locations.length > 0 && (
-            <View style={{ marginTop: 10, gap: 8 }}>
-              {item.locations.map((loc, idx) => (
-                <TouchableOpacity 
-                  key={idx}
-                  style={[styles.actionBtn, { borderColor: colors.primary, marginTop: 0 }]}
-                  onPress={() => handleAction('navigate', loc)}
-                >
-                  <Text style={[styles.actionBtnText, { color: colors.primary }]}>🎯 Navigate to {loc}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
-
-          {/* Single Destination Navigation (Fallback if locations is empty) */}
-          {!isUser && item.action === 'navigate' && item.destination && (!item.locations || item.locations.length === 0) && (
+          {/* Prioritize Specific Room Destination Navigation */}
+          {!isUser && item.action === 'navigate' && item.destination ? (
             <TouchableOpacity 
               style={[styles.actionBtn, { borderColor: colors.primary }]}
               onPress={() => handleAction(item.action, item.destination)}
             >
               <Text style={[styles.actionBtnText, { color: colors.primary }]}>🎯 Navigate to {item.destination}</Text>
             </TouchableOpacity>
+          ) : (
+            /* Fallback to Multiple Locations Navigation if no single destination is set */
+            !isUser && item.locations && item.locations.length > 0 && (
+              <View style={{ marginTop: 10, gap: 8 }}>
+                {item.locations.map((loc, idx) => (
+                  <TouchableOpacity 
+                    key={idx}
+                    style={[styles.actionBtn, { borderColor: colors.primary, marginTop: 0 }]}
+                    onPress={() => handleAction('navigate', loc)}
+                  >
+                    <Text style={[styles.actionBtnText, { color: colors.primary }]}>🎯 Navigate to {loc}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )
           )}
 
           {!isUser && item.action === 'emergency' && (
@@ -254,7 +317,7 @@ export default function AIChatOverlay() {
           {!isUser && item.suggestions && item.suggestions.length > 0 && (
             <View style={styles.inlineChips}>
               {item.suggestions.slice(0, 2).map((s, i) => (
-                <TouchableOpacity key={i} style={[styles.inlineChip, { borderColor: colors.primaryLight }]} onPress={() => handleSend(s)}>
+                <TouchableOpacity key={i} style={[styles.inlineChip, { borderColor: colors.primaryLight }]} onPress={() => handleSuggestionPress(s, item)}>
                   <Text style={[styles.inlineChipText, { color: colors.primary }]}>{s}</Text>
                 </TouchableOpacity>
               ))}
@@ -265,11 +328,22 @@ export default function AIChatOverlay() {
     );
   };
 
+  const hiddenScreens = ['QRScan', 'LiveMeet', 'ARMeet'];
+  const isHidden = hiddenScreens.includes(currentRouteName) || showMeetModal || !activeCampusId;
+
+  if (isHidden) {
+    return null;
+  }
+
   return (
     <>
       {!isOpen && (
         <TouchableOpacity 
-          style={[styles.fab, { backgroundColor: colors.primary, shadowColor: colors.primary }]} 
+          style={[styles.fab, { 
+            backgroundColor: colors.primary, 
+            shadowColor: colors.primary,
+            bottom: 80 + insets.bottom
+          }]} 
           onPress={openChat}
           activeOpacity={0.8}
         >
@@ -320,7 +394,7 @@ export default function AIChatOverlay() {
             {/* Suggestion Chips */}
             {!isLoading && (
               <View style={[styles.chipsScroll, { borderTopColor: colors.border }]}>
-                 <FlatList
+                  <FlatList
                     horizontal
                     showsHorizontalScrollIndicator={false}
                     data={chips.slice(0, 5)}
@@ -329,18 +403,22 @@ export default function AIChatOverlay() {
                     renderItem={({ item }) => (
                       <TouchableOpacity 
                         style={[styles.chip, { backgroundColor: colors.card, borderColor: colors.border }]} 
-                        onPress={() => handleSend(item.query)}
+                        onPress={() => handleBottomChipPress(item)}
                       >
                         <Text style={[styles.chipText, { color: colors.textSec }]}>{item.label}</Text>
                       </TouchableOpacity>
                     )}
-                 />
+                  />
               </View>
             )}
 
             {/* Input Area */}
-            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-              <View style={[styles.inputContainer, { backgroundColor: colors.card, borderTopColor: colors.border }]}>
+             <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+              <View style={[styles.inputContainer, { 
+                backgroundColor: colors.card, 
+                borderTopColor: colors.border, 
+                paddingBottom: keyboardVisible ? 8 : (insets.bottom > 0 ? insets.bottom + 8 : 12) 
+              }]}>
                 <TouchableOpacity 
                   style={[styles.voiceBtn, { borderColor: colors.border }]}
                   onPress={() => alert('Voice input requires native module integration. Using text for now.')}

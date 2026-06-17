@@ -52,6 +52,20 @@ export function AuthProvider({ children }) {
     }
   };
 
+  const guestLogin = async () => {
+    try {
+      const res = await api.post('/app-auth/guest-login');
+      if (res.data.success) {
+        setUser(res.data.user);
+        setToken(res.data.token);
+        await AsyncStorage.setItem('navx_user_token', res.data.token);
+        return { success: true };
+      }
+    } catch (e) {
+      return { success: false, error: e.response?.data?.error || 'Guest login failed' };
+    }
+  };
+
   const register = async (username, mobileNumber, password) => {
     try {
       const res = await api.post('/app-auth/register', { username, mobileNumber, password });
@@ -67,6 +81,15 @@ export function AuthProvider({ children }) {
   };
 
   const logout = async () => {
+    if (user?.isGuest) {
+      try {
+        await api.post('/app-auth/guest-logout', {}, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+      } catch (e) {
+        console.warn('Failed to notify backend on guest logout', e);
+      }
+    }
     setUser(null);
     setToken(null);
     try {
@@ -81,7 +104,7 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, token, loading, login, register, guestLogin, logout }}>
       {children}
     </AuthContext.Provider>
   );

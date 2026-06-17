@@ -13,6 +13,44 @@ const firebaseConfig = {
   measurementId: "G-WLGK7KRG7F"
 };
 
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
-export const database = getDatabase(app);
+let actualDatabase = null;
+
+// Initialize synchronously if the build-time key is already present
+if (firebaseConfig.apiKey) {
+  try {
+    const app = initializeApp(firebaseConfig);
+    actualDatabase = getDatabase(app);
+  } catch (e) {
+    console.warn("Failed to initialize Firebase synchronously:", e);
+  }
+}
+
+export function initializeFirebase(apiKey) {
+  if (!actualDatabase) {
+    try {
+      const config = { ...firebaseConfig, apiKey };
+      const app = initializeApp(config);
+      actualDatabase = getDatabase(app);
+      console.log("Firebase initialized successfully with dynamic API Key.");
+    } catch (e) {
+      console.warn("Failed to initialize Firebase dynamically:", e);
+    }
+  }
+  return actualDatabase;
+}
+
+// Proxy wrapper around database to delegate dynamically
+export const database = new Proxy({}, {
+  get(target, prop) {
+    if (!actualDatabase) {
+      console.warn("Firebase Database accessed before initialization. Attempting default fallback...");
+      if (firebaseConfig.apiKey) {
+        initializeFirebase(firebaseConfig.apiKey);
+      } else {
+        throw new Error("Firebase accessed but not initialized. Make sure fetchAppConfig runs on startup.");
+      }
+    }
+    const val = actualDatabase[prop];
+    return typeof val === 'function' ? val.bind(actualDatabase) : val;
+  }
+});

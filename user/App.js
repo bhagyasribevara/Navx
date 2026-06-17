@@ -1,4 +1,4 @@
-import React, { useState, useContext, useCallback } from "react";
+import React, { useState, useContext, useCallback, useEffect } from "react";
 import { RootSiblingParent } from 'react-native-root-siblings';
 import { View, Platform } from "react-native";
 import { NavigationContainer } from "@react-navigation/native";
@@ -7,9 +7,11 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { StatusBar } from "expo-status-bar";
 import { Ionicons } from "@expo/vector-icons";
-import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { ThemeContext } from "./src/context/ThemeContext";
 import { GeofenceProvider } from "./src/context/GeofenceContext";
+import { fetchAppConfig } from "./src/api";
+import { navigationRef } from "./src/utils/navigation";
 
 import HomeScreen from "./src/screens/HomeScreen";
 import MapScreen from "./src/screens/MapScreen";
@@ -58,6 +60,7 @@ const Tab = createBottomTabNavigator();
 
 function MainTabs() {
   const { colors } = useContext(ThemeContext);
+  const insets = useSafeAreaInsets();
 
   const tabIconMap = {
     Home: { active: "home", inactive: "home-outline" },
@@ -80,8 +83,8 @@ function MainTabs() {
           backgroundColor: colors.card,
           borderTopColor: colors.border,
           borderTopWidth: 1,
-          height: Platform.OS === "ios" ? 84 : 65,
-          paddingBottom: Platform.OS === "ios" ? 28 : 10,
+          height: Platform.OS === "ios" ? 84 : (65 + (insets.bottom > 0 ? insets.bottom : 0)),
+          paddingBottom: Platform.OS === "ios" ? 28 : (10 + (insets.bottom > 0 ? insets.bottom : 0)),
           paddingTop: 8,
           elevation: 0,
           shadowOpacity: 0,
@@ -137,7 +140,7 @@ function AppNavigator() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }} edges={['top']}>
-      <NavigationContainer theme={navTheme} linking={linking}>
+      <NavigationContainer ref={navigationRef} theme={navTheme} linking={linking}>
         <StatusBar style="dark" />
         <Stack.Navigator screenOptions={{ headerShown: false }}>
           {!user ? (
@@ -202,6 +205,10 @@ export default function App() {
   const [showSplash, setShowSplash] = useState(true);
   const colors = LIGHT;
   const isDark = false;
+
+  useEffect(() => {
+    fetchAppConfig().catch(err => console.warn("Failed to load app startup configuration:", err));
+  }, []);
 
   if (showSplash) {
     return <SplashScreen onFinish={() => setShowSplash(false)} />;

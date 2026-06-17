@@ -158,6 +158,17 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// Dynamic configuration check (expose only EXPO_PUBLIC_ variables)
+app.get('/api/config', (req, res) => {
+  const config = {};
+  for (const key in process.env) {
+    if (key.startsWith('EXPO_PUBLIC_')) {
+      config[key] = process.env[key];
+    }
+  }
+  res.json(config);
+});
+
 // Error handler
 app.use((err, req, res, next) => {
   console.error(err.stack);

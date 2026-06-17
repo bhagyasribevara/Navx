@@ -10,7 +10,7 @@ import { AuthContext } from '../context/AuthContext';
 import { LIGHT as COLORS, SHADOWS, RADIUS } from '../theme/designSystem';
 
 export default function AuthScreen() {
-  const { login, register } = useContext(AuthContext);
+  const { login, register, guestLogin } = useContext(AuthContext);
   const [isLogin, setIsLogin] = useState(true);
   
   const [username, setUsername] = useState('');
@@ -40,6 +40,15 @@ export default function AuthScreen() {
 
     if (!res.success) {
       Alert.alert('Authentication Failed', res.error);
+    }
+  };
+
+  const handleGuestLogin = async () => {
+    setLoading(true);
+    const res = await guestLogin();
+    setLoading(false);
+    if (!res.success) {
+      Alert.alert('Guest Login Failed', res.error);
     }
   };
 
@@ -111,6 +120,20 @@ export default function AuthScreen() {
               <Text style={s.submitText}>{isLogin ? 'Sign In' : 'Sign Up'}</Text>
             )}
           </TouchableOpacity>
+
+          <View style={s.dividerContainer}>
+            <View style={s.dividerLine} />
+            <Text style={s.dividerText}>or</Text>
+            <View style={s.dividerLine} />
+          </View>
+
+          <TouchableOpacity style={s.guestBtn} onPress={handleGuestLogin} disabled={loading}>
+            {loading ? (
+              <ActivityIndicator color={COLORS.primary} />
+            ) : (
+              <Text style={s.guestText}>Continue as Guest</Text>
+            )}
+          </TouchableOpacity>
         </View>
 
         <TouchableOpacity 
@@ -168,5 +191,34 @@ const s = StyleSheet.create({
   },
   submitText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
   toggleBtn: { marginTop: 24, alignItems: 'center' },
-  toggleText: { color: COLORS.primary, fontSize: 14, fontWeight: '600' }
+  toggleText: { color: COLORS.primary, fontSize: 14, fontWeight: '600' },
+  dividerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 12,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: COLORS.border,
+  },
+  dividerText: {
+    marginHorizontal: 12,
+    color: COLORS.textMuted,
+    fontSize: 14,
+  },
+  guestBtn: {
+    backgroundColor: COLORS.primary + '10',
+    borderWidth: 1,
+    borderColor: COLORS.primary + '30',
+    height: 56,
+    borderRadius: RADIUS.md,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  guestText: {
+    color: COLORS.primary,
+    fontSize: 16,
+    fontWeight: 'bold',
+  }
 });

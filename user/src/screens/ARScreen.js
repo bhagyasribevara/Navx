@@ -8,6 +8,7 @@ import {
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { Accelerometer, Magnetometer, Gyroscope } from "expo-sensors";
 import { Ionicons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 import * as Speech from "expo-speech";
 import { WebView } from "react-native-webview";
@@ -16,6 +17,7 @@ import { PositionEngine, StepDetector } from "../positioning";
 import { ThemeContext } from "../context/ThemeContext";
 import ARRobotGuide from "../components/ARRobotGuide";
 import { SHADOWS, RADIUS } from "../theme/designSystem";
+import { getCachedConfigValue } from "../api";
 
 const { width: SW, height: SH } = Dimensions.get("window");
 
@@ -106,7 +108,7 @@ function getTurnIcon(instruction = "") {
 }
 
 // ─── Mini-Map HTML (Leaflet + Mapbox, same pattern as NavigationScreen) ───────
-function buildMiniMapHTML(pathPoints, userPos, targetRoom, geoJSONData) {
+function buildMiniMapHTML(pathPoints, userPos, targetRoom, geoJSONData, mapboxUrl) {
   const center = userPos
     ? [userPos.x, userPos.y]
     : (pathPoints?.length ? [pathPoints[0].x, pathPoints[0].y] : [18.4665, 83.6629]);
@@ -127,8 +129,6 @@ function buildMiniMapHTML(pathPoints, userPos, targetRoom, geoJSONData) {
   const destDot = (destX && destY)
     ? `L.circleMarker([${destX},${destY}],{radius:7,color:'#fff',weight:2,fillColor:'#22c55e',fillOpacity:1}).addTo(map);`
     : "";
-
-  const mapboxUrl = process.env.EXPO_PUBLIC_MAPBOX_URL || "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
 
   const initialHeading = 0;
   const userMarkerInit = userPos
@@ -595,6 +595,7 @@ window.updateARPath = function(newDir, nearTurn, newPitch, newBearing, newRoll) 
 // ─── Main AR Screen ─────────────────────────────────────────────────────────────
 export default function ARScreen({ navigation, route }) {
   const { colors } = useContext(ThemeContext);
+  const insets = useSafeAreaInsets();
   const {
     routeData,
     room: targetRoom,
@@ -925,9 +926,10 @@ export default function ARScreen({ navigation, route }) {
     `);
   }, [arDirType, isNearTurn, pitch, bearingDiff, roll]);
 
+  const mapboxUrl = getCachedConfigValue("EXPO_PUBLIC_MAPBOX_URL", "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png");
   const miniMapHtml = React.useMemo(() =>
-    buildMiniMapHTML(routeData?.path, initialUserPos, targetRoom, geoJSONData),
-    [routeData, initialUserPos, targetRoom, geoJSONData]
+    buildMiniMapHTML(routeData?.path, initialUserPos, targetRoom, geoJSONData, mapboxUrl),
+    [routeData, initialUserPos, targetRoom, geoJSONData, mapboxUrl]
   );
 
   const arPathHtml = React.useMemo(() =>
@@ -1006,6 +1008,7 @@ export default function ARScreen({ navigation, route }) {
           style={[
             styles.dirCard,
             {
+              top: Math.max(insets.top, 12),
               transform: [{
                 translateY: dirCardAnim.interpolate({
                   inputRange: [0, 1],
@@ -1036,7 +1039,7 @@ export default function ARScreen({ navigation, route }) {
       )}
 
       {/* ── FLOATING ACTION BUTTONS (right side) ── */}
-      <View style={styles.fabColumn}>
+      <View style={[styles.fabColumn, { top: Math.max(insets.top, 12) + 12 }]}>
         {/* Voice toggle */}
         <TouchableOpacity
           style={styles.fabBtn}
@@ -1069,7 +1072,7 @@ export default function ARScreen({ navigation, route }) {
 
       {/* ── NEAR-TURN ALERT ── */}
       {isNearTurn && !arrived && (
-        <View style={styles.turnAlertBanner}>
+        <View style={[styles.turnAlertBanner, { top: Math.max(insets.top, 12) + 80 }]}>
           <Ionicons name="alert-circle" size={18} color="#fcd34d" />
           <Text style={styles.turnAlertText}>
             {getTurnLabel(currentDir?.instruction)} in {Math.round(distToTurn)}m
@@ -1087,7 +1090,7 @@ export default function ARScreen({ navigation, route }) {
 
       {/* ── BOTTOM BAR (Distance + Exit — matching reference) ── */}
       {!arrived && (
-        <View style={styles.bottomBar}>
+        <View style={[styles.bottomBar, { paddingBottom: insets.bottom > 0 ? insets.bottom + 8 : 18 }]}>
           <View style={styles.bottomBarLeft}>
             <Text style={styles.bottomBarDistance}>{liveDistance} m</Text>
             <Text style={styles.bottomBarLabel}>to your destination</Text>

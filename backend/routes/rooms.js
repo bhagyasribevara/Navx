@@ -35,19 +35,28 @@ router.get('/search/:query', optionalAuthenticateJWT, enforceCampusIsolation, as
     if (req.query.campusId) filter.campusId = req.query.campusId;
     
     const Block = require('../models/Block');
+
+    // Clean and split the query for flexible matching
+    const cleanQuery = query.trim().replace(/\s+/g, ' ');
+    if (!cleanQuery) return res.json([]);
+
+    const escapeRegExp = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const escapedWords = cleanQuery.split(' ').map(w => escapeRegExp(w));
+    const regex = new RegExp(escapedWords.map(w => `(?=.*${w})`).join(''), 'i');
+
     const matchingBlocks = await Block.find({
       ...filter,
-      name: { $regex: query, $options: 'i' }
+      name: { $regex: regex }
     });
     const blockIds = matchingBlocks.map(b => b._id);
 
     const rooms = await Room.find({
       ...filter,
       $or: [
-        { name: { $regex: query, $options: 'i' } },
-        { roomNumber: { $regex: query, $options: 'i' } },
-        { description: { $regex: query, $options: 'i' } },
-        { type: { $regex: query, $options: 'i' } },
+        { name: { $regex: regex } },
+        { roomNumber: { $regex: regex } },
+        { description: { $regex: regex } },
+        { type: { $regex: regex } },
         ...(blockIds.length > 0 ? [{ blockId: { $in: blockIds } }] : [])
       ]
     })

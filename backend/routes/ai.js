@@ -209,24 +209,18 @@ router.post('/chat', async (req, res) => {
       }
     }
 
-    if (intent.intent === 'show_nearby' && intent.extractedDestination && campusId) {
-      const results = await searchFacilities(campusId, intent.extractedDestination);
-      if (results.length > 0) {
-        extraContext += `\nSEARCH RESULTS for "${intent.extractedDestination}":\n${JSON.stringify(results, null, 2)}`;
-      }
-    }
-
-    if (intent.intent === 'navigate' && intent.extractedDestination && campusId) {
-      const results = await searchFacilities(campusId, intent.extractedDestination);
-      if (results.length > 0) {
-        extraContext += `\nMATCHING LOCATIONS for "${intent.extractedDestination}":\n${JSON.stringify(results, null, 2)}`;
-      }
-    }
-
     if (intent.intent === 'live_meet' && context.activeMeet) {
       const meetInfo = await getLiveMeetInfo(context.activeMeet);
       if (meetInfo) {
         extraContext += `\nLIVE MEET SESSION:\n${JSON.stringify(meetInfo, null, 2)}`;
+      }
+    }
+
+    // Proactively search facilities for any query with an extracted destination to enrich prompt context
+    if (intent.extractedDestination && campusId) {
+      const results = await searchFacilities(campusId, intent.extractedDestination);
+      if (results.length > 0) {
+        extraContext += `\nMATCHING LOCATIONS for "${intent.extractedDestination}":\n${JSON.stringify(results, null, 2)}`;
       }
     }
     console.log('[AI] Step 5b done');
@@ -247,7 +241,7 @@ router.post('/chat', async (req, res) => {
     console.log('[AI] Calling Gemini model...');
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({ 
-      model: 'gemini-2.5-flash-lite',
+      model: 'gemini-3.1-flash-lite',
       systemInstruction: systemPrompt 
     });
 

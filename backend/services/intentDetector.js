@@ -181,6 +181,8 @@ const FAQ_PATTERNS = [
  * Returns the destination string or null.
  */
 function extractDestination(message) {
+  if (!message) return null;
+
   for (const pattern of [...NAVIGATION_PATTERNS, ...NEARBY_PATTERNS]) {
     const match = message.match(pattern);
     if (match && match[1]) {
@@ -195,6 +197,16 @@ function extractDestination(message) {
       }
     }
   }
+
+  // Fallback: If no patterns match, but the query itself is short (1-4 words and < 40 chars),
+  // treat the entire trimmed query as the destination.
+  let cleanMsg = message.trim();
+  cleanMsg = cleanMsg.replace(/[?.!,]+$/, '').trim();
+  cleanMsg = cleanMsg.replace(/^(the|a|an)\s+/i, '').trim();
+  if (cleanMsg.length > 0 && cleanMsg.length < 40 && cleanMsg.split(/\s+/).length <= 4) {
+    return cleanMsg;
+  }
+
   return null;
 }
 

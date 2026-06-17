@@ -8,6 +8,7 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import * as Location from "expo-location";
 import { ThemeContext } from "../context/ThemeContext";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useGeofence } from "../context/GeofenceContext";
 import { scanQRCode, getCampusByQR, verifyCampusGeofence } from "../api";
 import { SHADOWS, RADIUS } from "../theme/designSystem";
@@ -18,6 +19,7 @@ const FRAME = 240;
 
 export default function QRScanScreen({ navigation }) {
   const { colors } = useContext(ThemeContext);
+  const insets = useSafeAreaInsets();
   const { activateCampus } = useGeofence();
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
@@ -223,7 +225,7 @@ export default function QRScanScreen({ navigation }) {
       </View>
 
       {/* Top bar */}
-      <View style={s.topBar}>
+      <View style={[s.topBar, { paddingTop: Math.max(insets.top, 20) }]}>
         <TouchableOpacity style={s.backBtn} onPress={() => navigation.goBack()}>
           <Ionicons name="arrow-back" size={20} color="#fff" />
         </TouchableOpacity>
@@ -239,7 +241,7 @@ export default function QRScanScreen({ navigation }) {
       </View>
 
       {/* Bottom result panel */}
-      <View style={s.bottomPanel}>
+      <View style={[s.bottomPanel, { paddingBottom: insets.bottom > 0 ? insets.bottom + 8 : 24 }]}>
         {result && !error && (
           <Animated.View style={[s.resultCard, { transform: [{ translateY: successAnim.interpolate({ inputRange: [0, 1], outputRange: [60, 0] }) }], opacity: successAnim }]}>
             <View style={[s.resultIconWrap, { backgroundColor: isCampusQR ? "rgba(99,102,241,0.15)" : "rgba(34,197,94,0.15)" }]}>

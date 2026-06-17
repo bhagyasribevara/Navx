@@ -10,8 +10,9 @@ import { Accelerometer, Magnetometer } from "expo-sensors";
 import * as Speech from "expo-speech";
 import * as Haptics from "expo-haptics";
 import { ThemeContext } from "../context/ThemeContext";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { findRouteToRoom, findRouteToExit, getGeoJSONMapData, SOCKET_URL } from "../api";
+import { findRouteToRoom, findRouteToExit, getGeoJSONMapData, SOCKET_URL, getCachedConfigValue } from "../api";
 import { io } from "socket.io-client";
 import { PositionEngine, StepDetector } from "../positioning";
 import { SHADOWS, RADIUS, ROOM_COLORS } from "../theme/designSystem";
@@ -93,9 +94,7 @@ async function fetchStreetRoute(lat1, lon1, lat2, lon2) {
   return null;
 }
 
-const MAPBOX_URL = process.env.EXPO_PUBLIC_MAPBOX_URL || "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
-
-function buildNavMapHTML(geoJSONData, pathPoints, initialPos, targetRoom) {
+function buildNavMapHTML(geoJSONData, pathPoints, initialPos, targetRoom, mapboxUrl) {
   const center = initialPos ? [initialPos.x, initialPos.y] : (pathPoints?.length ? [pathPoints[0].x, pathPoints[0].y] : [18.4665, 83.6629]);
   
   const destX = targetRoom?.shape?.points?.[0]?.x || targetRoom?.shape?.x;
@@ -136,7 +135,7 @@ function buildNavMapHTML(geoJSONData, pathPoints, initialPos, targetRoom) {
 </head><body><div id="map"></div>
 <script>
 var map=L.map('map',{zoomControl:false}).setView([${center[0]},${center[1]}], 19);
-L.tileLayer('${MAPBOX_URL}',{maxZoom:22}).addTo(map);
+L.tileLayer('${mapboxUrl}',{maxZoom:22}).addTo(map);
 
 var geojsonLayer = null;
 function styleFeature(feature) {
@@ -245,6 +244,7 @@ window.updateUserHeading = function(heading) {
 
 export default function NavigationScreen({ navigation, route }) {
   const { colors, language } = useContext(ThemeContext);
+  const insets = useSafeAreaInsets();
   const { room: initialRoom, campusId: initialCampusId, mapData: initialMapData } = route.params || {};
   const [targetRoom, setTargetRoom] = useState(initialRoom);
   const [mapData, setMapData] = useState(initialMapData);
@@ -286,9 +286,10 @@ export default function NavigationScreen({ navigation, route }) {
   const initialUserPosRef = useRef(null);
   // Keep routeData in a stable ref for startNavigation to avoid stale state
   const routeDataStableRef = useRef(routeData);
+  const mapboxUrl = getCachedConfigValue("EXPO_PUBLIC_MAPBOX_URL", "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png");
   const mapHtml = React.useMemo(() => {
-    return buildNavMapHTML(geoJSONData, routeData?.path, initialUserPosRef.current, targetRoom);
-  }, [geoJSONData, routeData, targetRoom]);
+    return buildNavMapHTML(geoJSONData, routeData?.path, initialUserPosRef.current, targetRoom, mapboxUrl);
+  }, [geoJSONData, routeData, targetRoom, mapboxUrl]);
 
   // Inject updated GeoJSON when it changes without reloading WebView
   useEffect(() => {
@@ -499,6 +500,17 @@ export default function NavigationScreen({ navigation, route }) {
       routeDataStableRef.current = result;
       setLiveDistance(Math.round(result.distance));
       setLiveStepDist(Math.round(result.directions?.[0]?.distance || 0));
+
+      if (route.params?.startAR) {
+        navigation.setParams({ startAR: false });
+        navigation.navigate("AR", {
+          routeData: result,
+          room: targetRoom,
+          heading: posEngine.heading || 0,
+          userPos: { x: uLat, y: uLng },
+          campusId
+        });
+      }
 
       // Initialize floor tracking from backend response
       setTotalFloorTransitions(result.totalFloorTransitions || 0);
@@ -950,7 +962,7 @@ export default function NavigationScreen({ navigation, route }) {
   return (
     <View style={s.container}>
       {/* Header */}
-      <View style={s.header}>
+      <View style={[s.header, { paddingTop: Math.max(insets.top, 12) }]}>
         <TouchableOpacity style={s.backBtn} onPress={() => navigation.goBack()}>
           <Ionicons name="arrow-back" size={22} color={colors.text} />
         </TouchableOpacity>
@@ -1031,7 +1043,7 @@ export default function NavigationScreen({ navigation, route }) {
       </View>
 
       {/* Bottom panel */}
-      <View style={s.bottomPanel}>
+      <View style={[s.bottomPanel, { paddingBottom: insets.bottom > 0 ? insets.bottom + 8 : 16 }]}>
         {routeData && (
           <View style={{ marginBottom: 16 }}>
             <View style={s.metricsRow}>

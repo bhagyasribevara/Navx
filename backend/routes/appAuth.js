@@ -104,6 +104,10 @@ router.get('/me', async (req, res) => {
     
     if (!user) return res.status(404).json({ error: 'User not found' });
 
+    if (user.isGuest && user.guestStatus !== 'active') {
+      return res.status(401).json({ error: 'Guest session expired or deactivated' });
+    }
+
     res.json({ success: true, user });
   } catch (error) {
     res.status(401).json({ error: 'Invalid token' });
@@ -173,5 +177,206 @@ router.post('/verify-otp', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+// ─── HELPER FUNCTIONS ────────────────────────────────────────────────────────
+const getAuthUser = async (req) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
+  const token = authHeader.split(' ')[1];
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const user = await AppUser.findById(decoded.userId);
+    if (user && user.isGuest && user.guestStatus !== 'active') {
+      return null;
+    }
+    return user;
+  } catch (err) {
+    return null;
+  }
+};
+
+const haversine = (lat1, lon1, lat2, lon2) => {
+  const R = 6371e3; // meters
+  const phi1 = (lat1 * Math.PI) / 180;
+  const phi2 = (lat2 * Math.PI) / 180;
+  const deltaPhi = ((lat2 - lat1) * Math.PI) / 180;
+  const deltaLambda = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(deltaPhi / 2) * Math.sin(deltaPhi / 2) +
+    Math.cos(phi1) * Math.cos(phi2) * Math.sin(deltaLambda / 2) * Math.sin(deltaLambda / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+};
+
+// ─── POST /api/app-auth/guest-login ──────────────────────────────────────────
+router.post('/guest-login', async (req, res) => {
+  try {
+    // 1. Find and atomically lock an existing inactive guest user to recycle
+    let guest = await AppUser.findOneAndUpdate(
+      { isGuest: true, guestStatus: 'inactive' },
+      { $set: { guestStatus: 'active', lastHeartbeat: new Date(), activeCampusId: null } },
+      { new: true }
+    );
+    const tempPassword = Math.random().toString(36).substring(2, 10);
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(tempPassword, salt);
+
+    if (guest) {
+      // Recycle the guest user (now already locked as active, update password)
+      guest.password = hashedPassword;
+      await guest.save();
+      console.log(`[Guest Login] Recycled inactive guest user: ${guest.username}`);
+    } else {
+      // Generate unique credentials if none exist in the inactive pool
+      const timestamp = Date.now();
+      const randomSuffix = Math.floor(Math.random() * 1000);
+      const username = `guest_${timestamp}_${randomSuffix}`;
+      const mobileNumber = `guest_mob_${timestamp}_${randomSuffix}`;
+
+      guest = new AppUser({
+        username,
+        mobileNumber,
+        password: hashedPassword,
+        isGuest: true,
+        guestStatus: 'active',
+        lastHeartbeat: new Date(),
+        activeCampusId: null
+      });
+      await guest.save();
+      console.log(`[Guest Login] Created new guest user: ${username}`);
+    }
+
+    // Generate JWT token containing guest claims
+    const token = jwt.sign(
+      { userId: guest._id, username: guest.username, isGuest: true },
+      JWT_SECRET,
+      { expiresIn: '1d' }
+    );
+
+    res.json({
+      success: true,
+      token,
+      user: {
+        id: guest._id,
+        username: guest.username,
+        mobileNumber: guest.mobileNumber,
+        isGuest: true,
+        guestStatus: guest.guestStatus
+      }
+    });
+  } catch (error) {
+    console.error('Guest login error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ─── POST /api/app-auth/guest-logout ─────────────────────────────────────────
+router.post('/guest-logout', async (req, res) => {
+  try {
+    const user = await getAuthUser(req);
+    if (!user) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    if (user.isGuest) {
+      user.guestStatus = 'inactive';
+      user.activeCampusId = null;
+      user.lastHeartbeat = null;
+      // Scramble password to make session invalid
+      const salt = await bcrypt.genSalt(10);
+      user.password = await bcrypt.hash(Math.random().toString(36), salt);
+      await user.save();
+      console.log(`[Guest Logout] Manual guest logout, user recycled: ${user.username}`);
+    }
+
+    res.json({ success: true, message: 'Logged out successfully' });
+  } catch (error) {
+    console.error('Guest logout error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ─── POST /api/app-auth/heartbeat ────────────────────────────────────────────
+router.post('/heartbeat', async (req, res) => {
+  try {
+    const user = await getAuthUser(req);
+    if (!user) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    // Registered users can update, but we only check boundaries/expiry for guests
+    if (!user.isGuest) {
+      return res.json({ success: true, active: true });
+    }
+
+    const { location, campusId } = req.body;
+    user.lastHeartbeat = new Date();
+    if (campusId) {
+      user.activeCampusId = campusId;
+    }
+
+    // Geofencing verification
+    const activeCampusId = user.activeCampusId;
+    if (activeCampusId && location && location.lat && location.lng) {
+      const Campus = require('../models/Campus');
+      const campus = await Campus.findById(activeCampusId);
+      if (campus && campus.location && campus.location.lat && campus.location.lng) {
+        const dist = haversine(
+          location.lat,
+          location.lng,
+          campus.location.lat,
+          campus.location.lng
+        );
+        const radiusLimit = (campus.radius || 500) + 20; // 20m buffer
+
+        if (dist > radiusLimit) {
+          console.log(`[Guest Heartbeat] Guest ${user.username} exited campus boundary: ${Math.round(dist)}m > ${radiusLimit}m. Deactivating.`);
+          user.guestStatus = 'inactive';
+          user.activeCampusId = null;
+          user.lastHeartbeat = null;
+          const salt = await bcrypt.genSalt(10);
+          user.password = await bcrypt.hash(Math.random().toString(36), salt);
+          await user.save();
+
+          return res.json({ success: true, active: false, reason: 'exited_geofence' });
+        }
+      }
+    }
+
+    await user.save();
+    res.json({ success: true, active: true });
+  } catch (error) {
+    console.error('Heartbeat error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ─── BACKGROUND GUEST RECYCLING LOOP ──────────────────────────────────────────
+setInterval(async () => {
+  try {
+    const threshold = new Date(Date.now() - 60 * 1000); // 60 seconds ago
+    // Recycle active guests with lastHeartbeat older than 60 seconds (or null)
+    const expiredGuests = await AppUser.find({
+      isGuest: true,
+      guestStatus: 'active',
+      $or: [
+        { lastHeartbeat: { $lt: threshold } },
+        { lastHeartbeat: null }
+      ]
+    });
+
+    for (const guest of expiredGuests) {
+      console.log(`[Background Recycler] Auto-recycling guest: ${guest.username} due to heartbeat timeout.`);
+      guest.guestStatus = 'inactive';
+      guest.activeCampusId = null;
+      guest.lastHeartbeat = null;
+      const salt = await bcrypt.genSalt(10);
+      guest.password = await bcrypt.hash(Math.random().toString(36), salt);
+      await guest.save();
+    }
+  } catch (err) {
+    console.error('Background guest recycler loop error:', err);
+  }
+}, 30000);
 
 module.exports = router;

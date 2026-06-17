@@ -73,7 +73,7 @@ export default function HomeScreen({ navigation }) {
   const { colors } = useContext(ThemeContext);
   const { user } = useAuth();
   const { activeCampusId, deactivateCampus } = useGeofence();
-  const { enterMeetSession } = useLiveMeet() || {};
+  const { enterMeetSession, showMeetModal, setShowMeetModal } = useLiveMeet() || {};
   const [campuses, setCampuses] = useState([]);
   const [recentRooms, setRecentRooms] = useState([]);
   const [campaigns, setCampaigns] = useState([]);
@@ -81,7 +81,6 @@ export default function HomeScreen({ navigation }) {
   const [refreshing, setRefreshing] = useState(false);
   const [downloadingCampus, setDownloadingCampus] = useState(false);
   const [downloadedStatus, setDownloadedStatus] = useState({});
-  const [showMeetModal, setShowMeetModal] = useState(false);
   const [meetDuration, setMeetDuration] = useState('30');
   const [creatingMeet, setCreatingMeet] = useState(false);
   const [inviteInput, setInviteInput] = useState('');
@@ -172,6 +171,13 @@ export default function HomeScreen({ navigation }) {
       setCampaigns([]);
     }
   }, [activeCampusId]);
+
+  useEffect(() => {
+    if (user?.isGuest && !activeCampusId) {
+      console.log("Redirecting guest to QR Scan screen");
+      navigation.navigate("QRScan");
+    }
+  }, [user?.isGuest, activeCampusId, navigation]);
 
   const [showNotifs, setShowNotifs] = useState(false);
   const { notifications, markNotifRead, hasUnread } = useLiveMeet() || { notifications: [], markNotifRead: () => {}, hasUnread: false };
@@ -334,7 +340,11 @@ export default function HomeScreen({ navigation }) {
   const campusLoaded = campuses.length > 0;
   if (!activeCampusId || (campusLoaded && !campuses.find(c => c._id === activeCampusId))) {
     return (
-      <View style={[s.container, { justifyContent: "center", alignItems: "center", paddingHorizontal: 32 }]}>
+      <ScrollView 
+        style={s.container} 
+        contentContainerStyle={{ flexGrow: 1, justifyContent: "center", alignItems: "center", paddingHorizontal: 32, paddingVertical: 40 }}
+        showsVerticalScrollIndicator={false}
+      >
         {/* Pulsing NavX logo */}
         <Animated.View style={{ transform: [{ scale: pulseAnim }], marginBottom: 28 }}>
           <View style={{
@@ -402,7 +412,7 @@ export default function HomeScreen({ navigation }) {
         <Text style={{ marginTop: 18, fontSize: 12, color: colors.textMuted, textAlign: "center" }}>
           🔒  Access is restricted to the physical venue only
         </Text>
-      </View>
+      </ScrollView>
     );
   }
 

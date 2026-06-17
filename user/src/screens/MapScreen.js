@@ -7,16 +7,14 @@ import { Ionicons } from "@expo/vector-icons";
 import { WebView } from "react-native-webview";
 import { ThemeContext } from "../context/ThemeContext";
 import { useGeofence } from "../context/GeofenceContext";
-import { getMapData, getCampuses, getGeoJSONMapData, SOCKET_URL } from "../api";
+import { getMapData, getCampuses, getGeoJSONMapData, SOCKET_URL, getCachedConfigValue } from "../api";
 import { io } from "socket.io-client";
 import { SHADOWS, RADIUS, ROOM_COLORS } from "../theme/designSystem";
 import * as Location from 'expo-location';
 
 const { height: SH, width: SW } = Dimensions.get('window');
 
-const MAPBOX_URL = process.env.EXPO_PUBLIC_MAPBOX_URL || "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
-
-function buildCampusMapHTML(geoJSONData, centerCoords) {
+function buildCampusMapHTML(geoJSONData, centerCoords, mapboxUrl) {
   const center = centerCoords ? [centerCoords.x, centerCoords.y] : [18.4665, 83.6629];
   
   return `<!DOCTYPE html>
@@ -37,7 +35,7 @@ function buildCampusMapHTML(geoJSONData, centerCoords) {
 </head><body><div id="map"></div>
 <script>
 var map=L.map('map',{zoomControl:false}).setView([${center[0]},${center[1]}], 18);
-L.tileLayer('${MAPBOX_URL}',{maxZoom:22}).addTo(map);
+L.tileLayer('${mapboxUrl}',{maxZoom:22}).addTo(map);
 
 var geojsonLayer = null;
 function styleFeature(feature) {
@@ -315,10 +313,11 @@ export default function MapScreen({ navigation, route }) {
     else if (selectedBlock) setSelectedBlock(null);
   };
 
+  const mapboxUrl = getCachedConfigValue("EXPO_PUBLIC_MAPBOX_URL", "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png");
   const mapHtml = useMemo(() => {
     const center = mapData?.blocks?.[0]?.shape?.points?.[0];
-    return buildCampusMapHTML(geoJSONData, center);
-  }, [geoJSONData, mapData]);
+    return buildCampusMapHTML(geoJSONData, center, mapboxUrl);
+  }, [geoJSONData, mapData, mapboxUrl]);
 
   const s = StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.bg },
