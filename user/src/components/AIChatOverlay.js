@@ -30,7 +30,7 @@ export default function AIChatOverlay() {
   const insets = useSafeAreaInsets();
   const { activeCampusId } = useGeofence();
   const navigation = useNavigation();
-  const { showMeetModal } = useLiveMeet() || {};
+  const { showMeetModal, setShowMeetModal } = useLiveMeet() || {};
 
   const [currentRouteName, setCurrentRouteName] = useState(null);
 
@@ -241,9 +241,22 @@ export default function AIChatOverlay() {
     const text = suggestionText.toLowerCase();
     const dest = msgItem.destination || (msgItem.locations && msgItem.locations[0]);
     
-    if (dest && (text.includes('ar navigation') || text.includes('start ar'))) {
+    if (text.includes('restroom') || text.includes('washroom')) {
+      closeChat();
+      navigation.navigate('Map', { showRestrooms: true, campusId: activeCampusId });
+    } else if (text.includes('nearby facilities') || text.includes('show facilities') || text.includes('show nearby')) {
+      closeChat();
+      navigation.navigate('Search');
+    } else if (text.includes('share location') || text.includes('meet friend') || text.includes('meet someone')) {
+      closeChat();
+      if (setShowMeetModal) {
+        setShowMeetModal(true);
+      }
+    } else if (dest && (text.includes('ar navigation') || text.includes('start ar'))) {
       handleAction('navigate', dest, true);
-    } else if (dest && (text.includes('view on map') || text.includes('view campus map') || text.includes('map view'))) {
+    } else if (dest && text.includes('start navigation')) {
+      handleAction('navigate', dest, false);
+    } else if (dest && (text.includes('view route') || text.includes('route overview') || text.includes('view on map') || text.includes('view campus map') || text.includes('map view'))) {
       handleAction('navigate', dest, false);
     } else {
       handleSend(suggestionText);
@@ -253,13 +266,32 @@ export default function AIChatOverlay() {
   const handleBottomChipPress = (chip) => {
     const queryText = chip.query.toLowerCase();
     const lastAiMsg = [...messages].reverse().find(m => m.role === 'ai' && (m.destination || (m.locations && m.locations.length > 0)));
+    const dest = lastAiMsg ? (lastAiMsg.destination || lastAiMsg.locations[0]) : null;
     
-    if (lastAiMsg) {
-      const dest = lastAiMsg.destination || lastAiMsg.locations[0];
-      if (dest && (queryText.includes('ar navigation') || queryText.includes('start ar'))) {
+    if (queryText.includes('restroom') || queryText.includes('washroom')) {
+      closeChat();
+      navigation.navigate('Map', { showRestrooms: true, campusId: activeCampusId });
+      return;
+    } else if (queryText.includes('nearby facilities') || queryText.includes('show facilities') || queryText.includes('show nearby')) {
+      closeChat();
+      navigation.navigate('Search');
+      return;
+    } else if (queryText.includes('share location') || queryText.includes('meet friend') || queryText.includes('meet someone')) {
+      closeChat();
+      if (setShowMeetModal) {
+        setShowMeetModal(true);
+      }
+      return;
+    }
+
+    if (dest) {
+      if (queryText.includes('ar navigation') || queryText.includes('start ar')) {
         handleAction('navigate', dest, true);
         return;
-      } else if (dest && (queryText.includes('view on map') || queryText.includes('view campus map') || queryText.includes('map view'))) {
+      } else if (queryText.includes('start navigation')) {
+        handleAction('navigate', dest, false);
+        return;
+      } else if (queryText.includes('view route') || queryText.includes('route overview') || queryText.includes('view on map') || queryText.includes('view campus map') || queryText.includes('map view')) {
         handleAction('navigate', dest, false);
         return;
       }

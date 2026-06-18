@@ -121,6 +121,19 @@ ${geoJSONData ? `window.updateGeoJSON(${JSON.stringify(geoJSONData)}, '${centerC
 </script></body></html>`;
 }
 
+function getHaversineDistance(lat1, lon1, lat2, lon2) {
+  if (!lat1 || !lon1 || !lat2 || !lon2) return Infinity;
+  const R = 6371000; // Earth radius in meters
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
 export default function MapScreen({ navigation, route }) {
   const { colors } = useContext(ThemeContext);
   const { activeCampusId: contextCampusId } = useGeofence();
@@ -130,6 +143,7 @@ export default function MapScreen({ navigation, route }) {
   const [campusId, setCampusId] = useState(route.params?.campusId || contextCampusId || null);
   const [selectedBlock, setSelectedBlock] = useState(null);
   const [selectedFloor, setSelectedFloor] = useState(null);
+  const [showingRestroomsMode, setShowingRestroomsMode] = useState(route.params?.showRestrooms || false);
   const [geoJSONData, setGeoJSONData] = useState(null);
   const [userPos, setUserPos] = useState(null);
   const [heading, setHeading] = useState(0);
@@ -151,6 +165,15 @@ export default function MapScreen({ navigation, route }) {
       setLoading(false);
     }
   }, [route.params?.campusId, contextCampusId]);
+
+  useEffect(() => {
+    if (route.params?.showRestrooms) {
+      setShowingRestroomsMode(true);
+      setSelectedBlock(null);
+      setSelectedFloor(null);
+      navigation.setParams({ showRestrooms: undefined });
+    }
+  }, [route.params?.showRestrooms]);
 
   useEffect(() => {
     if (campusId) {
@@ -286,14 +309,14 @@ export default function MapScreen({ navigation, route }) {
 
   // Animate panel height based on state
   useEffect(() => {
-    const targetHeight = (selectedFloor || selectedBlock) ? SH * 0.55 : SH * 0.45;
+    const targetHeight = (selectedFloor || selectedBlock || showingRestroomsMode) ? SH * 0.55 : SH * 0.45;
     Animated.timing(panelHeightAnim, {
       toValue: targetHeight,
       duration: 300,
       easing: Easing.out(Easing.cubic),
       useNativeDriver: false
     }).start();
-  }, [selectedBlock, selectedFloor]);
+  }, [selectedBlock, selectedFloor, showingRestroomsMode]);
 
   const handleBlockSelect = (block) => {
     setSelectedBlock(block);
@@ -309,8 +332,13 @@ export default function MapScreen({ navigation, route }) {
   };
 
   const handleBack = () => {
-    if (selectedFloor) setSelectedFloor(null);
-    else if (selectedBlock) setSelectedBlock(null);
+    if (showingRestroomsMode) {
+      setShowingRestroomsMode(false);
+    } else if (selectedFloor) {
+      setSelectedFloor(null);
+    } else if (selectedBlock) {
+      setSelectedBlock(null);
+    }
   };
 
   const mapboxUrl = getCachedConfigValue("EXPO_PUBLIC_MAPBOX_URL", "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png");
@@ -405,6 +433,59 @@ export default function MapScreen({ navigation, route }) {
   }
 
   const renderContent = () => {
+    if (showingRestroomsMode) {
+      const restrooms = mapData?.rooms?.filter(r => 
+        r.type === 'restroom' || 
+        (r.name && (
+          r.name.toLowerCase().includes('restroom') || 
+          r.name.toLowerCase().includes('washroom') ||
+          r.name.toLowerCase().includes('toilet')
+        ))
+      ) || [];
+      
+      const sortedRestrooms = [...restrooms].map(r => {
+        const rx = r.shape?.x || r.x || (r.shape?.points?.[0]?.x);
+        const ry = r.shape?.y || r.y || (r.shape?.points?.[0]?.y);
+        const dist = (userPos && rx && ry) ? getHaversineDistance(userPos.x, userPos.y, rx, ry) : null;
+        return { ...r, distance: dist };
+      }).sort((a, b) => {
+        if (a.distance === null) return 1;
+        if (b.distance === null) return -1;
+        return a.distance - b.distance;
+      });
+
+      if (sortedRestrooms.length === 0) {
+        return <Text style={{ textAlign: "center", color: colors.textSec, marginTop: 40 }}>No restrooms found.</Text>;
+      }
+
+      return sortedRestrooms.map(room => {
+        const floorObj = typeof room.floorId === 'object' ? room.floorId : mapData?.floors?.find(f => f._id === room.floorId);
+        const floorName = floorObj?.name || "";
+        
+        return (
+          <TouchableOpacity key={room._id} style={s.card} activeOpacity={0.7} 
+            onPress={() => navigation.navigate("Navigation", { room, campusId, mapData })}>
+            <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
+              <View style={[s.cardIcon, { backgroundColor: (ROOM_COLORS[room.type] || colors.primary) + "20" }]}>
+                <Ionicons name="water" size={20} color={ROOM_COLORS[room.type] || colors.primary} />
+              </View>
+              <View style={{ flex: 1, paddingRight: 10 }}>
+                <Text style={s.cardTitle}>{room.name}</Text>
+                <Text style={s.cardMeta}>
+                  {room.distance !== null ? `${Math.round(room.distance)}m away` : "Calculating distance..."} 
+                  {floorName ? ` · ${floorName}` : ""}
+                </Text>
+              </View>
+            </View>
+            <View style={s.navBadge}>
+              <Ionicons name="navigate" size={14} color="#fff" />
+              <Text style={s.navBadgeText}>Go</Text>
+            </View>
+          </TouchableOpacity>
+        );
+      });
+    }
+
     if (selectedFloor) {
       const rooms = mapData?.rooms?.filter(r => r.floorId === selectedFloor._id) || [];
       if (rooms.length === 0) return <Text style={{ textAlign: "center", color: colors.textSec, marginTop: 40 }}>No rooms found on this floor.</Text>;
@@ -517,13 +598,13 @@ export default function MapScreen({ navigation, route }) {
       <Animated.View style={[s.bottomSheet, { height: panelHeightAnim }]}>
         <View style={s.dragHandle} />
         <View style={s.sheetHeader}>
-          {(selectedBlock || selectedFloor) ? (
+          {(selectedBlock || selectedFloor || showingRestroomsMode) ? (
             <TouchableOpacity style={s.backBtn} onPress={handleBack}>
               <Ionicons name="arrow-back" size={20} color={colors.text} />
             </TouchableOpacity>
           ) : null}
           <Text style={s.title}>
-            {selectedFloor ? selectedFloor.name : selectedBlock ? selectedBlock.name : "Campus Directory"}
+            {showingRestroomsMode ? "Nearest Restrooms" : selectedFloor ? selectedFloor.name : selectedBlock ? selectedBlock.name : "Campus Directory"}
           </Text>
         </View>
         <ScrollView
