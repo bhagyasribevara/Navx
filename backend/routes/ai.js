@@ -11,7 +11,7 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { detectLanguage, detectIntent } = require('../services/intentDetector');
 const { checkDomain, buildRefusalResponse } = require('../services/domainGuard');
 const { buildContextString, searchFacilities, getRoomsByType, getLiveMeetInfo, getEmergencyInfo } = require('../services/campusKnowledge');
-const { FAQ_ENTRIES, SUGGESTION_CHIPS, WELCOME_MESSAGES } = require('../services/aiConstants');
+const { FAQ_ENTRIES, SUGGESTION_CHIPS, WELCOME_MESSAGES, ACTION_TYPES } = require('../services/aiConstants');
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
@@ -156,25 +156,28 @@ Always return valid JSON. Never return plain text outside JSON structure.`;
 
 // ─── POST /chat — Main AI Chat Endpoint ─────────────────────────────────────
 router.post('/chat', async (req, res) => {
-  try {
-    const {
-      message,
-      sessionId = 'default',
-      campusId,
-      context = {},
-    } = req.body;
+  const {
+    message,
+    sessionId = 'default',
+    campusId,
+    context = {},
+  } = req.body || {};
 
+  let language = 'en';
+  let intent = { intent: null, extractedDestination: null };
+
+  try {
     if (!message || !message.trim()) {
       return res.status(400).json({ error: 'Message is required' });
     }
 
     console.log('[AI] Step 1: Request received');
     // ─── Step 1: Language Detection ───────────────────────────────────────
-    const language = detectLanguage(message);
+    language = detectLanguage(message);
     console.log('[AI] Step 1 done');
 
     // ─── Step 2: Intent Detection ────────────────────────────────────────
-    const intent = detectIntent(message);
+    intent = detectIntent(message);
     console.log('[AI] Step 2 done');
 
     // ─── Step 3: Domain Guard ────────────────────────────────────────────
@@ -306,13 +309,20 @@ router.post('/chat', async (req, res) => {
     res.json(parsed);
   } catch (err) {
     console.error('[AI Chat Error]', err);
-    res.status(200).json({
-      text: "I'm currently assisting many students right now and the network is a bit crowded. Please give me a few seconds and try again!",
-      action: null,
-      destination: null,
-      suggestions: ['Try again', 'Find a room', 'Navigate'],
-      language: 'en',
-    });
+    try {
+      const fallbackResponse = buildFallbackResponse(message || '', language, intent, campusId);
+      fallbackResponse.text = `[Fallback] ${fallbackResponse.text}`;
+      res.json(fallbackResponse);
+    } catch (fallbackErr) {
+      console.error('[AI Fallback Error]', fallbackErr);
+      res.status(200).json({
+        text: "I'm currently assisting many students right now and the network is a bit crowded. Please give me a few seconds and try again!",
+        action: null,
+        destination: null,
+        suggestions: ['Try again', 'Find a room', 'Navigate'],
+        language: 'en',
+      });
+    }
   }
 });
 
