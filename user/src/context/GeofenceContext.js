@@ -47,7 +47,7 @@ export function GeofenceProvider({ children }) {
   const [revokedCampusName, setRevokedCampusName] = useState(null);
   const watcherRef = useRef(null);
 
-  const { user, token, logout } = require("./AuthContext").useAuth();
+  const { user, token, logout, loading: authLoading } = require("./AuthContext").useAuth();
 
   // Restore campus session from AsyncStorage on app launch — but VALIDATE location first
   useEffect(() => {
@@ -65,11 +65,15 @@ export function GeofenceProvider({ children }) {
           return;
         }
 
+        // Restore active campus immediately so the user can use the app without delay
+        setActiveCampus(parsed);
+
         // Require location permission
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status !== "granted") {
           console.warn("Location permission denied on restore — wiping session.");
           await wipeAllCampusData(parsed.id);
+          setActiveCampus(null);
           return;
         }
 
@@ -89,15 +93,15 @@ export function GeofenceProvider({ children }) {
           if (dist > parsed.radius + 20) {
             console.log(`🚫 Session restore blocked: ${Math.round(dist)}m outside ${parsed.radius}m radius. Wiping.`);
             await wipeAllCampusData(parsed.id);
+            setActiveCampus(null);
             return;
           }
           // ✅ User is inside — safe to restore
           console.log(`✅ Session restored: ${parsed.name} (${Math.round(dist)}m from center)`);
-          setActiveCampus(parsed);
         } catch (locErr) {
-          // GPS timeout or unavailable — play it safe and wipe
-          console.warn("GPS check failed on restore — wiping session:", locErr?.message);
-          await wipeAllCampusData(parsed.id);
+          // GPS timeout or unavailable — DO NOT wipe the campus data.
+          // Keep the restored session and let watchPositionAsync handle continuous checks.
+          console.warn("GPS check failed/timed out on restore — keeping session for safety:", locErr?.message);
         }
       } catch (e) {
         console.warn("Failed to restore geofence session:", e);
@@ -312,12 +316,12 @@ export function GeofenceProvider({ children }) {
     setActiveCampus(null);
   }, [activeCampus?.id]);
 
-  // Auto-deactivate campus if user logs out
+  // Auto-deactivate campus if user logs out (only after Auth has finished loading)
   useEffect(() => {
-    if (user === null && activeCampus) {
+    if (!authLoading && user === null && activeCampus) {
       deactivateCampus();
     }
-  }, [user, activeCampus, deactivateCampus]);
+  }, [user, activeCampus, deactivateCampus, authLoading]);
 
   // Clear the revoked state (user acknowledged and wants to rescan)
   const clearRevocation = useCallback(() => {

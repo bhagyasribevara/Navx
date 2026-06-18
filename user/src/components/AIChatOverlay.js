@@ -402,7 +402,6 @@ export default function AIChatOverlay() {
           <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={closeChat} />
           
           <Animated.View style={[styles.chatContainer, { backgroundColor: colors.bg, transform: [{ translateY: slideAnim }] }]}>
-            
             {/* Header */}
             <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
               <View style={[styles.avatar, { backgroundColor: colors.primary }]}>
@@ -459,7 +458,7 @@ export default function AIChatOverlay() {
             )}
 
             {/* Input Area */}
-             <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
               <View style={[styles.inputContainer, { 
                 backgroundColor: colors.card, 
                 borderTopColor: colors.border, 
@@ -489,7 +488,6 @@ export default function AIChatOverlay() {
                 </TouchableOpacity>
               </View>
             </KeyboardAvoidingView>
-
           </Animated.View>
         </View>
       </Modal>
@@ -522,7 +520,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.4)',
   },
   chatContainer: {
-    height: height * 0.85,
+    height: '85%',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     overflow: 'hidden',

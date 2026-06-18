@@ -107,6 +107,10 @@ function buildNavMapHTML(geoJSONData, pathPoints, initialPos, targetRoom, mapbox
     L.polyline([${pathStr}],{color:'#8b5cf6',weight:6,opacity:1,lineCap:'round',lineJoin:'round'}).addTo(map);
   ` : '';
   
+  const targetFloorId = targetRoom?.floorId
+    ? (typeof targetRoom.floorId === 'object' ? targetRoom.floorId._id : targetRoom.floorId)
+    : '';
+  
   return `<!DOCTYPE html>
 <html><head>
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
@@ -188,7 +192,7 @@ window.updateGeoJSON = function(data, floorId) {
 };
 
 // Initialize MapLayers
-${geoJSONData ? `window.updateGeoJSON(${JSON.stringify(geoJSONData)}, '${targetRoom?.floorId || ''}');` : ''}
+${geoJSONData ? `window.updateGeoJSON(${JSON.stringify(geoJSONData)}, '${targetFloorId || ''}');` : ''}
 
 ${routeLine}
 ${destDot}
@@ -246,7 +250,13 @@ export default function NavigationScreen({ navigation, route }) {
   const { colors, language } = useContext(ThemeContext);
   const insets = useSafeAreaInsets();
   const { room: initialRoom, campusId: initialCampusId, mapData: initialMapData } = route.params || {};
-  const [targetRoom, setTargetRoom] = useState(initialRoom);
+  const [targetRoom, setTargetRoom] = useState(() => {
+    if (!initialRoom) return null;
+    const normFloorId = typeof initialRoom.floorId === 'object' && initialRoom.floorId !== null
+      ? initialRoom.floorId._id
+      : initialRoom.floorId;
+    return { ...initialRoom, floorId: normFloorId };
+  });
   const [mapData, setMapData] = useState(initialMapData);
   const [campusId, setCampusId] = useState(initialCampusId || initialRoom?.campusId);
   const [routeData, setRouteData] = useState(null);
@@ -265,6 +275,15 @@ export default function NavigationScreen({ navigation, route }) {
 
   const [locationPerm, setLocationPerm] = useState(null);
   const [gpsLoading, setGpsLoading] = useState(false);
+
+  useEffect(() => {
+    if (route.params?.room) {
+      const normFloorId = typeof route.params.room.floorId === 'object' && route.params.room.floorId !== null
+        ? route.params.room.floorId._id
+        : route.params.room.floorId;
+      setTargetRoom({ ...route.params.room, floorId: normFloorId });
+    }
+  }, [route.params?.room]);
 
   // Floor-change tracking state
   const [currentFloor, setCurrentFloor] = useState(null);
@@ -293,7 +312,12 @@ export default function NavigationScreen({ navigation, route }) {
 
   // Inject updated GeoJSON when it changes without reloading WebView
   useEffect(() => {
-    const targetFloorId = targetRoom?.floorId || currentFloor || route.params?.floorId || mapData?.floors?.[0]?._id;
+    const getFloorIdString = (floorVal) => {
+      if (!floorVal) return '';
+      if (typeof floorVal === 'object') return floorVal._id || '';
+      return floorVal;
+    };
+    const targetFloorId = getFloorIdString(targetRoom?.floorId) || getFloorIdString(currentFloor) || getFloorIdString(route.params?.floorId) || getFloorIdString(mapData?.floors?.[0]?._id);
     if (geoJSONData && webViewRef.current) {
       webViewRef.current.injectJavaScript(`
         if (typeof window.updateGeoJSON === 'function') {
@@ -445,7 +469,10 @@ export default function NavigationScreen({ navigation, route }) {
         });
         if (result.targetExit) {
           // Mock the 'room' object so the UI says "Exit"
-          setTargetRoom({ name: result.targetExit.label || result.targetExit.name || "Emergency Exit", _id: result.targetExit._id, floorId: result.targetExit.floorId });
+          const normFloorId = typeof result.targetExit.floorId === 'object' && result.targetExit.floorId !== null
+            ? result.targetExit.floorId._id
+            : result.targetExit.floorId;
+          setTargetRoom({ name: result.targetExit.label || result.targetExit.name || "Emergency Exit", _id: result.targetExit._id, floorId: normFloorId });
         }
       } else {
         result = await findRouteToRoom({
@@ -779,7 +806,10 @@ export default function NavigationScreen({ navigation, route }) {
       if (route.params?.emergencyMode) {
         result = await findRouteToExit({ startX: lat, startY: lng, campusId: String(campusId) });
         if (result.targetExit) {
-          setTargetRoom({ name: result.targetExit.label || result.targetExit.name || "Emergency Exit", _id: result.targetExit._id, floorId: result.targetExit.floorId });
+          const normFloorId = typeof result.targetExit.floorId === 'object' && result.targetExit.floorId !== null
+            ? result.targetExit.floorId._id
+            : result.targetExit.floorId;
+          setTargetRoom({ name: result.targetExit.label || result.targetExit.name || "Emergency Exit", _id: result.targetExit._id, floorId: normFloorId });
         }
       } else {
         result = await findRouteToRoom({ startX: lat, startY: lng, roomId: String(targetRoom?._id), campusId: String(campusId) });

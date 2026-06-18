@@ -69,7 +69,19 @@ export async function fetchAppConfig() {
   }
 }
 
+// Pre-load configuration from cache on module import
+AsyncStorage.getItem("navx_app_config").then(stored => {
+  if (stored) {
+    try {
+      cachedConfig = JSON.parse(stored);
+    } catch (e) {}
+  }
+}).catch(() => {});
+
 export function getCachedConfigValue(key, fallback) {
+  if (process.env && process.env[key]) {
+    return process.env[key];
+  }
   if (cachedConfig && cachedConfig[key]) {
     return cachedConfig[key];
   }
