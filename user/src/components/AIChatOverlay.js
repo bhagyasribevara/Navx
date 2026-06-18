@@ -178,7 +178,7 @@ export default function AIChatOverlay() {
     closeChat();
     if (action === 'navigate' && destination) {
       if (!activeCampusId) {
-        navigation.navigate('Search', { initialQuery: destination, autoSearch: true });
+        navigation.navigate('Map');
         return;
       }
       try {
@@ -192,10 +192,25 @@ export default function AIChatOverlay() {
         }
 
         const results = await searchRooms(destination, activeCampusId);
+
+        // Check if there is an exact room name or room number match in the results
+        const exactMatch = results && results.find(r => 
+          r.name.toLowerCase().trim() === destination.toLowerCase().trim() ||
+          (r.roomNumber && r.roomNumber.toLowerCase().trim() === destination.toLowerCase().trim())
+        );
+
+        if (exactMatch) {
+          navigation.navigate('Navigation', { room: exactMatch, campusId: activeCampusId, startAR });
+          return;
+        }
+
         // If there is exactly one perfect match, bypass the search screen and jump directly to Navigation
         if (results && results.length === 1) {
           navigation.navigate('Navigation', { room: results[0], campusId: activeCampusId, startAR });
-        } else if (results && results.length > 1) {
+          return;
+        } 
+        
+        if (results && results.length > 1) {
           // If multiple rooms were returned, check if they all belong to the EXACT same Block
           // This happens when the user clicks a generic block name like "CSE block" or "Boys Hostel"
           const firstBlockId = results[0]?.blockId?._id || results[0]?.blockId;
@@ -207,16 +222,15 @@ export default function AIChatOverlay() {
           if (allSameBlock) {
             // It's a block! Open the map screen and automatically focus on this block
             navigation.navigate('Map', { blockId: firstBlockId, campusId: activeCampusId });
-          } else {
-            // Mixed rooms, let the user disambiguate in the Search console
-            navigation.navigate('Search', { initialQuery: destination, autoSearch: true });
+            return;
           }
-        } else {
-          // Zero results, fallback to search console
-          navigation.navigate('Search', { initialQuery: destination, autoSearch: true });
         }
+
+        // Fallback to Map screen to display the Campus Directory instead of the Search screen
+        navigation.navigate('Map', { campusId: activeCampusId });
       } catch (err) {
-        navigation.navigate('Search', { initialQuery: destination, autoSearch: true });
+        console.error('Failed to handle navigate action:', err);
+        navigation.navigate('Map', { campusId: activeCampusId });
       }
     } else if (action === 'emergency') {
       navigation.navigate('Search', { initialQuery: 'exit', autoSearch: true });
