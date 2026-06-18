@@ -479,6 +479,43 @@ export default function GuidedMapBuilder() {
     return () => clearInterval(autoSaveTimer);
   }, [isBlockDirty, isRoomDirty, activeBlock, activeRoom, blockForm, activeFloor, isAuthorized]);
 
+  useEffect(() => {
+    const handleMapRefresh = async (e) => {
+      await loadBlocks();
+      
+      const { blockId, floorId } = e.detail || {};
+      
+      if (blockId && (!activeBlock || activeBlock._id !== blockId)) {
+        // Find the block in the latest loaded blocks? We don't have them easily accessible as loadBlocks sets state.
+        // Let's just set the activeBlock state directly with the ID if we can, or rely on the user to switch manually if it's too complex.
+        // Actually, let's look up the block in `blocks` state.
+        setBlocks(prevBlocks => {
+          const targetBlock = prevBlocks.find(b => b._id === blockId);
+          if (targetBlock) {
+            setActiveBlock(targetBlock);
+          }
+          return prevBlocks;
+        });
+      }
+
+      if (floorId) {
+        // We might not have the floor object loaded yet if we just switched blocks.
+        // We can just fetch the floor directly or loadFloorData for that floorId.
+        await loadFloorData(floorId);
+        // Also update activeFloor if possible
+        setFloors(prevFloors => {
+          const targetFloor = prevFloors.find(f => f._id === floorId);
+          if (targetFloor) setActiveFloor(targetFloor);
+          return prevFloors;
+        });
+      } else if (activeFloor) {
+        await loadFloorData(activeFloor._id);
+      }
+    };
+    window.addEventListener('navx-map-refresh', handleMapRefresh);
+    return () => window.removeEventListener('navx-map-refresh', handleMapRefresh);
+  }, [activeFloor, activeBlock]);
+
   const [allNodes, setAllNodes] = useState([]);
 
   const loadMainPathway = async () => {

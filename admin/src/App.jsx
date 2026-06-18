@@ -4,6 +4,8 @@ import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import { FiMap, FiGrid, FiLayers, FiNavigation, FiBarChart2, FiSettings, FiHome, FiAlertCircle } from 'react-icons/fi';
 import NavXAIChat from './components/NavXAIChat';
+import NavXAdminCopilot from './components/NavXAdminCopilot';
+import { AdminPageProvider } from './components/AdminPageContext';
 import Dashboard from './pages/Dashboard';
 import CampusManager from './pages/CampusManager';
 import MapEditor from './pages/MapEditor';
@@ -90,9 +92,10 @@ function App() {
   const adminCampusName = admin?.campus?.name || admin?.campus?.campusName || null;
 
   return (
-    <>
+    <AdminPageProvider>
       <ToastContainer position="bottom-right" theme="dark" autoClose={3000} />
-      <NavXAIChat campusId={adminCampusId} campusName={adminCampusName} />
+      {/* <NavXAIChat campusId={adminCampusId} campusName={adminCampusName} /> */}
+      <NavXAdminCopilot admin={admin} />
       <Routes>
         {/* Default SuperAdmin or Legacy Routes */}
         <Route
@@ -189,7 +192,7 @@ function App() {
           <Route path="emergency" element={<EmergencyDashboard admin={admin} />} />
         </Route>
       </Routes>
-    </>
+    </AdminPageProvider>
   );
 }
 

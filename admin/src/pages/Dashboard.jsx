@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate, useOutletContext } from "react-router-dom";
 import { FiMap, FiGrid, FiLayers, FiNavigation, FiPlus } from "react-icons/fi";
 import { getBlocks, getCampuses, getFloors } from "../api";
+import { useAdminPageContext } from '../components/AdminPageContext';
 
 export default function Dashboard({ admin }) {
   const [campuses, setCampuses] = useState([]);
@@ -12,6 +13,7 @@ export default function Dashboard({ admin }) {
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
   const context = useOutletContext() || {};
+  const { setPageContext } = useAdminPageContext();
 
   useEffect(() => {
     let mounted = true;
@@ -117,6 +119,19 @@ export default function Dashboard({ admin }) {
       color: "#3b82f6",
     },
   ];
+
+  useEffect(() => {
+    if (!loading) {
+      setPageContext({
+        pageName: 'Dashboard',
+        data: {
+          campuses: campuses.map(c => ({ id: c._id, name: c.name, type: c.venueType })),
+          networkStats,
+          widgets: stats.map(s => ({ label: s.label, value: s.value }))
+        }
+      });
+    }
+  }, [loading, campuses, networkStats]);
 
   return (
     <div className="page-content">

@@ -3,12 +3,14 @@ import { useOutletContext } from 'react-router-dom';
 import { FiBarChart2, FiNavigation, FiSearch } from 'react-icons/fi';
 import { MdQrCode2 } from 'react-icons/md';
 import * as api from '../api';
+import { useAdminPageContext } from '../components/AdminPageContext';
 
 export default function AnalyticsDashboard({ admin }) {
   const [campuses, setCampuses] = useState([]);
   const [selectedCampus, setSelectedCampus] = useState(null);
   const [summary, setSummary] = useState(null);
   const context = useOutletContext() || {};
+  const { setPageContext } = useAdminPageContext();
 
   useEffect(() => { 
     if (context.campus) {
@@ -38,6 +40,17 @@ export default function AnalyticsDashboard({ admin }) {
     { label: 'Searches', value: summary.searchCount, icon: <FiSearch />, color: '#22c55e' },
     { label: 'QR Scans', value: summary.qrCount, icon: <MdQrCode2 />, color: '#f59e0b' },
   ] : [];
+
+  useEffect(() => {
+    setPageContext({
+      pageName: 'Analytics Dashboard',
+      data: {
+        selectedCampusName: selectedCampus?.name || 'All/None',
+        summary,
+        widgets: stats.map(s => ({ label: s.label, value: s.value }))
+      }
+    });
+  }, [selectedCampus, summary]);
 
   return (
     <div className="page-content">

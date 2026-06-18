@@ -140,6 +140,7 @@ app.use('/api/beacons', require('./routes/beacons'));
 app.use('/api/navigation', require('./routes/navigation'));
 app.use('/api/analytics', require('./routes/analytics'));
 app.use('/api/ai', require('./routes/ai'));
+app.use('/api/adminAi', require('./routes/adminAi'));
 app.use('/api/admin', require('./routes/admin'));
 app.use('/api/weather', require('./routes/weather'));
 app.use('/api/mapLayers', require('./routes/mapLayers'));
