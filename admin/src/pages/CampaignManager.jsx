@@ -111,12 +111,12 @@ function CampaignCard({ c, onEdit, onDelete, onToggle, onAddSub, onEditSub, onDe
   };
 
   return (
-    <div className="card" style={{ overflow: 'hidden', opacity: c.isActive ? 1 : 0.65 }}>
+    <div className="card" style={{ padding: 0, overflow: 'hidden', opacity: c.isActive ? 1 : 0.65 }}>
       {c.image && (
-        <div style={{ height: 120, background: `url(${c.image.startsWith('http') ? c.image : `http://localhost:5001${c.image}`}) center/cover`,
+        <div style={{ height: 160, background: `url(${c.image.startsWith('http') ? c.image : `http://localhost:5001${c.image}`}) center/cover`,
           borderBottom: '1px solid var(--border-color)' }} />
       )}
-      <div style={{ padding: 16 }}>
+      <div style={{ padding: 20 }}>
         {/* Badges */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -149,28 +149,34 @@ function CampaignCard({ c, onEdit, onDelete, onToggle, onAddSub, onEditSub, onDe
           {c.destination?.roomId?.name && <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><FiNavigation size={11} /> {c.destination.roomId.name}</span>}
         </div>
 
-        {/* Action buttons */}
-        <div style={{ display: 'flex', gap: 6 }}>
-          <button className="btn btn-secondary" onClick={() => onEdit(c)} style={{ flex: 1, fontSize: 12 }}>
+        {/* Action buttons footer */}
+        <div style={{ 
+          marginTop: 20, 
+          paddingTop: 16, 
+          borderTop: '1px solid rgba(255, 255, 255, 0.06)', 
+          display: 'flex', 
+          gap: 8
+        }}>
+          <button className="btn btn-secondary" onClick={() => onEdit(c)} style={{ flex: 1, fontSize: 11.5, padding: '8px 4px', height: 36 }}>
             <FiEdit2 size={12} style={{ marginRight: 4 }} /> Edit
           </button>
           <button className={`btn ${c.isActive ? 'btn-secondary' : 'btn-primary'}`} onClick={() => onToggle(c)}
-            style={{ flex: 1, fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            style={{ flex: 1.3, fontSize: 11.5, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px 4px', height: 36 }}>
             {c.isActive ? <><FiEyeOff size={12} style={{ marginRight: 4 }} />Unpublish</> : <><FiEye size={12} style={{ marginRight: 4 }} />Publish</>}
           </button>
           <button className="btn btn-secondary" onClick={() => onDelete(c._id)}
-            style={{ flex: 1, fontSize: 12, color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            style={{ flex: 1, fontSize: 11.5, color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px 4px', height: 36 }}>
             <FiTrash2 size={12} style={{ marginRight: 4 }} /> Delete
           </button>
         </div>
 
         {/* Sub-campaigns section */}
         <div style={{ marginTop: 12, borderTop: '1px solid var(--border-color)', paddingTop: 12 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: expanded ? 10 : 0 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: expanded ? 10 : 0, gap: 8 }}>
             <button
               className="btn btn-secondary"
               onClick={() => setExpanded(e => !e)}
-              style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}
+              style={{ fontSize: 11.5, display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', flex: 1.1, justifyContent: 'center', height: 36 }}
             >
               <FiLayers size={12} />
               {expanded ? 'Hide' : 'Show'} Sub-events
@@ -178,7 +184,7 @@ function CampaignCard({ c, onEdit, onDelete, onToggle, onAddSub, onEditSub, onDe
               {expanded ? <FiChevronUp size={12} /> : <FiChevronDown size={12} />}
             </button>
             <button className="btn btn-primary" onClick={handleAddSub}
-              style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 5, padding: '6px 12px' }}>
+              style={{ fontSize: 11.5, display: 'flex', alignItems: 'center', gap: 5, padding: '8px 12px', flex: 1, justifyContent: 'center', height: 36 }}>
               <FiPlus size={12} /> Add Sub-event
             </button>
           </div>
@@ -359,12 +365,12 @@ export default function CampaignManager({ admin }) {
   if (!campusId) return <div className="card" style={{ padding: 40, textAlign: 'center' }}>No campus assigned.</div>;
 
   return (
-    <div style={{ padding: '24px' }}>
+    <div className="page-content">
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+      <div className="page-header">
         <div>
-          <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800 }}>Campaign Manager</h2>
-          <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--text-secondary)', fontWeight: 500 }}>
+          <h1 className="page-title">Campaign Manager</h1>
+          <p className="page-subtitle">
             Create campaigns and nested sub-events with navigation.
           </p>
         </div>
@@ -373,11 +379,50 @@ export default function CampaignManager({ admin }) {
         </button>
       </div>
 
-      {/* Filters */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
+      {/* Filters (Sliding Segmented Control) */}
+      <div style={{ 
+        position: 'relative', 
+        display: 'inline-flex', 
+        background: 'rgba(255, 255, 255, 0.04)', 
+        padding: 4, 
+        borderRadius: 30, 
+        border: '1px solid rgba(255, 255, 255, 0.08)',
+        marginBottom: 20,
+        zIndex: 1
+      }}>
+        {/* Sliding Capsule backdrop */}
+        <div style={{
+          position: 'absolute',
+          top: 4,
+          bottom: 4,
+          left: 4,
+          width: 'calc(33.33% - 4px)',
+          background: 'var(--gradient-primary)',
+          borderRadius: 26,
+          transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+          transform: `translateX(${['all', 'active', 'inactive'].indexOf(filter) * 100}%)`,
+          zIndex: 0,
+          boxShadow: '0 4px 12px rgba(99, 102, 241, 0.3)'
+        }} />
         {['all', 'active', 'inactive'].map(f => (
-          <button key={f} className={`btn ${filter === f ? 'btn-primary' : 'btn-secondary'}`}
-            onClick={() => setFilter(f)} style={{ fontSize: 12, padding: '6px 14px', textTransform: 'capitalize' }}>
+          <button 
+            key={f} 
+            onClick={() => setFilter(f)} 
+            style={{ 
+              position: 'relative',
+              background: 'transparent',
+              border: 'none',
+              outline: 'none',
+              color: filter === f ? '#fff' : 'var(--text-secondary)',
+              fontSize: 12, 
+              fontWeight: 700,
+              padding: '8px 24px', 
+              textTransform: 'capitalize',
+              cursor: 'pointer',
+              zIndex: 1,
+              transition: 'color 0.3s'
+            }}
+          >
             {f} ({f === 'all' ? campaigns.length : f === 'active' ? campaigns.filter(c => c.isActive).length : campaigns.filter(c => !c.isActive).length})
           </button>
         ))}

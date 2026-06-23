@@ -163,7 +163,17 @@ export default function Dashboard({ admin }) {
                 <div className="stat-value">{s.value}</div>
                 <div className="stat-label">{s.label}</div>
               </div>
-              <div style={{ fontSize: 28, color: s.color, opacity: 0.6 }}>
+              <div style={{
+                width: 48,
+                height: 48,
+                borderRadius: '50%',
+                background: `${s.color}15`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: s.color,
+                boxShadow: `0 0 12px ${s.color}15`
+              }}>
                 {s.icon}
               </div>
             </div>
@@ -239,7 +249,13 @@ export default function Dashboard({ admin }) {
                 >
                   <span>📍 {c.address || "No address"}</span>
                 </div>
-                <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
+                <div style={{ 
+                  marginTop: 16, 
+                  paddingTop: 14, 
+                  borderTop: '1px solid rgba(255, 255, 255, 0.06)', 
+                  display: "flex", 
+                  gap: 8 
+                }}>
                   <button
                     className="btn btn-secondary btn-sm"
                     onClick={(e) => {

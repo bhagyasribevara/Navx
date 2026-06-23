@@ -103,7 +103,7 @@ function App() {
           element={
             <div className="app-layout">
               {!isEditorPage && <Sidebar admin={admin} onLogout={handleLogout} />}
-              <div className="main-content" style={isEditorPage ? { marginLeft: 0 } : {}}>
+              <div className={`main-content ${isEditorPage ? 'editor-mode' : ''}`} style={isEditorPage ? { marginLeft: 0 } : {}}>
                 {!isEditorPage && <TopBar />}
                 <Dashboard admin={admin} />
               </div>
@@ -115,7 +115,7 @@ function App() {
           element={
             <div className="app-layout">
               {!isEditorPage && <Sidebar admin={admin} onLogout={handleLogout} />}
-              <div className="main-content" style={isEditorPage ? { marginLeft: 0 } : {}}>
+              <div className={`main-content ${isEditorPage ? 'editor-mode' : ''}`} style={isEditorPage ? { marginLeft: 0 } : {}}>
                 {!isEditorPage && <TopBar />}
                 <CampusManager admin={admin} />
               </div>
@@ -128,7 +128,7 @@ function App() {
           element={
             <div className="app-layout">
               {!isEditorPage && <Sidebar admin={admin} onLogout={handleLogout} />}
-              <div className="main-content" style={isEditorPage ? { marginLeft: 0 } : {}}>
+              <div className={`main-content ${isEditorPage ? 'editor-mode' : ''}`} style={isEditorPage ? { marginLeft: 0 } : {}}>
                 {!isEditorPage && <TopBar />}
                 <PositioningSetup />
               </div>
@@ -140,7 +140,7 @@ function App() {
           element={
             <div className="app-layout">
               {!isEditorPage && <Sidebar admin={admin} onLogout={handleLogout} />}
-              <div className="main-content" style={isEditorPage ? { marginLeft: 0 } : {}}>
+              <div className={`main-content ${isEditorPage ? 'editor-mode' : ''}`} style={isEditorPage ? { marginLeft: 0 } : {}}>
                 {!isEditorPage && <TopBar />}
                 <CampaignManager admin={admin} />
               </div>
@@ -152,7 +152,7 @@ function App() {
           element={
             <div className="app-layout">
               {!isEditorPage && <Sidebar admin={admin} onLogout={handleLogout} />}
-              <div className="main-content" style={isEditorPage ? { marginLeft: 0 } : {}}>
+              <div className={`main-content ${isEditorPage ? 'editor-mode' : ''}`} style={isEditorPage ? { marginLeft: 0 } : {}}>
                 {!isEditorPage && <TopBar />}
                 <AnalyticsDashboard admin={admin} />
               </div>
@@ -164,7 +164,7 @@ function App() {
           element={
             <div className="app-layout">
               {!isEditorPage && <Sidebar admin={admin} onLogout={handleLogout} />}
-              <div className="main-content" style={isEditorPage ? { marginLeft: 0 } : {}}>
+              <div className={`main-content ${isEditorPage ? 'editor-mode' : ''}`} style={isEditorPage ? { marginLeft: 0 } : {}}>
                 {!isEditorPage && <TopBar />}
                 <EmergencyDashboard admin={admin} />
               </div>
@@ -279,7 +279,7 @@ function CampusWorkspaceWrapper({ admin, setAdmin, onLogout }) {
   return (
     <div className="app-layout">
       {!isEditorPage && <Sidebar admin={admin} onLogout={onLogout} campusCode={campusCode} />}
-      <div className="main-content" style={isEditorPage ? { marginLeft: 0 } : {}}>
+      <div className={`main-content ${isEditorPage ? 'editor-mode' : ''}`} style={isEditorPage ? { marginLeft: 0 } : {}}>
         {!isEditorPage && <TopBar />}
         <Outlet context={{ campus }} />
       </div>
@@ -292,51 +292,42 @@ function Sidebar({ admin, onLogout, campusCode }) {
   const venuesPath = campusCode ? `${prefix}/venues` : '/campus';
 
   return (
-    <aside className="sidebar">
-      <div className="sidebar-header">
-        <div className="sidebar-logo">N</div>
-        <div>
-          <div className="sidebar-title">NavX</div>
-          <div className="sidebar-subtitle">{campusCode ? 'Workspace' : 'Admin Console'}</div>
+    <header className="top-navbar">
+      <div className="navbar-wrapper admin-navbar-wrapper">
+        <div className="navbar-left">
+          <img src="/navx-icon.png" alt="NavX Logo" className="navbar-logo" style={{ objectFit: 'cover' }} />
+          <div>
+            <div className="navbar-title">NavX</div>
+            <div className="navbar-subtitle">{campusCode ? `Workspace: ${campusCode}` : 'Admin Console'}</div>
+          </div>
         </div>
-      </div>
-      <nav className="sidebar-nav">
-        <div className="nav-section">
-          <div className="nav-section-title">Overview</div>
-          <NavLink to={campusCode ? prefix : "/"} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} end>
+        <nav className="navbar-center">
+          <NavLink to={campusCode ? prefix : "/"} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} end>
             <FiHome /> Dashboard
           </NavLink>
-        </div>
-        <div className="nav-section">
-          <div className="nav-section-title">Management</div>
-          <NavLink to={venuesPath} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} end>
+          <NavLink to={venuesPath} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} end>
             <FiGrid /> Venues & Maps
           </NavLink>
-          <NavLink to={`${prefix}/campaigns`} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-            <FiAlertCircle /> Campaigns
+          <NavLink to={`${prefix}/campaigns`} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+            <FiLayers /> Campaigns
           </NavLink>
-        </div>
-        <div className="nav-section">
-          <div className="nav-section-title">Safety</div>
-          <NavLink to={`${prefix}/emergency`} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+          <NavLink to={`${prefix}/emergency`} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
             <FiAlertCircle /> Emergency Alert
           </NavLink>
-        </div>
-        <div className="nav-section">
-          <div className="nav-section-title">Analytics</div>
-          <NavLink to={`${prefix}/analytics`} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+          <NavLink to={`${prefix}/analytics`} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
             <FiBarChart2 /> Analytics
           </NavLink>
-        </div>
-      </nav>
-      <div style={{ padding: '16px', borderTop: '1px solid var(--border-color)', fontSize: '11px', color: 'var(--text-muted)' }}>
-        <div>NavX Admin v2.0</div>
-        {campusCode && <div style={{ fontSize: '10px', color: '#22c55e', marginTop: 4 }}>Workspace: {campusCode}</div>}
-        <div style={{ marginTop: '12px', cursor: 'pointer', color: 'var(--danger-color, #ef4444)', fontWeight: 600 }} onClick={onLogout}>
-          Logout
+        </nav>
+        <div className="navbar-right">
+          <div className="user-badge">
+            <span className="user-role">{admin?.role === 'SuperAdmin' ? 'Super Admin' : (admin?.username || 'Admin')}</span>
+          </div>
+          <button className="btn-logout" onClick={onLogout}>
+            Logout
+          </button>
         </div>
       </div>
-    </aside>
+    </header>
   );
 }
 
@@ -351,17 +342,19 @@ function TopBar() {
 
   return (
     <div className="top-bar">
-      <div className="breadcrumbs">
-        <span className="breadcrumb">NavX</span>
-        {displayParts.map((p, i) => (
-          <span key={i}>
-            <span className="breadcrumb-sep">/</span>
-            <span className={`breadcrumb ${i === displayParts.length - 1 ? 'active' : ''}`}>
-              {p.charAt(0).toUpperCase() + p.slice(1)}
+      <div className="navbar-wrapper admin-navbar-wrapper">
+        <div className="breadcrumbs">
+          <span className="breadcrumb">NavX</span>
+          {displayParts.map((p, i) => (
+            <span key={i}>
+              <span className="breadcrumb-sep">/</span>
+              <span className={`breadcrumb ${i === displayParts.length - 1 ? 'active' : ''}`}>
+                {p.charAt(0).toUpperCase() + p.slice(1)}
+              </span>
             </span>
-          </span>
-        ))}
-        {displayParts.length === 0 && <><span className="breadcrumb-sep">/</span><span className="breadcrumb active">Dashboard</span></>}
+          ))}
+          {displayParts.length === 0 && <><span className="breadcrumb-sep">/</span><span className="breadcrumb active">Dashboard</span></>}
+        </div>
       </div>
     </div>
   );

@@ -203,13 +203,21 @@ export default function CampusManager({ admin }) {
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                 <span style={{ fontSize: 20 }}>{VENUE_ICONS[c.venueType] || '📍'}</span>
                 <h3 style={{ fontSize: 16, fontWeight: 600, margin: 0 }}>{c.name}</h3>
-                <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: (VENUE_TYPES.find(v=>v.value===c.venueType)?.color || '#94a3b8') + '20', color: VENUE_TYPES.find(v=>v.value===c.venueType)?.color || '#94a3b8' }}>
+                <span style={{ 
+                  fontSize: 10, 
+                  fontWeight: 700, 
+                  padding: '2px 8px', 
+                  borderRadius: 99, 
+                  background: (VENUE_TYPES.find(v=>v.value===c.venueType)?.color || '#94a3b8') + '15', 
+                  color: VENUE_TYPES.find(v=>v.value===c.venueType)?.color || '#94a3b8',
+                  border: `1px solid ${(VENUE_TYPES.find(v=>v.value===c.venueType)?.color || '#94a3b8')}30`
+                }}>
                   {(c.venueType || 'campus').toUpperCase()}
                 </span>
               </div>
               <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>{c.description || 'No description'}</p>
               <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>📍 {c.address || 'No address'}</p>
-              <div style={{ marginTop: 16, display: 'flex', flexWrap: 'wrap', gap: 8, position: 'relative', zIndex: 10 }}>
+              <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid rgba(255, 255, 255, 0.06)', display: 'flex', flexWrap: 'wrap', gap: 8, position: 'relative', zIndex: 10 }}>
                 <button type="button" className="btn btn-primary btn-sm" onClick={(e) => { 
                   e.stopPropagation(); 
                   const targetCode = context?.campus?.campusCode || admin?.campus?.campusCode || admin?.campusId?.campusCode;

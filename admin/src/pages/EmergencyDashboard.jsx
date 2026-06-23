@@ -66,7 +66,7 @@ export default function EmergencyDashboard({ admin }) {
     <div className="page-content">
       <div className="page-header">
         <div>
-          <h1 className="page-title" style={{ color: '#ef4444' }}>Emergency Broadcast</h1>
+          <h1 className="page-title" style={{ background: 'linear-gradient(135deg, #fecaca 0%, #f87171 50%, #ef4444 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>Emergency Broadcast</h1>
           <p className="page-subtitle">Instantly alert all users and guide them to emergency exits</p>
         </div>
       </div>
@@ -94,15 +94,43 @@ export default function EmergencyDashboard({ admin }) {
               <div style={{ marginTop: 24, display: 'flex', flexDirection: 'column', gap: 12 }}>
                 {!isEmergency ? (
                   <>
-                    <button className="btn btn-danger" style={{ width: '100%', justifyContent: 'center' }} onClick={() => handleTrigger(c._id, 'Fire')}>
+                    <button 
+                      className="btn btn-danger emergency-trigger-fire" 
+                      style={{ 
+                        width: '100%', 
+                        justifyContent: 'center', 
+                        padding: '16px 20px', 
+                        borderRadius: 12,
+                        border: '2px solid rgba(239, 68, 68, 0.4)',
+                        fontSize: '15px',
+                        fontWeight: 800,
+                        letterSpacing: '0.5px'
+                      }} 
+                      onClick={() => handleTrigger(c._id, 'Fire')}
+                    >
                       <FiAlertTriangle /> Trigger Fire Alarm
                     </button>
-                    <button className="btn" style={{ width: '100%', justifyContent: 'center', background: '#3b82f6', color: 'white' }} onClick={() => handleTrigger(c._id, 'Security')}>
+                    <button 
+                      className="btn emergency-trigger-security" 
+                      style={{ 
+                        width: '100%', 
+                        justifyContent: 'center', 
+                        background: 'linear-gradient(135deg, #1e3a8a, #3b82f6)', 
+                        color: 'white',
+                        padding: '16px 20px',
+                        borderRadius: 12,
+                        border: '2px solid rgba(59, 130, 246, 0.4)',
+                        fontSize: '15px',
+                        fontWeight: 800,
+                        letterSpacing: '0.5px'
+                      }} 
+                      onClick={() => handleTrigger(c._id, 'Security')}
+                    >
                       <FiAlertTriangle /> Security Threat
                     </button>
                   </>
                 ) : (
-                  <button className="btn btn-success" style={{ width: '100%', justifyContent: 'center', background: '#22c55e', color: 'white' }} onClick={() => handleResolve(c._id)}>
+                  <button className="btn btn-success" style={{ width: '100%', justifyContent: 'center', background: '#22c55e', color: 'white', padding: '14px 20px', borderRadius: 12 }} onClick={() => handleResolve(c._id)}>
                     <FiCheckCircle /> Mark as Resolved
                   </button>
                 )}

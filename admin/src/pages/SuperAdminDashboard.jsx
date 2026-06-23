@@ -255,8 +255,13 @@ export default function SuperAdminDashboard({ admin, onLogout }) {
 
   const getWorkspaceLocalLink = (url) => {
     if (!url) return '#';
-    // Map production url to local dev server in development
-    return url.replace('https://admin.navx.com', window.location.origin);
+    try {
+      const urlObj = new URL(url);
+      // Ensure the link always uses the current domain (resolves localhost and production domains dynamically)
+      return window.location.origin + urlObj.pathname + urlObj.search + urlObj.hash;
+    } catch (e) {
+      return url;
+    }
   };
 
   const handleCopyUrl = (url) => {
@@ -268,41 +273,38 @@ export default function SuperAdminDashboard({ admin, onLogout }) {
 
   return (
     <div className="superadmin-layout">
-      <aside className="sidebar">
-        <div className="sidebar-header">
-          <div className="sidebar-logo">S</div>
-          <div>
-            <div className="sidebar-title">NavX</div>
-            <div className="sidebar-subtitle">Super Admin</div>
+      <header className="top-navbar" style={{ height: '96px' }}>
+        <div className="navbar-wrapper" style={{ maxWidth: '100%', padding: '0 32px' }}>
+          <div className="navbar-left">
+            <img src="/navx-icon.png" alt="NavX Logo" className="navbar-logo super-logo" style={{ objectFit: 'cover' }} />
+            <div>
+              <div className="navbar-title">NavX</div>
+              <div className="navbar-subtitle">Super Admin Console</div>
+            </div>
+          </div>
+          <nav className="navbar-center" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+            <div className="nav-info-banner">
+              ✨ Super Admin Dashboard
+            </div>
+            <div className="venues-legend-inline" style={{ display: 'flex', gap: 12, alignItems: 'center', fontSize: 11, color: 'var(--text-secondary)' }}>
+              <span style={{ fontWeight: 600 }}>Supported:</span>
+              {VENUE_TYPES.map(v => (
+                <div key={v.value} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <span style={{ width: 6, height: 6, borderRadius: 3, background: v.color, display: 'inline-block' }} />
+                  <span>{v.label.split(' ').slice(1).join(' ')}</span>
+                </div>
+              ))}
+            </div>
+          </nav>
+          <div className="navbar-right">
+            <button className="btn-logout" onClick={onLogout}>
+              Logout
+            </button>
           </div>
         </div>
-        <nav className="sidebar-nav" style={{ padding: '20px' }}>
-          <p style={{ color: 'var(--text-muted)' }}>Role: Super Admin</p>
-          <div style={{ marginTop: 16, fontSize: 12, color: 'var(--text-muted)' }}>
-            <p style={{ fontWeight: 700, color: '#6366f1', marginBottom: 8 }}>Supported Venues</p>
-            {VENUE_TYPES.map(v => (
-              <div key={v.value} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                <span style={{ width: 8, height: 8, borderRadius: 4, background: v.color, display: 'inline-block' }} />
-                <span>{v.label}</span>
-              </div>
-            ))}
-          </div>
-        </nav>
-        <div style={{ padding: '16px', borderTop: '1px solid var(--border-color)', fontSize: '11px', color: 'var(--text-muted)' }}>
-          <div>NavX Admin v2.0</div>
-          <div style={{ marginTop: '8px', cursor: 'pointer', color: 'var(--danger-color, #ef4444)' }} onClick={onLogout}>
-            Logout
-          </div>
-        </div>
-      </aside>
+      </header>
 
-      <div className="main-content">
-        <div className="top-bar">
-          <div className="breadcrumbs">
-            <span className="breadcrumb active">Super Admin Dashboard</span>
-          </div>
-        </div>
-
+      <div className="main-content" style={{ marginTop: 0, paddingTop: '96px' }}>
         <div className="page-container">
           <div className="dashboard-header">
             <div>
@@ -547,34 +549,30 @@ export default function SuperAdminDashboard({ admin, onLogout }) {
                                   </button>
                                 </div>
                               </div>
-                              
                               {/* Extra admin controls (Phase 10: Status, Reset, Revoke, Regenerate) */}
                               {a.campusId && (
                                 <div style={{ 
                                   display: 'flex', 
-                                  gap: 6, 
+                                  gap: 8, 
                                   flexWrap: 'wrap', 
-                                  marginTop: 6, 
-                                  paddingTop: 8, 
+                                  marginTop: 8, 
+                                  paddingTop: 10, 
                                   borderTop: '1px dashed var(--border-color)' 
                                 }}>
                                   <button 
-                                    className="btn btn-secondary btn-sm"
-                                    style={{ fontSize: 11, padding: '4px 8px', display: 'flex', alignItems: 'center', gap: 4 }}
+                                    className={`btn-control ${a.status === 'active' ? 'btn-control-danger' : 'btn-control-primary'}`}
                                     onClick={() => handleToggleStatus(a._id, a.status)}
                                   >
-                                    {a.status === 'active' ? <><FiLock size={11} color="#ef4444"/> Disable</> : <><FiUnlock size={11} color="#22c55e"/> Enable</>}
+                                    {a.status === 'active' ? <><FiLock size={11} /> Disable Workspace</> : <><FiUnlock size={11} /> Enable Workspace</>}
                                   </button>
                                   <button 
-                                    className="btn btn-secondary btn-sm"
-                                    style={{ fontSize: 11, padding: '4px 8px', display: 'flex', alignItems: 'center', gap: 4 }}
+                                    className="btn-control btn-control-warning"
                                     onClick={() => handleRevokeSessions(a._id)}
                                   >
                                     <FiKey size={11} /> Revoke Sessions
                                   </button>
                                   <button 
-                                    className="btn btn-secondary btn-sm"
-                                    style={{ fontSize: 11, padding: '4px 8px', display: 'flex', alignItems: 'center', gap: 4 }}
+                                    className="btn-control btn-control-primary"
                                     onClick={() => handleRegenerateUrl(a.campusId._id, a.campusId.campusCode)}
                                   >
                                     <FiRefreshCw size={11} /> Regenerate URL
