@@ -107,6 +107,9 @@ export function LiveMeetProvider({ children }) {
             return updated;
           });
         }
+      } else {
+        // Remote participant has removed their node (left or ended session)
+        setRemoteParticipant(null);
       }
     }, (error) => {
       console.error(`[LiveMeet] Firebase listener error on ${remotePath}:`, error);
@@ -204,8 +207,19 @@ export function LiveMeetProvider({ children }) {
     
     // Use the real username from AuthContext if available
     const myName = user?.username || (role === 'creator' ? s.creatorName : s.joinerName);
-    startSharingLocation(s.sessionId, role, myName);
-    listenToFirebase(s.sessionId, role);
+    
+    // Guard Firebase database access/listeners to prevent crash propagation
+    try {
+      startSharingLocation(s.sessionId, role, myName);
+    } catch (e) {
+      console.warn("[LiveMeet] startSharingLocation initialization failed:", e);
+    }
+
+    try {
+      listenToFirebase(s.sessionId, role);
+    } catch (e) {
+      console.warn("[LiveMeet] listenToFirebase initialization failed:", e);
+    }
     
     // Set initial remote participant data if joining an active session
     if (role === 'joiner') {

@@ -458,7 +458,7 @@ export default function AIChatOverlay() {
             )}
 
             {/* Input Area */}
-            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
               <View style={[styles.inputContainer, { 
                 backgroundColor: colors.card, 
                 borderTopColor: colors.border, 

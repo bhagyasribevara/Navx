@@ -207,7 +207,7 @@ export default function LiveMeetScreen({ route, navigation }) {
     initialCenterRef.current = { x: currentPos.x, y: currentPos.y };
   }
 
-  const mapboxUrl = getCachedConfigValue("EXPO_PUBLIC_MAPBOX_URL", "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png");
+  const mapboxUrl = getCachedConfigValue("EXPO_PUBLIC_MAPBOX_URL", "https://api.mapbox.com/styles/v1/mapbox/streets-v11/tiles/256/{z}/{x}/{y}@2x?access_token=pk.eyJ1IjoidmVua2F0YS1rcmlzaG5hIiwiYSI6ImNtZnYycHN0bTAzY28yanFxeG4wOXVsenAifQ.w1yd6XuvWvarYj33rP1LkA");
   const htmlSource = useMemo(() => {
     return buildLiveMeetMapHTML(initialCenterRef.current, mapboxUrl);
   }, [mapboxUrl]);
@@ -300,8 +300,37 @@ export default function LiveMeetScreen({ route, navigation }) {
 
         let activeSessionData = sessionData;
         if (role === 'joiner') {
+          // 1. Request foreground location permissions
+          const { status } = await Location.requestForegroundPermissionsAsync();
+          if (status !== 'granted') {
+            setError('Location permission is required to join the Live Meet.');
+            setLoading(false);
+            return;
+          }
+
+          // 2. Fetch location with timeout and fallback
+          let loc = null;
+          try {
+            loc = await Location.getCurrentPositionAsync({
+              accuracy: Location.Accuracy.Balanced,
+              timeout: 8000
+            });
+          } catch (err) {
+            console.log('[LiveMeetScreen] getCurrentPositionAsync failed, trying last known:', err);
+            try {
+              loc = await Location.getLastKnownPositionAsync({});
+            } catch (err2) {
+              console.log('[LiveMeetScreen] getLastKnownPositionAsync failed:', err2);
+            }
+          }
+
+          if (!loc || !loc.coords) {
+            setError('Unable to retrieve your current location. Please ensure location services are enabled on your device.');
+            setLoading(false);
+            return;
+          }
+
           // Join the session via API
-          const loc = await Location.getCurrentPositionAsync({});
           const joinResult = await joinMeetSession(sessionId, {
             joinerDevice: deviceId,
             joinerName: 'Friend',
@@ -329,6 +358,18 @@ export default function LiveMeetScreen({ route, navigation }) {
     }
     init();
   }, [sessionId]);
+
+  const wasConnected = useRef(false);
+  useEffect(() => {
+    if (remoteParticipant) {
+      wasConnected.current = true;
+    } else if (wasConnected.current && !remoteParticipant) {
+      // Remote participant was connected, but now they are null (left/disconnected)
+      alert("The other participant has left the meet session.");
+      leaveMeetSession();
+      navigation.goBack();
+    }
+  }, [remoteParticipant]);
 
   useEffect(() => {
     if (distance !== null && distance < 10 && activeSession?.status !== 'arrived') {
