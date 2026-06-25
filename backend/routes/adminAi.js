@@ -189,8 +189,46 @@ router.post('/execute', async (req, res) => {
 
       let imageUrl = action.payload.image;
       if (!imageUrl) {
-        // Generate an image using Pollinations AI based on the campaign title
-        imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent('Professional promotional poster for ' + action.payload.title)}?width=800&height=600&nologo=true`;
+        // Use Gemini to generate an accurate, context-aware image prompt
+        let imagePrompt = `Clean, professional promotional poster for: ${action.payload.title}`;
+        try {
+          const apiKey = process.env.GEMINI_API_KEY;
+          if (apiKey && apiKey !== 'your_gemini_api_key_here') {
+            const imgGenAI = new GoogleGenerativeAI(apiKey);
+            const imgModel = imgGenAI.getGenerativeModel({ model: 'gemini-3.1-flash-lite' });
+            const promptResult = await imgModel.generateContent({
+              contents: [{
+                role: 'user',
+                parts: [{
+                  text: `You are an expert graphic designer. Generate a short, detailed image generation prompt (max 60 words) for creating a professional, visually appealing promotional poster/banner image.
+
+The image MUST be:
+- Safe for all audiences (no violence, no dark/horror themes, no skulls, no weapons)
+- Professional and clean design
+- Bright, positive, and welcoming colors
+- Relevant to the event topic
+
+Event Title: "${action.payload.title}"
+Event Description: "${action.payload.description || ''}"
+Event Type: "${action.payload.type || 'event'}"
+
+Return ONLY the image prompt text, nothing else. Do NOT include any markdown formatting.`
+                }]
+              }],
+              generationConfig: { maxOutputTokens: 150, temperature: 0.5 }
+            });
+            const generatedPrompt = promptResult.response.text().trim();
+            if (generatedPrompt && generatedPrompt.length > 10) {
+              imagePrompt = generatedPrompt;
+            }
+          }
+        } catch (promptErr) {
+          console.warn('[Admin Copilot] Gemini image prompt generation failed, using fallback:', promptErr.message);
+        }
+
+        // Add safety modifiers to ensure appropriate output
+        const safePrompt = `${imagePrompt}, professional design, bright colors, clean layout, safe for work, no dark themes, no horror, high quality illustration`;
+        imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(safePrompt)}?width=800&height=600&nologo=true&seed=${Date.now()}`;
       }
 
       const campaign = new Campaign({

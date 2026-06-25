@@ -65,7 +65,7 @@ export const ROOM_COLORS = {
   classroom: "#3b82f6", office: "#8b5cf6", lab: "#22c55e", restroom: "#f59e0b",
   cafeteria: "#ef4444", library: "#06b6d4", auditorium: "#ec4899",
   elevator: "#6366f1", stairs: "#f97316", corridor: "#64748b80",
-  entrance: "#10b981", exit: "#ef4444", other: "#94a3b8",
+  entrance: "#10b981", exit: "#ef4444", bus_stop: "#14b8a6", other: "#94a3b8",
   // Hospital
   ward: "#3b82f6", icu: "#ef4444", ot: "#dc2626", pharmacy: "#22c55e",
   reception: "#8b5cf6", emergency: "#ef4444", radiology: "#f59e0b",
@@ -90,7 +90,7 @@ export const ROOM_ICONS = {
   classroom: "school", office: "business", lab: "flask", restroom: "water",
   cafeteria: "restaurant", library: "library", auditorium: "megaphone",
   elevator: "arrow-up", stairs: "trending-up", corridor: "walk",
-  entrance: "enter", exit: "exit", other: "location",
+  entrance: "enter", exit: "exit", bus_stop: "bus", other: "location",
   // Hospital
   ward: "bed", icu: "pulse", ot: "medkit", pharmacy: "medkit",
   reception: "information-circle", emergency: "alert-circle", radiology: "scan",
