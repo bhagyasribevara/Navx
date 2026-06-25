@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { toast } from 'react-toastify';
-import { FiTrash2, FiEdit2, FiSave, FiX, FiCopy, FiExternalLink, FiRefreshCw, FiKey, FiLock, FiUnlock } from 'react-icons/fi';
+import { FiTrash2, FiEdit2, FiSave, FiX, FiCopy, FiExternalLink, FiRefreshCw, FiKey, FiLock, FiUnlock, FiMenu } from 'react-icons/fi';
 import { 
   getAdmins, 
   createCampusAdmin, 
@@ -42,6 +42,7 @@ const VENUE_ICONS = {
 export default function SuperAdminDashboard({ admin, onLogout }) {
   const [admins, setAdmins] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [isOpen, setIsOpen] = useState(false);
 
   // Form State
   const [username, setUsername] = useState('');
@@ -255,13 +256,7 @@ export default function SuperAdminDashboard({ admin, onLogout }) {
 
   const getWorkspaceLocalLink = (url) => {
     if (!url) return '#';
-    try {
-      const urlObj = new URL(url);
-      // Ensure the link always uses the current domain (resolves localhost and production domains dynamically)
-      return window.location.origin + urlObj.pathname + urlObj.search + urlObj.hash;
-    } catch (e) {
-      return url;
-    }
+    return url;
   };
 
   const handleCopyUrl = (url) => {
@@ -273,20 +268,25 @@ export default function SuperAdminDashboard({ admin, onLogout }) {
 
   return (
     <div className="superadmin-layout">
-      <header className="top-navbar" style={{ height: '96px' }}>
+      <header className={`top-navbar ${isOpen ? 'mobile-open' : ''}`} style={isOpen ? {} : { height: '96px' }}>
         <div className="navbar-wrapper" style={{ maxWidth: '100%', padding: '0 32px' }}>
-          <div className="navbar-left">
-            <img src="/navx-icon.png" alt="NavX Logo" className="navbar-logo super-logo" style={{ objectFit: 'cover' }} />
-            <div>
-              <div className="navbar-title">NavX</div>
-              <div className="navbar-subtitle">Super Admin Console</div>
+          <div className="navbar-header-row">
+            <div className="navbar-left">
+              <img src="/navx-icon.png" alt="NavX Logo" className="navbar-logo super-logo" style={{ objectFit: 'cover' }} />
+              <div>
+                <div className="navbar-title">NavX</div>
+                <div className="navbar-subtitle">Super Admin Console</div>
+              </div>
             </div>
+            <button className="mobile-nav-toggle" onClick={() => setIsOpen(!isOpen)} aria-label="Toggle menu">
+              {isOpen ? <FiX /> : <FiMenu />}
+            </button>
           </div>
           <nav className="navbar-center" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
             <div className="nav-info-banner">
               ✨ Super Admin Dashboard
             </div>
-            <div className="venues-legend-inline" style={{ display: 'flex', gap: 12, alignItems: 'center', fontSize: 11, color: 'var(--text-secondary)' }}>
+            <div className="venues-legend-inline" style={{ display: 'flex', gap: 12, alignItems: 'center', fontSize: 11, color: 'var(--text-secondary)', flexWrap: 'wrap', justifyContent: 'center' }}>
               <span style={{ fontWeight: 600 }}>Supported:</span>
               {VENUE_TYPES.map(v => (
                 <div key={v.value} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -297,14 +297,14 @@ export default function SuperAdminDashboard({ admin, onLogout }) {
             </div>
           </nav>
           <div className="navbar-right">
-            <button className="btn-logout" onClick={onLogout}>
+            <button className="btn-logout" onClick={() => { setIsOpen(false); onLogout(); }}>
               Logout
             </button>
           </div>
         </div>
       </header>
 
-      <div className="main-content" style={{ marginTop: 0, paddingTop: '96px' }}>
+      <div className="main-content" style={{ marginTop: 0, paddingTop: isOpen ? '0px' : '96px' }}>
         <div className="page-container">
           <div className="dashboard-header">
             <div>

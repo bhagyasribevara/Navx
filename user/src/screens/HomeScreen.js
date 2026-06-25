@@ -422,7 +422,35 @@ export default function HomeScreen({ navigation }) {
     if (!activeCampusId) return;
     setCreatingMeet(true);
     try {
-      const loc = await Location.getCurrentPositionAsync({});
+      // 1. Request location permissions first
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        alert("Location permission is required to create a Live Meet session.");
+        setCreatingMeet(false);
+        return;
+      }
+
+      // 2. Robust location fetching with timeout and fallback
+      let loc = null;
+      try {
+        loc = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+          timeout: 8000
+        });
+      } catch (err) {
+        console.log('[handleCreateMeet] getCurrentPositionAsync failed, trying last known position:', err);
+        try {
+          loc = await Location.getLastKnownPositionAsync({});
+        } catch (err2) {
+          console.log('[handleCreateMeet] getLastKnownPositionAsync failed:', err2);
+        }
+      }
+
+      if (!loc || !loc.coords) {
+        alert("Unable to retrieve your current location. Please ensure GPS/location services are enabled on your device.");
+        setCreatingMeet(false);
+        return;
+      }
       
       // Get persistent device ID
       let deviceId = await AsyncStorage.getItem('navx_device_id');
@@ -439,6 +467,10 @@ export default function HomeScreen({ navigation }) {
         durationMinutes: parseInt(meetDuration)
       });
 
+      if (!res || !res.sessionId) {
+        throw new Error("Invalid response received from server.");
+      }
+
       const url = `navx://meet/${res.sessionId}`;
       
       if (enterMeetSession) {
@@ -452,11 +484,13 @@ export default function HomeScreen({ navigation }) {
       }
 
       await Share.share({
-        message: url,
+        message: `Join my Live Meet on NavX: ${url}`,
+        url: url,
       });
       setShowMeetModal(false);
     } catch (e) {
       console.log('Error creating meet:', e);
+      alert("Failed to create meet session: " + (e.message || "Unknown error"));
     } finally {
       setCreatingMeet(false);
     }

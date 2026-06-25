@@ -341,7 +341,7 @@ export default function MapScreen({ navigation, route }) {
     }
   };
 
-  const mapboxUrl = getCachedConfigValue("EXPO_PUBLIC_MAPBOX_URL", "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png");
+  const mapboxUrl = getCachedConfigValue("EXPO_PUBLIC_MAPBOX_URL", "https://api.mapbox.com/styles/v1/mapbox/streets-v11/tiles/256/{z}/{x}/{y}@2x?access_token=pk.eyJ1IjoidmVua2F0YS1rcmlzaG5hIiwiYSI6ImNtZnYycHN0bTAzY28yanFxeG4wOXVsenAifQ.w1yd6XuvWvarYj33rP1LkA");
   const mapHtml = useMemo(() => {
     const center = mapData?.blocks?.[0]?.shape?.points?.[0];
     return buildCampusMapHTML(geoJSONData, center, mapboxUrl);

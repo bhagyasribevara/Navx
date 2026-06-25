@@ -926,7 +926,7 @@ export default function ARScreen({ navigation, route }) {
     `);
   }, [arDirType, isNearTurn, pitch, bearingDiff, roll]);
 
-  const mapboxUrl = getCachedConfigValue("EXPO_PUBLIC_MAPBOX_URL", "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png");
+  const mapboxUrl = getCachedConfigValue("EXPO_PUBLIC_MAPBOX_URL", "https://api.mapbox.com/styles/v1/mapbox/streets-v11/tiles/256/{z}/{x}/{y}@2x?access_token=pk.eyJ1IjoidmVua2F0YS1rcmlzaG5hIiwiYSI6ImNtZnYycHN0bTAzY28yanFxeG4wOXVsenAifQ.w1yd6XuvWvarYj33rP1LkA");
   const miniMapHtml = React.useMemo(() =>
     buildMiniMapHTML(routeData?.path, initialUserPos, targetRoom, geoJSONData, mapboxUrl),
     [routeData, initialUserPos, targetRoom, geoJSONData, mapboxUrl]

@@ -88,7 +88,7 @@ export default function AnalyticsDashboard({ admin }) {
             ))}
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 20 }}>
             <div className="card">
               <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 16 }}>Top Searches</h3>
               {summary.topSearches?.length > 0 ? (

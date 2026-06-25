@@ -11,6 +11,10 @@ import {
   deleteCampaign, getBlocks, getFloors, getRooms, uploadImage
 } from '../api';
 
+const BACKEND_URL = import.meta.env.VITE_API_BASE_URL 
+  ? import.meta.env.VITE_API_BASE_URL.replace('/api', '') 
+  : '';
+
 const CATEGORIES = [
   'Admissions', 'Workshops', 'Seminars', 'Cultural Events', 'Conferences',
   'Administrative Announcements', 'Tech Events', 'Non-Tech Events', 'Hackathons',
@@ -38,7 +42,7 @@ function SubCampaignRow({ sub, onEdit, onDelete, onToggle, SOCKET_URL }) {
     }}>
       {sub.image && (
         <img
-          src={sub.image.startsWith('http') ? sub.image : `http://localhost:5001${sub.image}`}
+          src={sub.image.startsWith('http') ? sub.image : `${BACKEND_URL}${sub.image}`}
           alt="" style={{ width: 48, height: 40, objectFit: 'cover', borderRadius: 6, flexShrink: 0 }}
         />
       )}
@@ -113,7 +117,7 @@ function CampaignCard({ c, onEdit, onDelete, onToggle, onAddSub, onEditSub, onDe
   return (
     <div className="card" style={{ padding: 0, overflow: 'hidden', opacity: c.isActive ? 1 : 0.65 }}>
       {c.image && (
-        <div style={{ height: 160, background: `url(${c.image.startsWith('http') ? c.image : `http://localhost:5001${c.image}`}) center/cover`,
+        <div style={{ height: 160, background: `url(${c.image.startsWith('http') ? c.image : `${BACKEND_URL}${c.image}`}) center/cover`,
           borderBottom: '1px solid var(--border-color)' }} />
       )}
       <div style={{ padding: 20 }}>
@@ -438,7 +442,7 @@ export default function CampaignManager({ admin }) {
           <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Click "+ New Campaign" to get started</p>
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: 16 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16 }}>
           {filtered.map(c => (
             <CampaignCard
               key={c._id} c={c}
@@ -527,7 +531,7 @@ export default function CampaignManager({ admin }) {
                   </label>
                   {form.image ? (
                     <div style={{ position: 'relative', width: 140, height: 90, borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border-color)' }}>
-                      <img src={form.image.startsWith('http') ? form.image : `http://localhost:5001${form.image}`}
+                      <img src={form.image.startsWith('http') ? form.image : `${BACKEND_URL}${form.image}`}
                         alt="Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                       <button type="button" onClick={() => setForm({ ...form, image: '' })}
                         style={{ position: 'absolute', top: 4, right: 4, background: 'rgba(0,0,0,0.6)', color: '#fff', border: 'none', borderRadius: 4, padding: 4, cursor: 'pointer' }}>
