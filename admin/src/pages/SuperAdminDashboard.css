@@ -324,3 +324,25 @@
 .superadmin-layout .page-container::-webkit-scrollbar-thumb:hover {
   background: rgba(99, 102, 241, 0.4);
 }
+
+@media (max-width: 768px) {
+  .superadmin-layout .page-container {
+    padding: 16px !important;
+  }
+  
+  .dashboard-header .page-title {
+    font-size: 22px !important;
+  }
+  
+  .dashboard-header .page-subtitle {
+    font-size: 11px !important;
+  }
+
+  .superadmin-layout .card {
+    padding: 16px !important;
+  }
+
+  .admin-item {
+    padding: 16px !important;
+  }
+}

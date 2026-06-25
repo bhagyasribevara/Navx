@@ -2,7 +2,7 @@ import React from 'react';
 import { Routes, Route, NavLink, useLocation, useNavigate, useParams, Outlet } from 'react-router-dom';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
-import { FiMap, FiGrid, FiLayers, FiNavigation, FiBarChart2, FiSettings, FiHome, FiAlertCircle } from 'react-icons/fi';
+import { FiMap, FiGrid, FiLayers, FiNavigation, FiBarChart2, FiSettings, FiHome, FiAlertCircle, FiMenu, FiX } from 'react-icons/fi';
 import NavXAIChat from './components/NavXAIChat';
 import NavXAdminCopilot from './components/NavXAdminCopilot';
 import { AdminPageProvider } from './components/AdminPageContext';
@@ -290,18 +290,24 @@ function CampusWorkspaceWrapper({ admin, setAdmin, onLogout }) {
 function Sidebar({ admin, onLogout, campusCode }) {
   const prefix = campusCode ? `/campus/${campusCode}` : '';
   const venuesPath = campusCode ? `${prefix}/venues` : '/campus';
+  const [isOpen, setIsOpen] = React.useState(false);
 
   return (
-    <header className="top-navbar">
+    <header className={`top-navbar ${isOpen ? 'mobile-open' : ''}`}>
       <div className="navbar-wrapper admin-navbar-wrapper">
-        <div className="navbar-left">
-          <img src="/navx-icon.png" alt="NavX Logo" className="navbar-logo" style={{ objectFit: 'cover' }} />
-          <div>
-            <div className="navbar-title">NavX</div>
-            <div className="navbar-subtitle">{campusCode ? `Workspace: ${campusCode}` : 'Admin Console'}</div>
+        <div className="navbar-header-row">
+          <div className="navbar-left">
+            <img src="/navx-icon.png" alt="NavX Logo" className="navbar-logo" style={{ objectFit: 'cover' }} />
+            <div>
+              <div className="navbar-title">NavX</div>
+              <div className="navbar-subtitle">{campusCode ? `Workspace: ${campusCode}` : 'Admin Console'}</div>
+            </div>
           </div>
+          <button className="mobile-nav-toggle" onClick={() => setIsOpen(!isOpen)} aria-label="Toggle menu">
+            {isOpen ? <FiX /> : <FiMenu />}
+          </button>
         </div>
-        <nav className="navbar-center">
+        <nav className="navbar-center" onClick={() => setIsOpen(false)}>
           <NavLink to={campusCode ? prefix : "/"} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} end>
             <FiHome /> Dashboard
           </NavLink>
@@ -322,7 +328,7 @@ function Sidebar({ admin, onLogout, campusCode }) {
           <div className="user-badge">
             <span className="user-role">{admin?.role === 'SuperAdmin' ? 'Super Admin' : (admin?.username || 'Admin')}</span>
           </div>
-          <button className="btn-logout" onClick={onLogout}>
+          <button className="btn-logout" onClick={() => { setIsOpen(false); onLogout(); }}>
             Logout
           </button>
         </div>

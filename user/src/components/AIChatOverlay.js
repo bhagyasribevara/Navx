@@ -402,63 +402,68 @@ export default function AIChatOverlay() {
           <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={closeChat} />
           
           <Animated.View style={[styles.chatContainer, { backgroundColor: colors.bg, transform: [{ translateY: slideAnim }] }]}>
-            {/* Header */}
-            <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
-              <View style={[styles.avatar, { backgroundColor: colors.primary }]}>
-                <Text style={styles.avatarText}>N</Text>
+            <KeyboardAvoidingView 
+              behavior={Platform.OS === 'ios' ? 'padding' : undefined} 
+              style={{ flex: 1 }}
+              keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+            >
+              {/* Header */}
+              <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
+                <View style={[styles.avatar, { backgroundColor: colors.primary }]}>
+                  <Text style={styles.avatarText}>N</Text>
+                </View>
+                <View style={styles.headerInfo}>
+                  <Text style={[styles.headerTitle, { color: colors.text }]}>NavX AI</Text>
+                  <Text style={styles.headerSubtitle}>Campus Expert</Text>
+                </View>
+                <TouchableOpacity onPress={clearChat} style={styles.iconBtn}>
+                  <Ionicons name="trash-outline" size={22} color={colors.textSec} />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={closeChat} style={styles.iconBtn}>
+                  <Ionicons name="close" size={26} color={colors.textSec} />
+                </TouchableOpacity>
               </View>
-              <View style={styles.headerInfo}>
-                <Text style={[styles.headerTitle, { color: colors.text }]}>NavX AI</Text>
-                <Text style={styles.headerSubtitle}>Campus Expert</Text>
-              </View>
-              <TouchableOpacity onPress={clearChat} style={styles.iconBtn}>
-                <Ionicons name="trash-outline" size={22} color={colors.textSec} />
-              </TouchableOpacity>
-              <TouchableOpacity onPress={closeChat} style={styles.iconBtn}>
-                <Ionicons name="close" size={26} color={colors.textSec} />
-              </TouchableOpacity>
-            </View>
 
-            {/* Messages */}
-            <FlatList
-              ref={flatListRef}
-              data={messages}
-              keyExtractor={(item) => item.id}
-              renderItem={renderMessage}
-              contentContainerStyle={styles.messageList}
-              onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
-            />
+              {/* Messages */}
+              <FlatList
+                ref={flatListRef}
+                data={messages}
+                keyExtractor={(item) => item.id}
+                renderItem={renderMessage}
+                style={{ flex: 1 }}
+                contentContainerStyle={styles.messageList}
+                onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
+              />
 
-            {isLoading && (
-              <View style={styles.typingIndicator}>
-                <ActivityIndicator size="small" color={colors.primary} />
-                <Text style={[styles.typingText, { color: colors.textSec }]}>NavX AI is typing...</Text>
-              </View>
-            )}
+              {isLoading && (
+                <View style={styles.typingIndicator}>
+                  <ActivityIndicator size="small" color={colors.primary} />
+                  <Text style={[styles.typingText, { color: colors.textSec }]}>NavX AI is typing...</Text>
+                </View>
+              )}
 
-            {/* Suggestion Chips */}
-            {!isLoading && (
-              <View style={[styles.chipsScroll, { borderTopColor: colors.border }]}>
-                  <FlatList
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    data={chips.slice(0, 5)}
-                    keyExtractor={(_, i) => i.toString()}
-                    contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 10, gap: 8 }}
-                    renderItem={({ item }) => (
-                      <TouchableOpacity 
-                        style={[styles.chip, { backgroundColor: colors.card, borderColor: colors.border }]} 
-                        onPress={() => handleBottomChipPress(item)}
-                      >
-                        <Text style={[styles.chipText, { color: colors.textSec }]}>{item.label}</Text>
-                      </TouchableOpacity>
-                    )}
-                  />
-              </View>
-            )}
+              {/* Suggestion Chips */}
+              {!isLoading && (
+                <View style={[styles.chipsScroll, { borderTopColor: colors.border }]}>
+                    <FlatList
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      data={chips.slice(0, 5)}
+                      keyExtractor={(_, i) => i.toString()}
+                      contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 10, gap: 8 }}
+                      renderItem={({ item }) => (
+                        <TouchableOpacity 
+                          style={[styles.chip, { backgroundColor: colors.card, borderColor: colors.border }]} 
+                          onPress={() => handleBottomChipPress(item)}
+                        >
+                          <Text style={[styles.chipText, { color: colors.textSec }]}>{item.label}</Text>
+                        </TouchableOpacity>
+                      )}
+                    />
+                </View>
+              )}
 
-            {/* Input Area */}
-            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+              {/* Input Area */}
               <View style={[styles.inputContainer, { 
                 backgroundColor: colors.card, 
                 borderTopColor: colors.border, 
