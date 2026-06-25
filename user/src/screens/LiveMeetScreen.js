@@ -43,19 +43,24 @@ function buildLiveMeetMapHTML(centerCoords, mapboxUrl) {
     color: white; font-weight: bold; padding: 2px 6px; border-radius: 4px;
     font-size: 11px; box-shadow: 0 4px 6px rgba(0,0,0,0.3);
   }
+  .room-label {
+    background: transparent; border: none; box-shadow: none;
+    color: #1e293b; font-weight: bold; font-size: 10px;
+    text-shadow: 0 1px 2px rgba(255,255,255,0.8);
+  }
 </style>
 </head><body><div id="map"></div>
 <script>
 var map=L.map('map',{zoomControl:false}).setView([${center[0]},${center[1]}], 18);
 L.tileLayer('${mapboxUrl}',{maxZoom:22}).addTo(map);
-
+ 
 var geojsonLayer = null;
 function styleFeature(feature) {
   var baseStyle = { weight: 2, fillOpacity: 0.3 };
   if (feature.properties.type === 'block') {
-    return Object.assign(baseStyle, { color: feature.properties.color || '#64748b', fillOpacity: 0.15 });
+    return Object.assign(baseStyle, { color: feature.properties.color || '#64748b', fillOpacity: 0.1 });
   } else if (feature.properties.type === 'room') {
-    return Object.assign(baseStyle, { color: '#3b82f6', weight: 1, fillOpacity: 0.2 });
+    return Object.assign(baseStyle, { color: '#64748b', fillColor: '#ffffff', weight: 1, fillOpacity: 1 });
   } else if (feature.properties.type === 'path') {
     return { color: '#c084fc', weight: 4, opacity: 0.6, dashArray: '5, 5' };
   } else if (feature.properties.type === 'map_layer') {
@@ -67,21 +72,28 @@ function styleFeature(feature) {
   }
   return baseStyle;
 }
-
+ 
 window.updateGeoJSON = function(data, floorId) {
   if (geojsonLayer) { map.removeLayer(geojsonLayer); }
   geojsonLayer = L.geoJSON(data, {
     filter: function(f) {
-      if (f.properties.type === 'path' || f.properties.type === 'node' || f.properties.type === 'block' || f.properties.type === 'room') return false;
+      if (f.properties.type === 'path' || f.properties.type === 'node') return false;
       if (f.properties.category === 'parking' || (f.properties.name && f.properties.name.toLowerCase().includes('parking'))) {
         return false;
+      }
+      if (f.properties.type === 'room' && f.properties.floorId) {
+        if (floorId && f.properties.floorId !== floorId) return false;
       }
       return true;
     },
     style: styleFeature,
     onEachFeature: function(f, l) {
       if (f.properties && f.properties.name) {
-        l.bindTooltip(f.properties.name, { permanent: f.properties.type === 'map_layer', direction: 'center', className: 'layer-label' });
+        if (f.properties.type === 'map_layer') {
+          l.bindTooltip(f.properties.name, { permanent: true, direction: 'center', className: 'layer-label' });
+        } else if (f.properties.type === 'room') {
+          l.bindTooltip(f.properties.name, { permanent: true, direction: 'center', className: 'room-label' });
+        }
       }
     }
   }).addTo(map);
@@ -131,6 +143,7 @@ window.remoteMarker = null;
 window.connectingLine = null;
 
 window.updateParticipants = function(localLat, localLng, remoteLat, remoteLng) {
+  var markers = [];
   if (localLat !== null && localLng !== null) {
     var localPos = [localLat, localLng];
     if (!window.localMarker) {
@@ -138,6 +151,7 @@ window.updateParticipants = function(localLat, localLng, remoteLat, remoteLng) {
     } else {
       window.localMarker.setLatLng(localPos);
     }
+    markers.push(localPos);
   } else if (window.localMarker) {
     map.removeLayer(window.localMarker);
     window.localMarker = null;
@@ -150,29 +164,50 @@ window.updateParticipants = function(localLat, localLng, remoteLat, remoteLng) {
     } else {
       window.remoteMarker.setLatLng(remotePos);
     }
+    markers.push(remotePos);
   } else if (window.remoteMarker) {
     map.removeLayer(window.remoteMarker);
     window.remoteMarker = null;
   }
+
+  // Auto-adjust view to fit both participants if they are both active and no line is drawn yet
+  if (markers.length === 2 && !window.connectingLineGroup) {
+    var bounds = L.latLngBounds(markers);
+    map.fitBounds(bounds, { padding: [80, 80], maxZoom: 19 });
+  } else if (markers.length === 1 && !window.connectingLineGroup) {
+    map.panTo(markers[0]);
+  }
 };
 
 window.updateRoutePath = function(coordsJson) {
-  if (window.connectingLine) {
-    map.removeLayer(window.connectingLine);
-    window.connectingLine = null;
+  if (window.connectingLineGroup) {
+    map.removeLayer(window.connectingLineGroup);
+    window.connectingLineGroup = null;
   }
   
   if (coordsJson && coordsJson.length > 0) {
     var latlngs = coordsJson.map(function(pt) { return [pt.lat, pt.lng]; });
-    window.connectingLine = L.polyline(latlngs, {
-      color: '#6366f1',
-      weight: 5,
-      dashArray: '5, 8',
-      opacity: 0.8
-    }).addTo(map);
+    
+    var wideLine = L.polyline(latlngs, {
+      color: '#c084fc',
+      weight: 18,
+      opacity: 0.25,
+      lineCap: 'round',
+      lineJoin: 'round'
+    });
+    
+    var thinLine = L.polyline(latlngs, {
+      color: '#8b5cf6',
+      weight: 6,
+      opacity: 1,
+      lineCap: 'round',
+      lineJoin: 'round'
+    });
+    
+    window.connectingLineGroup = L.layerGroup([wideLine, thinLine]).addTo(map);
     
     var bounds = L.latLngBounds(latlngs);
-    map.fitBounds(bounds, { padding: [50, 50], maxZoom: 20 });
+    map.fitBounds(bounds, { padding: [80, 80], maxZoom: 19 });
   }
 };
 
@@ -241,7 +276,7 @@ export default function LiveMeetScreen({ route, navigation }) {
           window.updateParticipants(${localLat}, ${localLng}, ${remoteLat}, ${remoteLng});
         }
         if (typeof window.updateGeoJSON === 'function' && ${geo ? 'true' : 'false'}) {
-          window.updateGeoJSON(${JSON.stringify(geo)}, '');
+          window.updateGeoJSON(${JSON.stringify(geo)}, '${currentFloorId || ''}');
         }
         if (typeof window.updateRoutePath === 'function') {
           window.updateRoutePath(${JSON.stringify(rp2 || [])});
@@ -402,12 +437,12 @@ export default function LiveMeetScreen({ route, navigation }) {
     if (geoJSONData) {
       safeInject(`
         if (typeof window.updateGeoJSON === 'function') {
-          window.updateGeoJSON(${JSON.stringify(geoJSONData)}, '');
+          window.updateGeoJSON(${JSON.stringify(geoJSONData)}, '${currentFloorId || ''}');
         }
         true;
       `);
     }
-  }, [geoJSONData]);
+  }, [geoJSONData, currentFloorId]);
 
   // Dynamic path routing strictly following campus pathways
   useEffect(() => {
@@ -423,6 +458,7 @@ export default function LiveMeetScreen({ route, navigation }) {
 
     async function fetchRoute() {
       try {
+        // Try indoor pathfinder first
         const res = await findRouteBetweenCoords({
           startX: currentPos.x,
           startY: currentPos.y,
@@ -430,15 +466,39 @@ export default function LiveMeetScreen({ route, navigation }) {
           endY: remoteParticipant.location.lng,
           campusId: activeCampusId
         });
-        if (active && res && res.path) {
+        if (active && res && res.path && res.path.length > 0) {
           const coords = res.path.map(n => ({ lat: n.x, lng: n.y }));
           setRoutePath(coords);
-        } else if (active) {
-          setRoutePath([]);
+          return;
         }
       } catch (err) {
-        console.log("Failed to fetch route between coordinates:", err);
-        if (active) setRoutePath([]);
+        console.log("Failed to fetch indoor route:", err);
+      }
+
+      // Fallback to outdoor OSRM routing
+      if (active) {
+        console.log("Attempting OSRM fallback routing...");
+        try {
+          const url = `https://router.project-osrm.org/route/v1/foot/${remoteParticipant.location.lng},${remoteParticipant.location.lat};${currentPos.y},${currentPos.x}?overview=full&geometries=geojson`;
+          const response = await fetch(url);
+          const data = await response.json();
+          if (active && data && data.routes && data.routes.length > 0) {
+            const rawCoords = data.routes[0].geometry.coordinates; // [lng, lat]
+            const osrmCoords = rawCoords.map(c => ({ lat: c[1], lng: c[0] }));
+            setRoutePath(osrmCoords);
+            return;
+          }
+        } catch (e) {
+          console.log("OSRM fallback routing failed:", e);
+        }
+      }
+
+      // Fallback to a straight line linking their two actual coordinates
+      if (active) {
+        setRoutePath([
+          { lat: currentPos.x, lng: currentPos.y },
+          { lat: remoteParticipant.location.lat, lng: remoteParticipant.location.lng }
+        ]);
       }
     }
 

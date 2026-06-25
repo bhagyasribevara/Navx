@@ -484,7 +484,7 @@ export default function HomeScreen({ navigation }) {
       }
 
       await Share.share({
-        message: `Join my Live Meet on NavX: ${url}`,
+        message: url,
         url: url,
       });
       setShowMeetModal(false);
