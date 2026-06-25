@@ -10,7 +10,7 @@ const roomSchema = new mongoose.Schema({
     enum: [
       // Campus types
       'classroom', 'office', 'lab', 'restroom', 'cafeteria', 'library', 
-      'auditorium', 'elevator', 'stairs', 'corridor', 'entrance', 'exit', 'other',
+      'auditorium', 'elevator', 'stairs', 'corridor', 'entrance', 'exit', 'bus_stop', 'other',
       // Hospital types
       'ward', 'icu', 'ot', 'pharmacy', 'reception', 'emergency', 'radiology',
       'pathology', 'blood_bank', 'consultation', 'waiting_area', 'nursing_station',

@@ -32,6 +32,7 @@ const ROOM_EMOJI = {
   reception: '🛎️',
   store: '🛍️',
   food_court: '🍔',
+  bus_stop: '🚌',
   other: '📍',
 };
 
@@ -184,7 +185,7 @@ const NAVX_KEYWORDS = [
   'schedule', 'timetable', 'timing', 'open', 'closed',
   
   // Campus Services
-  'shuttle', 'bus', 'transport', 'atm', 'bank', 'xerox', 'print',
+  'shuttle', 'bus', 'bus stop', 'transport', 'atm', 'bank', 'xerox', 'print',
   'stationery', 'bookstore', 'lost', 'found', 'lost and found',
   'wifi', 'internet', 'charging', 'water', 'cooler',
   

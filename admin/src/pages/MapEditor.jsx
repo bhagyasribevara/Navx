@@ -12,7 +12,7 @@ import { getBlocks, createBlock, updateBlock, deleteBlock, getFloors, createFloo
 const GMRIT = [18.4665, 83.6629];
 const RC = {
   // Campus
-  classroom: '#3b82f6', office: '#8b5cf6', lab: '#22c55e', restroom: '#f59e0b', cafeteria: '#ef4444', library: '#06b6d4', auditorium: '#ec4899', elevator: '#6366f1', stairs: '#f97316', corridor: '#64748b', entrance: '#10b981', exit: '#ef4444', other: '#94a3b8',
+  classroom: '#3b82f6', office: '#8b5cf6', lab: '#22c55e', restroom: '#f59e0b', cafeteria: '#ef4444', library: '#06b6d4', auditorium: '#ec4899', elevator: '#6366f1', stairs: '#f97316', corridor: '#64748b', entrance: '#10b981', exit: '#ef4444', bus_stop: '#14b8a6', other: '#94a3b8',
   // Hospital
   ward: '#3b82f6', icu: '#ef4444', ot: '#dc2626', pharmacy: '#22c55e', reception: '#8b5cf6', emergency: '#ef4444', radiology: '#f59e0b', pathology: '#06b6d4', blood_bank: '#dc2626', consultation: '#6366f1', waiting_area: '#94a3b8', nursing_station: '#ec4899',
   // Airport
@@ -26,7 +26,7 @@ const NC = { waypoint: '#94a3b8', entrance: '#10b981', exit: '#ef4444', elevator
 
 // Venue-specific room types
 const VENUE_ROOM_TYPES = {
-  campus: ['classroom', 'office', 'lab', 'restroom', 'cafeteria', 'library', 'auditorium', 'elevator', 'stairs', 'corridor', 'entrance', 'exit', 'parking', 'other'],
+  campus: ['classroom', 'office', 'lab', 'restroom', 'cafeteria', 'library', 'auditorium', 'elevator', 'stairs', 'corridor', 'entrance', 'exit', 'parking', 'bus_stop', 'other'],
   hospital: ['ward', 'icu', 'ot', 'pharmacy', 'reception', 'emergency', 'radiology', 'pathology', 'blood_bank', 'consultation', 'waiting_area', 'nursing_station', 'elevator', 'stairs', 'restroom', 'cafeteria', 'entrance', 'exit', 'corridor', 'other'],
   airport: ['gate', 'terminal', 'check_in', 'security', 'lounge', 'baggage_claim', 'immigration', 'duty_free', 'boarding', 'customs', 'restroom', 'cafeteria', 'elevator', 'stairs', 'entrance', 'exit', 'corridor', 'other'],
   mall: ['store', 'food_court', 'anchor_store', 'kiosk', 'parking', 'entertainment', 'atm', 'customer_service', 'fitting_room', 'restroom', 'elevator', 'stairs', 'entrance', 'exit', 'corridor', 'other'],
@@ -41,7 +41,7 @@ const VENUE_DOMAINS = {
     'Faculty Quarters', 'Main Gates', 'Libraries', 'Cafeteria & Dining',
     'Sports & Recreation', 'Auditorium & Convention', 'Workshop & Labs',
     'Research Center', 'Placement Cell', 'Health Center', 'Bank & ATM',
-    'Transport Hub', 'Parking Area', 'Gardens & Open Areas', 'Other Facilities'
+    'Transport Hub', 'Bus Stop', 'Parking Area', 'Gardens & Open Areas', 'Other Facilities'
   ],
   hospital: [
     'Main Building', 'OPD Block (Out-Patient)', 'IPD Block (In-Patient)',
