@@ -17,6 +17,9 @@ import Login from './pages/Login';
 import SuperAdminDashboard from './pages/SuperAdminDashboard';
 import { getCampusByCode } from './api';
 
+const isCampusAdminRole = (role) => 
+  role === 'campus_admin' || role === 'CampusAdmin' || role === 'VenueAdmin';
+
 function App() {
   const [admin, setAdmin] = React.useState(null);
   const location = useLocation();
@@ -34,7 +37,7 @@ function App() {
         setAdmin(parsed);
         
         // Auto-redirect campus admins to their dedicated workspace if hitting root
-        if (location.pathname === '/' && parsed.role === 'campus_admin' && parsed.campus?.campusCode) {
+        if (location.pathname === '/' && isCampusAdminRole(parsed.role) && parsed.campus?.campusCode) {
           navigate(`/campus/${parsed.campus.campusCode}`);
         }
       } catch (e) {}
@@ -43,7 +46,7 @@ function App() {
 
   // Security guard (Phase 12): Prevent campus admins from typing URLs to escape their workspace
   React.useEffect(() => {
-    if (admin && admin.role === 'campus_admin' && admin.campus?.campusCode) {
+    if (admin && isCampusAdminRole(admin.role) && admin.campus?.campusCode) {
       const workspacePrefix = `/campus/${admin.campus.campusCode}`;
       if (!location.pathname.startsWith(workspacePrefix)) {
         navigate(workspacePrefix);
@@ -55,7 +58,7 @@ function App() {
     localStorage.setItem('navx_admin', JSON.stringify(adminData));
     setAdmin(adminData);
     
-    if (adminData.role === 'campus_admin' && adminData.campus?.campusCode) {
+    if (isCampusAdminRole(adminData.role) && adminData.campus?.campusCode) {
       navigate(`/campus/${adminData.campus.campusCode}`);
     }
   };
@@ -202,11 +205,13 @@ function CampusWorkspaceWrapper({ admin, setAdmin, onLogout }) {
   const [campus, setCampus] = React.useState(null);
   const [loading, setLoading] = React.useState(true);
   const [notFound, setNotFound] = React.useState(false);
+  const [error, setError] = React.useState(null);
   const location = useLocation();
 
   React.useEffect(() => {
     setLoading(true);
     setNotFound(false);
+    setError(null);
     getCampusByCode(campusCode)
       .then((res) => {
         if (res.data && typeof res.data === 'object' && res.data._id) {
@@ -218,7 +223,11 @@ function CampusWorkspaceWrapper({ admin, setAdmin, onLogout }) {
         }
       })
       .catch((err) => {
-        setNotFound(true);
+        if (err.response && err.response.status === 404) {
+          setNotFound(true);
+        } else {
+          setError(err.response?.data?.error || err.message || "Failed to connect to the backend server");
+        }
         setLoading(false);
       });
   }, [campusCode]);
@@ -227,6 +236,19 @@ function CampusWorkspaceWrapper({ admin, setAdmin, onLogout }) {
     return (
       <div style={{ display: 'flex', height: '100vh', alignItems: 'center', justifyContent: 'center', backgroundColor: '#0a0e1a', color: '#fff', fontFamily: 'sans-serif' }}>
         <div style={{ fontSize: '18px', fontWeight: 600 }}>Loading workspace for {campusCode}...</div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', alignItems: 'center', justifyContent: 'center', backgroundColor: '#0a0e1a', color: '#fff', fontFamily: 'sans-serif', padding: 20, textAlign: 'center' }}>
+        <h1 style={{ fontSize: '5rem', margin: 0, color: '#f59e0b' }}>⚠️</h1>
+        <h2 style={{ marginTop: 16 }}>Connection Error</h2>
+        <p style={{ color: '#94a3b8', marginTop: 8, marginBottom: 24, maxWidth: '500px', lineHeight: 1.5 }}>
+          {error}. The backend server may be waking up or currently offline.
+        </p>
+        <button className="btn btn-primary" onClick={() => window.location.reload()}>Retry Connection</button>
       </div>
     );
   }
