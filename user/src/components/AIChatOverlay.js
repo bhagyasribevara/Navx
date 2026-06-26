@@ -388,6 +388,10 @@ export default function AIChatOverlay() {
           style={[styles.fab, { 
             backgroundColor: colors.primary, 
             shadowColor: colors.primary,
+            shadowOffset: { width: 0, height: 6 },
+            shadowOpacity: 0.35,
+            shadowRadius: 12,
+            elevation: 8,
             bottom: 80 + insets.bottom
           }]} 
           onPress={openChat}

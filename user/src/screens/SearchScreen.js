@@ -6,6 +6,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { ThemeContext } from "../context/ThemeContext";
 import { useGeofence } from "../context/GeofenceContext";
+import { LinearGradient } from "expo-linear-gradient";
 import { searchRooms, getRoomsByCat } from "../api";
 import { SHADOWS, RADIUS, ROOM_COLORS, ROOM_ICONS } from "../theme/designSystem";
 import AnimatedPressable from "../components/AnimatedPressable";
@@ -96,7 +97,7 @@ export default function SearchScreen({ navigation, route }) {
     header: {
       paddingTop: 16,
       paddingHorizontal: 16, paddingBottom: 12,
-      backgroundColor: colors.card,
+      backgroundColor: 'transparent',
       borderBottomWidth: 1, borderBottomColor: colors.border,
     },
     headerRow: { flexDirection: "row", alignItems: "center", marginBottom: 12 },
@@ -199,6 +200,19 @@ export default function SearchScreen({ navigation, route }) {
 
   return (
     <View style={s.container}>
+      <LinearGradient
+        colors={['rgba(99, 102, 241, 0.15)', 'rgba(139, 92, 246, 0.04)', 'rgba(255, 255, 255, 0)']}
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          height: 280,
+          zIndex: 0
+        }}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+      />
       <View style={s.header}>
         <View style={s.headerRow}>
           <TouchableOpacity style={s.backBtn} onPress={() => navigation.goBack()}>

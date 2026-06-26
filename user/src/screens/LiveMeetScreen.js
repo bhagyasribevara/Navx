@@ -7,7 +7,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ThemeContext } from '../context/ThemeContext';
 import { useLiveMeet } from '../context/LiveMeetContext';
 import { useGeofence } from '../context/GeofenceContext';
-import { joinMeetSession, getMeetSession, endMeetSession, getGeoJSONMapData, findRouteBetweenCoords, getCachedConfigValue } from '../api';
+import { joinMeetSession, getMeetSession, endMeetSession, getGeoJSONMapData, findRouteBetweenCoords, getCachedConfigValue, getMapData } from '../api';
+import { useAuth } from '../context/AuthContext';
 import * as Location from 'expo-location';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -219,11 +220,14 @@ export default function LiveMeetScreen({ route, navigation }) {
   const { sessionId } = route.params || {};
   const { colors } = useContext(ThemeContext);
   const insets = useSafeAreaInsets();
+  const { user } = useAuth();
   const { activeSession, remoteParticipant, enterMeetSession, leaveMeetSession, broadcastStatus, currentPos } = useLiveMeet();
   const { currentFloorId } = useGeofence();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [geoJSONData, setGeoJSONData] = useState(null);
+  const [mapData, setMapData] = useState(null);
+  const [selectedFloor, setSelectedFloor] = useState(null);
   const [routePath, setRoutePath] = useState([]);
   const webViewRef = useRef(null);
   const initialCenterRef = useRef(null);
@@ -243,10 +247,21 @@ export default function LiveMeetScreen({ route, navigation }) {
     initialCenterRef.current = { x: currentPos.x, y: currentPos.y };
   }
 
+  const initialCenter = useMemo(() => {
+    if (initialCenterRef.current) return initialCenterRef.current;
+    if (mapData?.blocks?.[0]?.shape?.points?.[0]) {
+      return {
+        x: mapData.blocks[0].shape.points[0].x,
+        y: mapData.blocks[0].shape.points[0].y
+      };
+    }
+    return null;
+  }, [currentPos, mapData]);
+
   const mapboxUrl = getCachedConfigValue("EXPO_PUBLIC_MAPBOX_URL", "https://api.mapbox.com/styles/v1/mapbox/streets-v11/tiles/256/{z}/{x}/{y}@2x?access_token=pk.eyJ1IjoidmVua2F0YS1rcmlzaG5hIiwiYSI6ImNtZnYycHN0bTAzY28yanFxeG4wOXVsenAifQ.w1yd6XuvWvarYj33rP1LkA");
   const htmlSource = useMemo(() => {
-    return buildLiveMeetMapHTML(initialCenterRef.current, mapboxUrl);
-  }, [mapboxUrl]);
+    return buildLiveMeetMapHTML(initialCenter, mapboxUrl);
+  }, [initialCenter, mapboxUrl]);
 
   // Safe injection helper — only calls injectJavaScript when WebView is loaded
   const safeInject = (js) => {
@@ -277,7 +292,7 @@ export default function LiveMeetScreen({ route, navigation }) {
           window.updateParticipants(${localLat}, ${localLng}, ${remoteLat}, ${remoteLng});
         }
         if (typeof window.updateGeoJSON === 'function' && ${geo ? 'true' : 'false'}) {
-          window.updateGeoJSON(${JSON.stringify(geo)}, '${currentFloorId || ''}');
+          window.updateGeoJSON(${JSON.stringify(geo)}, '${selectedFloor?._id || ''}');
         }
         if (typeof window.updateRoutePath === 'function') {
           window.updateRoutePath(${JSON.stringify(rp2 || [])});
@@ -306,13 +321,18 @@ export default function LiveMeetScreen({ route, navigation }) {
 
         if (activeSession && activeSession.sessionId === sessionId) {
           // Already in this session
-          if (!geoJSONData) {
-            const activeCampusId = typeof activeSession.campusId === 'object' && activeSession.campusId !== null
-              ? activeSession.campusId._id
-              : activeSession.campusId;
-            if (activeCampusId) {
-              const geojson = await getGeoJSONMapData(activeCampusId);
-              setGeoJSONData(geojson);
+          const activeCampusId = typeof activeSession.campusId === 'object' && activeSession.campusId !== null
+            ? activeSession.campusId._id
+            : activeSession.campusId;
+          if (activeCampusId) {
+            const [hierarchy, geojson] = await Promise.all([
+              getMapData(activeCampusId),
+              getGeoJSONMapData(activeCampusId)
+            ]);
+            setMapData(hierarchy);
+            setGeoJSONData(geojson);
+            if (hierarchy?.floors && hierarchy.floors.length > 0) {
+              setSelectedFloor(hierarchy.floors[0]);
             }
           }
           setLoading(false);
@@ -369,7 +389,7 @@ export default function LiveMeetScreen({ route, navigation }) {
           // Join the session via API
           const joinResult = await joinMeetSession(sessionId, {
             joinerDevice: deviceId,
-            joinerName: 'Friend',
+            joinerName: user?.username || 'Friend',
             joinerLocation: { lat: loc.coords.latitude, lng: loc.coords.longitude }
           });
           if (joinResult && joinResult.session) {
@@ -382,8 +402,15 @@ export default function LiveMeetScreen({ route, navigation }) {
           ? sessionData.campusId._id
           : sessionData.campusId;
         if (activeCampusId) {
-          const geojson = await getGeoJSONMapData(activeCampusId);
+          const [hierarchy, geojson] = await Promise.all([
+            getMapData(activeCampusId),
+            getGeoJSONMapData(activeCampusId)
+          ]);
+          setMapData(hierarchy);
           setGeoJSONData(geojson);
+          if (hierarchy?.floors && hierarchy.floors.length > 0) {
+            setSelectedFloor(hierarchy.floors[0]);
+          }
         }
         setLoading(false);
 
@@ -393,7 +420,7 @@ export default function LiveMeetScreen({ route, navigation }) {
       }
     }
     init();
-  }, [sessionId]);
+  }, [sessionId, user]);
 
   const wasConnected = useRef(false);
   useEffect(() => {
@@ -433,17 +460,18 @@ export default function LiveMeetScreen({ route, navigation }) {
     `);
   }, [currentPos, remoteParticipant]);
 
-  // Inject geojson when it loads
+  // Inject geojson when it loads or floor changes
   useEffect(() => {
     if (geoJSONData) {
+      const floorId = selectedFloor?._id || '';
       safeInject(`
         if (typeof window.updateGeoJSON === 'function') {
-          window.updateGeoJSON(${JSON.stringify(geoJSONData)}, '${currentFloorId || ''}');
+          window.updateGeoJSON(${JSON.stringify(geoJSONData)}, '${floorId}');
         }
         true;
       `);
     }
-  }, [geoJSONData, currentFloorId]);
+  }, [geoJSONData, selectedFloor]);
 
   // Dynamic path routing strictly following campus pathways
   useEffect(() => {
@@ -459,7 +487,7 @@ export default function LiveMeetScreen({ route, navigation }) {
 
     async function fetchRoute() {
       try {
-        // Try indoor pathfinder first
+        // Try custom indoor pathfinder only
         const res = await findRouteBetweenCoords({
           startX: currentPos.x,
           startY: currentPos.y,
@@ -471,35 +499,12 @@ export default function LiveMeetScreen({ route, navigation }) {
           const coords = res.path.map(n => ({ lat: n.x, lng: n.y }));
           setRoutePath(coords);
           return;
+        } else {
+          if (active) setRoutePath([]);
         }
       } catch (err) {
-        console.log("Failed to fetch indoor route:", err);
-      }
-
-      // Fallback to outdoor OSRM routing
-      if (active) {
-        console.log("Attempting OSRM fallback routing...");
-        try {
-          const url = `https://router.project-osrm.org/route/v1/foot/${remoteParticipant.location.lng},${remoteParticipant.location.lat};${currentPos.y},${currentPos.x}?overview=full&geometries=geojson`;
-          const response = await fetch(url);
-          const data = await response.json();
-          if (active && data && data.routes && data.routes.length > 0) {
-            const rawCoords = data.routes[0].geometry.coordinates; // [lng, lat]
-            const osrmCoords = rawCoords.map(c => ({ lat: c[1], lng: c[0] }));
-            setRoutePath(osrmCoords);
-            return;
-          }
-        } catch (e) {
-          console.log("OSRM fallback routing failed:", e);
-        }
-      }
-
-      // Fallback to a straight line linking their two actual coordinates
-      if (active) {
-        setRoutePath([
-          { lat: currentPos.x, lng: currentPos.y },
-          { lat: remoteParticipant.location.lat, lng: remoteParticipant.location.lng }
-        ]);
+        console.log("Failed to fetch custom route:", err);
+        if (active) setRoutePath([]);
       }
     }
 
@@ -556,6 +561,33 @@ export default function LiveMeetScreen({ route, navigation }) {
           onLoad={handleWebViewLoad}
         />
       </View>
+
+      {/* Floor Selector Widget */}
+      {mapData?.floors && mapData.floors.length > 1 && (
+        <View style={[s.floorSelector, { top: Math.max(insets.top, 16) + 70 }]}>
+          {mapData.floors.map((floor) => {
+            const isSelected = selectedFloor?._id === floor._id;
+            const label = floor.name ? (floor.name.toLowerCase().includes("ground") ? "G" : floor.name.replace(/floor\s*/gi, "").replace(/level\s*/gi, "")) : "F";
+            return (
+              <TouchableOpacity
+                key={floor._id}
+                style={[
+                  s.floorBtn,
+                  isSelected ? { backgroundColor: colors.primary } : { backgroundColor: 'rgba(255,255,255,0.9)' }
+                ]}
+                onPress={() => {
+                  setSelectedFloor(floor);
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                }}
+              >
+                <Text style={[s.floorBtnText, isSelected ? { color: '#ffffff' } : { color: colors.text }]}>
+                  {label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      )}
 
       {/* Header */}
       <View style={[s.header, { top: Math.max(insets.top, 16) }]}>
@@ -654,5 +686,36 @@ const s = StyleSheet.create({
     shadowColor: '#4f46e5', shadowOpacity: 0.4, shadowRadius: 10, elevation: 6,
     zIndex: 10
   },
-  arText: { color: '#fff', fontWeight: '800', marginLeft: 8, fontSize: 16 }
+  arText: { color: '#fff', fontWeight: '800', marginLeft: 8, fontSize: 16 },
+  floorSelector: {
+    position: 'absolute',
+    right: 20,
+    flexDirection: 'column',
+    gap: 8,
+    zIndex: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.45)',
+    borderRadius: 22,
+    padding: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 5,
+    elevation: 3,
+  },
+  floorBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  floorBtnText: {
+    fontSize: 14,
+    fontWeight: '800',
+  }
 });

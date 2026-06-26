@@ -6,6 +6,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { ThemeContext } from "../context/ThemeContext";
 import { AuthContext } from "../context/AuthContext";
 import { SHADOWS, RADIUS } from "../theme/designSystem";
+import { LinearGradient } from "expo-linear-gradient";
 import api from '../api';
 import Toast from 'react-native-root-toast';
 import AnimatedPressable from '../components/AnimatedPressable';
@@ -82,7 +83,7 @@ export default function SettingsScreen({ navigation }) {
     header: {
       paddingTop: 16,
       paddingHorizontal: 20, paddingBottom: 16,
-      backgroundColor: colors.card,
+      backgroundColor: 'transparent',
       borderBottomWidth: 1, borderBottomColor: colors.border,
       flexDirection: "row", alignItems: "center",
     },
@@ -153,14 +154,28 @@ export default function SettingsScreen({ navigation }) {
   );
 
   return (
-    <ScrollView style={s.container} showsVerticalScrollIndicator={false}>
-      {/* Header */}
-      <View style={s.header}>
-        <AnimatedPressable onPress={() => navigation?.goBack?.()}>
-          <Ionicons name="arrow-back" size={24} color={colors.text} />
-        </AnimatedPressable>
-        <Text style={s.title}>Settings</Text>
-      </View>
+    <View style={{ flex: 1, backgroundColor: colors.bg }}>
+      <LinearGradient
+        colors={['rgba(99, 102, 241, 0.15)', 'rgba(139, 92, 246, 0.04)', 'rgba(255, 255, 255, 0)']}
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          height: 280,
+          zIndex: 0
+        }}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+      />
+      <ScrollView style={[s.container, { backgroundColor: 'transparent' }]} showsVerticalScrollIndicator={false}>
+        {/* Header */}
+        <View style={s.header}>
+          <AnimatedPressable onPress={() => navigation?.goBack?.()}>
+            <Ionicons name="arrow-back" size={24} color={colors.text} />
+          </AnimatedPressable>
+          <Text style={s.title}>Settings</Text>
+        </View>
 
       {/* Profile card */}
       <View style={s.profileCard}>
@@ -274,6 +289,7 @@ export default function SettingsScreen({ navigation }) {
         </KeyboardAvoidingView>
       </Modal>
 
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }

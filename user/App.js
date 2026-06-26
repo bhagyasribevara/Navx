@@ -1,6 +1,6 @@
 import React, { useState, useContext, useCallback, useEffect } from "react";
 import { RootSiblingParent } from 'react-native-root-siblings';
-import { View, Platform, Linking } from "react-native";
+import { View, Platform, Linking, TouchableOpacity, Text, StyleSheet } from "react-native";
 import { NavigationContainer } from "@react-navigation/native";
 import { DefaultTheme } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
@@ -20,6 +20,7 @@ import NavigationScreen from "./src/screens/NavigationScreen";
 import ARScreen from "./src/screens/ARScreen";
 import QRScanScreen from "./src/screens/QRScanScreen";
 import SettingsScreen from "./src/screens/SettingsScreen";
+import FavoritesScreen from "./src/screens/FavoritesScreen";
 
 import SplashScreen from "./src/screens/SplashScreen";
 import OfflineMapsScreen from "./src/screens/OfflineMapsScreen";
@@ -36,10 +37,10 @@ import AuthScreen from "./src/screens/AuthScreen";
 import { AuthProvider, useAuth } from "./src/context/AuthContext";
 
 const LIGHT = {
-  bg: "#f0f4ff",
+  bg: "#ffffff",
   card: "#ffffff",
   cardElevated: "#ffffff",
-  surface: "#eef2ff",
+  surface: "#ffffff",
   primary: "#6366f1",
   primaryLight: "#818cf8",
   primaryGlow: "rgba(99,102,241,0.15)",
@@ -58,10 +59,7 @@ const LIGHT = {
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
-function MainTabs() {
-  const { colors } = useContext(ThemeContext);
-  const insets = useSafeAreaInsets();
-
+function CustomTabBar({ state, descriptors, navigation, insets, colors }) {
   const tabIconMap = {
     Home: { active: "home", inactive: "home-outline" },
     Map: { active: "map", inactive: "map-outline" },
@@ -71,38 +69,91 @@ function MainTabs() {
   };
 
   return (
-    <Tab.Navigator
-      screenOptions={({ route }) => ({
-        tabBarIcon: ({ focused, color, size }) => {
+    <View style={[styles.tabContainer, { bottom: Platform.OS === 'ios' ? insets.bottom + 8 : 16 }]}>
+      <View style={[styles.tabBar, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }]}>
+        {state.routes.map((route, index) => {
+          const { options } = descriptors[route.key];
+          const label =
+            options.tabBarLabel !== undefined
+              ? options.tabBarLabel
+              : options.title !== undefined
+              ? options.title
+              : route.name;
+
+          const isFocused = state.index === index;
+
+          const onPress = () => {
+            const event = navigation.emit({
+              type: 'tabPress',
+              target: route.key,
+              canPreventDefault: true,
+            });
+
+            if (!isFocused && !event.defaultPrevented) {
+              navigation.navigate(route.name, route.params);
+            }
+          };
+
+          const onLongPress = () => {
+            navigation.emit({
+              type: 'tabLongPress',
+              target: route.key,
+            });
+          };
+
           const icons = tabIconMap[route.name];
-          return <Ionicons name={focused ? icons.active : icons.inactive} size={size} color={color} />;
-        },
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.textMuted,
-        tabBarStyle: {
-          backgroundColor: colors.card,
-          borderTopColor: colors.border,
-          borderTopWidth: 1,
-          height: Platform.OS === "ios" ? 84 : (65 + (insets.bottom > 0 ? insets.bottom : 0)),
-          paddingBottom: Platform.OS === "ios" ? 28 : (10 + (insets.bottom > 0 ? insets.bottom : 0)),
-          paddingTop: 8,
-          elevation: 0,
-          shadowOpacity: 0,
-        },
-        tabBarLabelStyle: {
-          fontSize: 10,
-          fontWeight: "700",
-          marginTop: -2,
-        },
-        headerStyle: { backgroundColor: colors.card, shadowOpacity: 0, elevation: 0 },
-        headerTintColor: colors.text,
-        headerShadowVisible: false,
+          const iconName = isFocused ? icons.active : icons.inactive;
+          const iconColor = isFocused ? "#ffffff" : "#94a3b8";
+
+          return (
+            <TouchableOpacity
+              key={route.key}
+              accessibilityRole="button"
+              accessibilityState={isFocused ? { selected: true } : {}}
+              accessibilityLabel={options.tabBarAccessibilityLabel}
+              testID={options.tabBarButtonTestID}
+              onPress={onPress}
+              onLongPress={onLongPress}
+              style={[
+                styles.tabItem,
+                isFocused ? [styles.tabItemActive, { backgroundColor: colors.primary }] : null
+              ]}
+              activeOpacity={0.8}
+            >
+              <Ionicons
+                name={iconName}
+                size={20}
+                color={iconColor}
+              />
+              {isFocused && (
+                <Text style={styles.tabItemText}>
+                  {label}
+                </Text>
+              )}
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
+function MainTabs() {
+  const { colors } = useContext(ThemeContext);
+  const insets = useSafeAreaInsets();
+
+  return (
+    <Tab.Navigator
+      tabBar={(props) => <CustomTabBar {...props} insets={insets} colors={colors} />}
+      screenOptions={{
         headerShown: false,
-      })}
+      }}
     >
       <Tab.Screen name="Home" component={HomeScreen} options={{ title: "Home" }} />
       <Tab.Screen name="Map" component={MapScreen} options={{ title: "Map" }} />
-      <Tab.Screen name="Settings" component={SettingsScreen} options={{ title: "Settings" }} />
+      <Tab.Screen name="Search" component={SearchScreen} options={{ title: "Search" }} />
+      <Tab.Screen name="Favorites" component={FavoritesScreen} options={{ title: "Saved" }} />
+      <Tab.Screen name="Settings" component={SettingsScreen} options={{ title: "Profile" }} />
     </Tab.Navigator>
   );
 }
@@ -301,3 +352,47 @@ export default function App() {
     </SafeAreaProvider>
   );
 }
+
+const styles = StyleSheet.create({
+  tabContainer: {
+    position: 'absolute',
+    bottom: 20,
+    left: 20,
+    right: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+    zIndex: 999,
+  },
+  tabBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 32,
+    width: '100%',
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.08,
+    shadowRadius: 20,
+    elevation: 8,
+  },
+  tabItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 24,
+  },
+  tabItemActive: {
+    paddingHorizontal: 16,
+    gap: 6,
+  },
+  tabItemText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '800',
+  }
+});

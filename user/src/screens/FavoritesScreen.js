@@ -5,6 +5,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { ThemeContext } from "../context/ThemeContext";
+import { LinearGradient } from "expo-linear-gradient";
 import { SHADOWS, RADIUS, ROOM_COLORS } from "../theme/designSystem";
 import AnimatedPressable from "../components/AnimatedPressable";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -64,7 +65,7 @@ export default function FavoritesScreen({ navigation }) {
     header: {
       paddingTop: 16,
       paddingHorizontal: 20, paddingBottom: 20,
-      backgroundColor: colors.card,
+      backgroundColor: 'transparent',
       borderBottomWidth: 1, borderBottomColor: colors.border,
     },
     headerRow: { flexDirection: "row", alignItems: "center", marginBottom: 16 },
@@ -112,6 +113,19 @@ export default function FavoritesScreen({ navigation }) {
 
   return (
     <View style={s.container}>
+      <LinearGradient
+        colors={['rgba(99, 102, 241, 0.15)', 'rgba(139, 92, 246, 0.04)', 'rgba(255, 255, 255, 0)']}
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          height: 280,
+          zIndex: 0
+        }}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+      />
       <Animated.View style={[s.header, { opacity: headerAnim, transform: [{ translateY: headerAnim.interpolate({ inputRange: [0, 1], outputRange: [-16, 0] }) }] }]}>
         <View style={s.headerRow}>
           <AnimatedPressable style={{ marginRight: 14 }} onPress={() => navigation.goBack()}>

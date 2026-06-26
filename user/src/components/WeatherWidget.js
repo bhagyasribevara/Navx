@@ -187,14 +187,18 @@ export default function WeatherWidget() {
     <>
       {/* Button */}
       <Animated.View style={{ transform: [{ scale: btnP }, { translateY: btnF }] }}>
-        <TouchableOpacity onPress={tap} activeOpacity={0.8} style={s.btn}>
-          <Animated.View style={[s.btnGlow, { opacity: btnG }]} />
+        <TouchableOpacity 
+          onPress={tap} 
+          activeOpacity={0.8} 
+          style={[s.btn, { backgroundColor: colors.primary + "18", borderColor: colors.primary + "35", shadowColor: colors.primary }]}
+        >
+          <Animated.View style={[s.btnGlow, { borderColor: colors.primary + "25", opacity: btnG }]} />
           {weather ? (
-            <Text style={{ fontSize: 13, fontWeight: 'bold', color: '#FFF', textAlign: 'center' }}>
+            <Text style={{ fontSize: 13, fontWeight: 'bold', color: colors.primary, textAlign: 'center' }}>
               {weather.temperature}°
             </Text>
           ) : (
-            <Ionicons name="partly-sunny" size={19} color="#FFF" />
+            <Ionicons name="partly-sunny" size={19} color={colors.primary} />
           )}
         </TouchableOpacity>
       </Animated.View>
@@ -327,8 +331,14 @@ export default function WeatherWidget() {
 }
 
 const s = StyleSheet.create({
-  btn: { width: 42, height: 42, borderRadius: 21, backgroundColor: '#7C3AED', alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#8B5CF6', shadowColor: '#7C3AED', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.45, shadowRadius: 10, elevation: 8 },
-  btnGlow: { ...StyleSheet.absoluteFillObject, borderRadius: 21, borderWidth: 3, borderColor: '#A78BFA' },
+  btn: { 
+    width: 42, height: 42, borderRadius: 21, 
+    alignItems: 'center', justifyContent: 'center', 
+    borderWidth: 2, 
+    shadowOffset: { width: 0, height: 2 }, 
+    shadowOpacity: 0.05, shadowRadius: 5, elevation: 1 
+  },
+  btnGlow: { ...StyleSheet.absoluteFillObject, borderRadius: 21, borderWidth: 3 },
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },
   fullScreen: { flex: 1 },
   closeBtn: { position: 'absolute', top: Platform.OS === 'ios' ? 56 : 40, right: 20, width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', zIndex: 50 },
