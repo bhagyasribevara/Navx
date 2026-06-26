@@ -14,7 +14,7 @@ if (Constants?.expoConfig?.hostUri) {
 let API_BASE = process.env.EXPO_PUBLIC_API_BASE_URL || `http://10.95.196.232:5001/api`;
 let SOCKET_URL = process.env.EXPO_PUBLIC_API_BASE_URL ? process.env.EXPO_PUBLIC_API_BASE_URL.replace('/api', '') : `http://10.95.196.232:5001`;
 
-if (__DEV__ && !process.env.EXPO_PUBLIC_API_BASE_URL) {
+if (__DEV__ && (!process.env.EXPO_PUBLIC_API_BASE_URL || process.env.EXPO_PUBLIC_API_BASE_URL.includes("localhost") || process.env.EXPO_PUBLIC_API_BASE_URL.includes("127.0.0.1"))) {
   API_BASE = `http://${devHost}:5001/api`;
   SOCKET_URL = `http://${devHost}:5001`;
 }
@@ -87,6 +87,7 @@ export function getCachedConfigValue(key, fallback) {
   }
   return fallback;
 }
+
 
 // Cache helpers
 const CACHE_DURATION = 30 * 60 * 1000; // 30 min

@@ -1,6 +1,6 @@
 import React, { useState, useContext, useCallback, useEffect } from "react";
 import { RootSiblingParent } from 'react-native-root-siblings';
-import { View, Platform } from "react-native";
+import { View, Platform, Linking } from "react-native";
 import { NavigationContainer } from "@react-navigation/native";
 import { DefaultTheme } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
@@ -110,6 +110,77 @@ function MainTabs() {
 function AppNavigator() {
   const { colors } = useContext(ThemeContext);
   const { user, loading } = useAuth();
+
+  useEffect(() => {
+    // Intercept URLs received while app is in background/foreground
+    const handleUrl = ({ url }) => {
+      console.log("[AppNavigator] Deep link received:", url);
+      if (url) {
+        if (!user) {
+          global.pendingDeepLink = url;
+          console.log("[AppNavigator] User not logged in. Saved to pendingDeepLink.");
+        } else {
+          // Parse and navigate directly if user is logged in
+          if (url.includes('meet/')) {
+            const parts = url.split('meet/');
+            if (parts.length > 1) {
+              const sessionId = parts[1].split(/[?#]/)[0];
+              if (sessionId) {
+                const interval = setInterval(() => {
+                  if (navigationRef.isReady()) {
+                    clearInterval(interval);
+                    navigationRef.navigate("LiveMeet", { sessionId });
+                  }
+                }, 100);
+                setTimeout(() => clearInterval(interval), 5000);
+              }
+            }
+          }
+        }
+      }
+    };
+
+    // Intercept initial URL if app is opened from cold start
+    Linking.getInitialURL().then((url) => {
+      if (url) {
+        console.log("[AppNavigator] Initial deep link:", url);
+        if (!user) {
+          global.pendingDeepLink = url;
+        } else {
+          handleUrl({ url });
+        }
+      }
+    });
+
+    const subscription = Linking.addEventListener('url', handleUrl);
+    return () => {
+      subscription.remove();
+    };
+  }, [user]);
+
+  // Handle pending deep links after authentication state resolves to logged-in
+  useEffect(() => {
+    if (user && global.pendingDeepLink) {
+      const url = global.pendingDeepLink;
+      global.pendingDeepLink = null;
+      console.log("[AppNavigator] Processing pending deep link after login:", url);
+      if (url.includes('meet/')) {
+        const parts = url.split('meet/');
+        if (parts.length > 1) {
+          const sessionId = parts[1].split(/[?#]/)[0];
+          if (sessionId) {
+            const interval = setInterval(() => {
+              if (navigationRef.isReady()) {
+                clearInterval(interval);
+                navigationRef.navigate("LiveMeet", { sessionId });
+              }
+            }, 100);
+            setTimeout(() => clearInterval(interval), 5000);
+          }
+        }
+      }
+    }
+  }, [user]);
   
   const baseTheme = DefaultTheme;
   const navTheme = {
