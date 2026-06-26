@@ -8,6 +8,7 @@ import { AuthContext } from "../context/AuthContext";
 import { SHADOWS, RADIUS } from "../theme/designSystem";
 import api from '../api';
 import Toast from 'react-native-root-toast';
+import AnimatedPressable from '../components/AnimatedPressable';
 
 export default function SettingsScreen({ navigation }) {
   const { colors } = useContext(ThemeContext);
@@ -142,22 +143,22 @@ export default function SettingsScreen({ navigation }) {
   });
 
   const RowAction = ({ icon, iconBg, label, onPress, last }) => (
-    <TouchableOpacity style={[s.row, last && s.rowLast]} onPress={onPress} activeOpacity={0.7}>
+    <AnimatedPressable style={[s.row, last && s.rowLast]} onPress={onPress}>
       <View style={[s.iconBox, { backgroundColor: iconBg || colors.primary + "15" }]}>
         <Ionicons name={icon} size={18} color={iconBg ? "#fff" : colors.primary} />
       </View>
       <Text style={s.rowLabel}>{label}</Text>
       <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
-    </TouchableOpacity>
+    </AnimatedPressable>
   );
 
   return (
     <ScrollView style={s.container} showsVerticalScrollIndicator={false}>
       {/* Header */}
       <View style={s.header}>
-        <TouchableOpacity onPress={() => navigation?.goBack?.()}>
+        <AnimatedPressable onPress={() => navigation?.goBack?.()}>
           <Ionicons name="arrow-back" size={24} color={colors.text} />
-        </TouchableOpacity>
+        </AnimatedPressable>
         <Text style={s.title}>Settings</Text>
       </View>
 

@@ -12,6 +12,7 @@ import { getCampuses, cachedGet, downloadCampusOffline, getRoomsByCat, getCampai
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SHADOWS, RADIUS, QUICK_ACTIONS, ROOM_COLORS } from "../theme/designSystem";
 import WeatherWidget from "../components/WeatherWidget";
+import AnimatedPressable from "../components/AnimatedPressable";
 import * as Location from 'expo-location';
 
 
@@ -588,16 +589,15 @@ export default function HomeScreen({ navigation }) {
                   { translateY: cardAnims[i].interpolate({ inputRange: [0, 1], outputRange: [18, 0] }) }
                 ],
               }}>
-                <TouchableOpacity 
+                <AnimatedPressable 
                   style={s.quickCard} 
-                  onPress={() => a.screen === 'MeetModal' ? setShowMeetModal(true) : navigation.navigate(a.screen)} 
-                  activeOpacity={0.78}
+                  onPress={() => a.screen === 'MeetModal' ? setShowMeetModal(true) : navigation.navigate(a.screen)}
                 >
                   <View style={[s.quickIcon, { backgroundColor: a.bg }]}>
                     <Ionicons name={a.icon} size={24} color={a.color} />
                   </View>
                   <Text style={s.quickLabel}>{a.label}</Text>
-                </TouchableOpacity>
+                </AnimatedPressable>
               </Animated.View>
             ))}
           </View>
@@ -614,7 +614,7 @@ export default function HomeScreen({ navigation }) {
             </View>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingRight: 20 }}>
               {campaigns.map(c => (
-                <TouchableOpacity key={c._id} style={s.campaignCard} activeOpacity={0.85} onPress={() => navigation.navigate('CampaignDetail', { campaign: c })}>
+                <AnimatedPressable key={c._id} style={s.campaignCard} onPress={() => navigation.navigate('CampaignDetail', { campaign: c })}>
                   {c.image && <Image source={{ uri: c.image.startsWith('http') ? c.image : `${SOCKET_URL}${c.image}` }} style={s.campaignImg} resizeMode="cover" />}
                   <View style={s.campaignContent}>
                     {c.category && (
@@ -624,24 +624,23 @@ export default function HomeScreen({ navigation }) {
                     )}
                     <Text style={s.campaignTitle} numberOfLines={1}>{c.title}</Text>
                     <Text style={s.campaignDesc} numberOfLines={2}>{c.description}</Text>
-                    <TouchableOpacity 
+                    <AnimatedPressable 
                       style={s.campaignNavBtn}
-                      activeOpacity={0.8}
                       onPress={() => navigation.navigate('CampaignDetail', { campaign: c })}
                     >
                       <Ionicons name="navigate" size={16} color="#fff" />
                       <Text style={s.campaignNavText}>Navigate Here</Text>
-                    </TouchableOpacity>
+                    </AnimatedPressable>
                   </View>
-                </TouchableOpacity>
+                </AnimatedPressable>
               ))}
             </ScrollView>
           </View>
         )}
 
         {/* Banner */}
-        <TouchableOpacity style={s.banner} activeOpacity={0.9} onPress={() => navigation.navigate("Map", { campusId: activeCampusId })}>
-          <View style={[s.bannerInner, { backgroundColor: "#4f46e5" }]}>
+        <AnimatedPressable style={s.banner} onPress={() => navigation.navigate("Map", { campusId: activeCampusId })}>
+          <View style={[s.bannerInner, { backgroundColor: colors.secondary || "#8b5cf6" }]}>
             <View style={[s.bannerInner, { padding: 0 }]}>
               <View style={{ flexDirection: "row", position: "absolute", right: 20, top: -10, opacity: 0.15 }}>
                 <Ionicons name="map" size={100} color="#fff" />
@@ -653,12 +652,12 @@ export default function HomeScreen({ navigation }) {
             </View>
             <Text style={s.bannerTitle}>Interactive Floor Map</Text>
             <Text style={s.bannerSub}>Explore with real-time indoor positioning</Text>
-            <TouchableOpacity style={s.bannerBtn} onPress={() => navigation.navigate("Map", { campusId: activeCampusId })}>
-              <Ionicons name="map" size={16} color="#4f46e5" />
+            <AnimatedPressable style={s.bannerBtn} onPress={() => navigation.navigate("Map", { campusId: activeCampusId })}>
+              <Ionicons name="map" size={16} color={colors.secondary || "#8b5cf6"} />
               <Text style={s.bannerBtnText}>Open Map</Text>
-            </TouchableOpacity>
+            </AnimatedPressable>
           </View>
-        </TouchableOpacity>
+        </AnimatedPressable>
 
         {/* Categories */}
         <View style={{ marginTop: 22 }}>
@@ -667,7 +666,7 @@ export default function HomeScreen({ navigation }) {
           </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20 }}>
             {(VENUE_CATS[campuses.find(c => c._id === activeCampusId)?.venueType] || VENUE_CATS.campus).map((c, i) => (
-              <TouchableOpacity key={i} style={s.catChip} onPress={async () => {
+              <AnimatedPressable key={i} style={s.catChip} onPress={async () => {
                 if (c.filter === 'parking' && activeCampusId) {
                   try {
                     const rooms = await getRoomsByCat(activeCampusId, 'parking');
@@ -689,10 +688,10 @@ export default function HomeScreen({ navigation }) {
                   } catch (e) { }
                 }
                 navigation.navigate("Search", { filter: c.filter });
-              }} activeOpacity={0.78}>
+              }}>
                 <Ionicons name={c.icon} size={16} color={c.color} />
                 <Text style={s.catLabel}>{c.label}</Text>
-              </TouchableOpacity>
+              </AnimatedPressable>
             ))}
           </ScrollView>
         </View>
@@ -706,7 +705,7 @@ export default function HomeScreen({ navigation }) {
             {recentRooms.map(rm => {
               const roomColor = ROOM_COLORS[rm.type] || colors.primary;
               return (
-                <TouchableOpacity key={rm._id} style={s.recentCard} onPress={() => navigation.navigate("Navigation", { room: rm, campusId: rm.campusId })} activeOpacity={0.82}>
+                <AnimatedPressable key={rm._id} style={s.recentCard} onPress={() => navigation.navigate("Navigation", { room: rm, campusId: rm.campusId })}>
                   <View style={[s.recentIcon, { backgroundColor: roomColor + "20" }]}>
                     <Ionicons name="location" size={22} color={roomColor} />
                   </View>
@@ -717,7 +716,7 @@ export default function HomeScreen({ navigation }) {
                   <View style={s.navBadge}>
                     <Ionicons name="navigate" size={18} color={colors.primary} />
                   </View>
-                </TouchableOpacity>
+                </AnimatedPressable>
               );
             })}
           </View>
@@ -732,8 +731,8 @@ export default function HomeScreen({ navigation }) {
           {campuses.filter(c => c._id === activeCampusId).map((campus, i) => {
             const g = GRAD_BARS[i % GRAD_BARS.length];
             return (
-              <TouchableOpacity key={campus._id} style={s.campusCard} activeOpacity={0.88} onPress={() => navigation.navigate("Map", { campusId: campus._id, campusName: campus.name })}>
-                <View style={[s.campusBar, { backgroundColor: g[0] }]} />
+              <AnimatedPressable key={campus._id} style={s.campusCard} onPress={() => navigation.navigate("Map", { campusId: campus._id, campusName: campus.name })}>
+                <View style={[s.campusBar, { backgroundColor: colors.secondary || g[0] }]} />
                 <View style={s.campusBody}>
                   <Text style={s.campusName}>{campus.name}</Text>
                   <Text style={s.campusDesc}>{campus.description || "Tap to explore campus map"}</Text>
@@ -744,17 +743,17 @@ export default function HomeScreen({ navigation }) {
                     </View>
                   )}
                   <View style={s.campusActions}>
-                    <TouchableOpacity style={s.mapBtn} onPress={() => navigation.navigate("Map", { campusId: campus._id })}>
+                    <AnimatedPressable style={s.mapBtn} onPress={() => navigation.navigate("Map", { campusId: campus._id })}>
                       <Ionicons name="map" size={16} color="#fff" />
                       <Text style={{ color: "#fff", fontWeight: "700", fontSize: 13, marginLeft: 6 }}>Explore Map</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={s.arBtn} onPress={() => navigation.navigate("Search", { campusId: campus._id })}>
+                    </AnimatedPressable>
+                    <AnimatedPressable style={s.arBtn} onPress={() => navigation.navigate("Search", { campusId: campus._id })}>
                       <Ionicons name="search" size={16} color={colors.primary} />
                       <Text style={{ color: colors.primary, fontWeight: "700", fontSize: 13, marginLeft: 6 }}>Search</Text>
-                    </TouchableOpacity>
+                    </AnimatedPressable>
                   </View>
                 </View>
-              </TouchableOpacity>
+              </AnimatedPressable>
             );
           })}
         </View>

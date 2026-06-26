@@ -13,6 +13,7 @@ import { useGeofence } from "../context/GeofenceContext";
 import { scanQRCode, getCampusByQR, verifyCampusGeofence } from "../api";
 import { SHADOWS, RADIUS } from "../theme/designSystem";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import AnimatedPressable from "../components/AnimatedPressable";
 
 const { width: SW, height: SH } = Dimensions.get("window");
 const FRAME = 240;
@@ -161,15 +162,15 @@ export default function QRScanScreen({ navigation }) {
         <Text style={{ color: colors.textSec, textAlign: "center", fontSize: 14, paddingHorizontal: 40, lineHeight: 20 }}>
           We need camera access to scan NavX QR codes placed around the building
         </Text>
-        <TouchableOpacity
+        <AnimatedPressable
           style={{ backgroundColor: colors.primary, paddingHorizontal: 32, paddingVertical: 14, borderRadius: RADIUS.md, marginTop: 24, ...SHADOWS.md }}
           onPress={requestPermission}
         >
           <Text style={{ color: "#fff", fontWeight: "700", fontSize: 15 }}>Grant Permission</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={{ marginTop: 14 }} onPress={() => navigation.goBack()}>
+        </AnimatedPressable>
+        <AnimatedPressable style={{ marginTop: 14 }} onPress={() => navigation.goBack()}>
           <Text style={{ color: colors.textMuted, fontSize: 14 }}>Go Back</Text>
-        </TouchableOpacity>
+        </AnimatedPressable>
       </View>
     );
   }
@@ -226,9 +227,9 @@ export default function QRScanScreen({ navigation }) {
 
       {/* Top bar */}
       <View style={[s.topBar, { paddingTop: Math.max(insets.top, 20) }]}>
-        <TouchableOpacity style={s.backBtn} onPress={() => navigation.goBack()}>
+        <AnimatedPressable style={s.backBtn} onPress={() => navigation.goBack()}>
           <Ionicons name="arrow-back" size={20} color="#fff" />
-        </TouchableOpacity>
+        </AnimatedPressable>
         <Text style={s.topTitle}>Scan QR Code</Text>
         <View style={{ width: 40 }} />
       </View>
@@ -302,12 +303,12 @@ export default function QRScanScreen({ navigation }) {
             </View>
           ) : scanned ? (
             <>
-              <TouchableOpacity style={s.rescanBtn} onPress={resetScan}>
+              <AnimatedPressable style={s.rescanBtn} onPress={resetScan}>
                 <Ionicons name="refresh" size={18} color="#6366f1" />
                 <Text style={s.rescanText}>Scan Again</Text>
-              </TouchableOpacity>
+              </AnimatedPressable>
               {result && (
-                <TouchableOpacity
+                <AnimatedPressable
                   style={s.navigateBtn}
                   onPress={async () => {
                     if (isCampusQR) {
@@ -344,7 +345,7 @@ export default function QRScanScreen({ navigation }) {
                 >
                   <Ionicons name={isCampusQR ? "arrow-forward" : "map"} size={18} color="#fff" />
                   <Text style={s.navigateBtnText}>{isCampusQR ? "Enter Campus" : "View Floor Details"}</Text>
-                </TouchableOpacity>
+                </AnimatedPressable>
               )}
             </>
           ) : (

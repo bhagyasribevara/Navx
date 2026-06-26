@@ -8,6 +8,7 @@ import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { ThemeContext } from "../context/ThemeContext";
 import { SHADOWS, RADIUS } from "../theme/designSystem";
+import AnimatedPressable from "../components/AnimatedPressable";
 
 export default function OfflineMapsScreen({ navigation }) {
   const { colors } = useContext(ThemeContext);
@@ -117,9 +118,9 @@ export default function OfflineMapsScreen({ navigation }) {
   return (
     <SafeAreaView style={s.container}>
       <View style={s.header}>
-        <TouchableOpacity style={s.backBtn} onPress={() => navigation.goBack()}>
+        <AnimatedPressable style={s.backBtn} onPress={() => navigation.goBack()}>
           <Ionicons name="arrow-back" size={20} color={colors.text} />
-        </TouchableOpacity>
+        </AnimatedPressable>
         <Text style={s.title}>Offline Maps</Text>
       </View>
 
@@ -153,7 +154,7 @@ export default function OfflineMapsScreen({ navigation }) {
               </View>
             )}
             <View style={s.actions}>
-              <TouchableOpacity 
+              <AnimatedPressable 
                 style={s.openBtn}
                 onPress={() => {
                   AsyncStorage.setItem('navx_active_campus', JSON.stringify({ id: item.id, name: item.name })).then(() => {
@@ -163,10 +164,10 @@ export default function OfflineMapsScreen({ navigation }) {
               >
                 <Ionicons name="map" size={18} color="#fff" />
                 <Text style={s.openText}>Open Map</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={s.deleteBtn} onPress={() => deleteOfflineMap(item.id, item.key)}>
+              </AnimatedPressable>
+              <AnimatedPressable style={s.deleteBtn} onPress={() => deleteOfflineMap(item.id, item.key)}>
                 <Ionicons name="trash" size={20} color="#ef4444" />
-              </TouchableOpacity>
+              </AnimatedPressable>
             </View>
           </View>
         )}

@@ -7,6 +7,7 @@ import { ThemeContext } from '../context/ThemeContext';
 import { useLiveMeet } from '../context/LiveMeetContext';
 import { useGeofence } from '../context/GeofenceContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import AnimatedPressable from '../components/AnimatedPressable';
 
 const { width: SW, height: SH } = Dimensions.get('window');
 
@@ -54,9 +55,9 @@ export default function ARMeetScreen({ navigation }) {
   if (hasPermission === false) return (
     <View style={s.center}>
       <Text style={{ color: colors.text }}>No access to camera</Text>
-      <TouchableOpacity style={s.btn} onPress={() => navigation.goBack()}>
+      <AnimatedPressable style={s.btn} onPress={() => navigation.goBack()}>
         <Text style={{ color: '#fff' }}>Back</Text>
-      </TouchableOpacity>
+      </AnimatedPressable>
     </View>
   );
 
@@ -80,9 +81,9 @@ export default function ARMeetScreen({ navigation }) {
       
       {/* Header */}
       <View style={[s.header, { top: Math.max(insets.top, 16) }]}>
-        <TouchableOpacity style={s.backBtn} onPress={() => navigation.goBack()}>
+        <AnimatedPressable style={s.backBtn} onPress={() => navigation.goBack()}>
           <Ionicons name="arrow-back" size={24} color="#fff" />
-        </TouchableOpacity>
+        </AnimatedPressable>
         <Text style={s.title}>AR Finder</Text>
         <View style={{ width: 24 }} />
       </View>

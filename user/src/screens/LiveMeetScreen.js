@@ -2,6 +2,7 @@ import React, { useEffect, useState, useContext, useRef, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Dimensions, Animated, Platform, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { WebView } from 'react-native-webview';
+import AnimatedPressable from '../components/AnimatedPressable';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ThemeContext } from '../context/ThemeContext';
 import { useLiveMeet } from '../context/LiveMeetContext';
@@ -474,9 +475,9 @@ export default function LiveMeetScreen({ route, navigation }) {
       <View style={[s.center, { backgroundColor: colors.bg }]}>
         <Ionicons name="warning" size={48} color={colors.danger} />
         <Text style={{ color: colors.text, marginTop: 10, fontWeight: '700' }}>{error}</Text>
-        <TouchableOpacity style={s.btn} onPress={() => navigation.goBack()}>
+        <AnimatedPressable style={s.btn} onPress={() => navigation.goBack()}>
           <Text style={s.btnText}>Go Back</Text>
-        </TouchableOpacity>
+        </AnimatedPressable>
       </View>
     );
   }
@@ -498,28 +499,28 @@ export default function LiveMeetScreen({ route, navigation }) {
 
       {/* Header */}
       <View style={[s.header, { top: Math.max(insets.top, 16) }]}>
-        <TouchableOpacity style={s.backBtn} onPress={() => navigation.goBack()}>
+        <AnimatedPressable style={s.backBtn} onPress={() => navigation.goBack()}>
           <Ionicons name="arrow-back" size={24} color={colors.text} />
-        </TouchableOpacity>
+        </AnimatedPressable>
         <Text style={s.title}>Live Meet</Text>
-        <TouchableOpacity onPress={async () => {
+        <AnimatedPressable onPress={async () => {
             await endMeetSession(sessionId, 'cancelled');
             leaveMeetSession();
             navigation.goBack();
         }}>
           <Text style={{ color: colors.danger, fontWeight: '700' }}>End</Text>
-        </TouchableOpacity>
+        </AnimatedPressable>
       </View>
 
       {/* AR Button Trigger */}
       {distance !== null && distance < 30 && (
-        <TouchableOpacity 
+        <AnimatedPressable 
           style={[s.arBtn, { bottom: (insets.bottom > 0 ? insets.bottom + 10 : 20) + 140 }]}
           onPress={() => navigation.navigate('ARMeet')}
         >
           <Ionicons name="scan" size={24} color="#fff" />
           <Text style={s.arText}>AR Friend Finder</Text>
-        </TouchableOpacity>
+        </AnimatedPressable>
       )}
 
       {/* Progress Bottom Sheet */}

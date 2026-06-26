@@ -8,6 +8,7 @@ import { ThemeContext } from "../context/ThemeContext";
 import { useGeofence } from "../context/GeofenceContext";
 import { getSubCampaigns, SOCKET_URL } from "../api";
 import { SHADOWS, RADIUS } from "../theme/designSystem";
+import AnimatedPressable from "../components/AnimatedPressable";
 
 const { width: SW } = Dimensions.get("window");
 
@@ -152,9 +153,9 @@ export default function CampaignDetailScreen({ route, navigation }) {
       >
         {/* ── Hero Poster ── */}
         <View>
-          <TouchableOpacity style={s.backBtn} onPress={() => navigation.goBack()}>
+          <AnimatedPressable style={s.backBtn} onPress={() => navigation.goBack()}>
             <Ionicons name="arrow-back" size={20} color="#fff" />
-          </TouchableOpacity>
+          </AnimatedPressable>
           {campaign.image ? (
             <Image
               source={{ uri: campaign.image.startsWith("http") ? campaign.image : `${SOCKET_URL}${campaign.image}` }}
@@ -193,9 +194,8 @@ export default function CampaignDetailScreen({ route, navigation }) {
         {/* ── Navigate Button ── */}
         {campaign.destination?.roomId && subs.length === 0 && (
           <View style={s.navBtnWrap}>
-            <TouchableOpacity
+            <AnimatedPressable
               style={s.navBtn}
-              activeOpacity={0.8}
               onPress={() => navigation.navigate("Navigation", {
                 room: { _id: campaign.destination.roomId._id, floorId: campaign.destination.floorId?._id, name: campaign.destination.roomId.name },
                 campusId: activeCampusId
@@ -203,7 +203,7 @@ export default function CampaignDetailScreen({ route, navigation }) {
             >
               <Ionicons name="navigate" size={20} color="#fff" />
               <Text style={s.navText}>Navigate Here</Text>
-            </TouchableOpacity>
+            </AnimatedPressable>
           </View>
         )}
 
@@ -248,9 +248,8 @@ export default function CampaignDetailScreen({ route, navigation }) {
                 </View>
 
                 {sub.destination?.roomId && (
-                  <TouchableOpacity
+                  <AnimatedPressable
                     style={s.subNavBtn}
-                    activeOpacity={0.8}
                     onPress={() => navigation.navigate("Navigation", {
                       room: { _id: sub.destination.roomId._id, floorId: sub.destination.floorId?._id, name: sub.destination.roomId.name },
                       campusId: activeCampusId
@@ -258,7 +257,7 @@ export default function CampaignDetailScreen({ route, navigation }) {
                   >
                     <Ionicons name="navigate" size={16} color="#fff" />
                     <Text style={s.subNavText}>Navigate to Event</Text>
-                  </TouchableOpacity>
+                  </AnimatedPressable>
                 )}
               </View>
             </View>

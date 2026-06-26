@@ -8,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { AuthContext } from '../context/AuthContext';
 import { LIGHT as COLORS, SHADOWS, RADIUS } from '../theme/designSystem';
+import AnimatedPressable from '../components/AnimatedPressable';
 
 export default function AuthScreen() {
   const { login, register, guestLogin } = useContext(AuthContext);
@@ -108,18 +109,18 @@ export default function AuthScreen() {
               onChangeText={setPassword}
               secureTextEntry={!showPassword}
             />
-            <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={{ padding: 4 }}>
+            <AnimatedPressable onPress={() => setShowPassword(!showPassword)} style={{ padding: 4 }}>
               <Ionicons name={showPassword ? "eye-off-outline" : "eye-outline"} size={20} color={COLORS.textSec} />
-            </TouchableOpacity>
+            </AnimatedPressable>
           </View>
 
-          <TouchableOpacity style={s.submitBtn} onPress={handleSubmit} disabled={loading}>
+          <AnimatedPressable style={s.submitBtn} onPress={handleSubmit} disabled={loading}>
             {loading ? (
               <ActivityIndicator color="#fff" />
             ) : (
               <Text style={s.submitText}>{isLogin ? 'Sign In' : 'Sign Up'}</Text>
             )}
-          </TouchableOpacity>
+          </AnimatedPressable>
 
           <View style={s.dividerContainer}>
             <View style={s.dividerLine} />
@@ -127,23 +128,23 @@ export default function AuthScreen() {
             <View style={s.dividerLine} />
           </View>
 
-          <TouchableOpacity style={s.guestBtn} onPress={handleGuestLogin} disabled={loading}>
+          <AnimatedPressable style={s.guestBtn} onPress={handleGuestLogin} disabled={loading}>
             {loading ? (
               <ActivityIndicator color={COLORS.primary} />
             ) : (
               <Text style={s.guestText}>Continue as Guest</Text>
             )}
-          </TouchableOpacity>
+          </AnimatedPressable>
         </View>
 
-        <TouchableOpacity 
+        <AnimatedPressable 
           style={s.toggleBtn} 
           onPress={() => setIsLogin(!isLogin)}
         >
           <Text style={s.toggleText}>
             {isLogin ? "Don't have an account? Sign Up" : "Already have an account? Sign In"}
           </Text>
-        </TouchableOpacity>
+        </AnimatedPressable>
       </View>
     </KeyboardAvoidingView>
   );

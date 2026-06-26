@@ -16,6 +16,7 @@ import { findRouteToRoom, findRouteToExit, getGeoJSONMapData, SOCKET_URL, getCac
 import { io } from "socket.io-client";
 import { PositionEngine, StepDetector } from "../positioning";
 import { SHADOWS, RADIUS, ROOM_COLORS } from "../theme/designSystem";
+import AnimatedPressable from "../components/AnimatedPressable";
 
 const { width: SW, height: SH } = Dimensions.get("window");
 
@@ -993,15 +994,15 @@ export default function NavigationScreen({ navigation, route }) {
     <View style={s.container}>
       {/* Header */}
       <View style={[s.header, { paddingTop: Math.max(insets.top, 12) }]}>
-        <TouchableOpacity style={s.backBtn} onPress={() => navigation.goBack()}>
+        <AnimatedPressable style={s.backBtn} onPress={() => navigation.goBack()}>
           <Ionicons name="arrow-back" size={22} color={colors.text} />
-        </TouchableOpacity>
+        </AnimatedPressable>
         <Text style={s.headerTitle} numberOfLines={1}>
           {targetRoom?.name || "Navigation"}
         </Text>
-        <TouchableOpacity style={s.voiceBtn} onPress={() => setVoiceEnabled(!voiceEnabled)}>
+        <AnimatedPressable style={s.voiceBtn} onPress={() => setVoiceEnabled(!voiceEnabled)}>
           <Ionicons name={voiceEnabled ? "volume-high" : "volume-mute"} size={20} color={voiceEnabled ? colors.accent : colors.textMuted} />
-        </TouchableOpacity>
+        </AnimatedPressable>
       </View>
 
       {error && (
@@ -1106,20 +1107,20 @@ export default function NavigationScreen({ navigation, route }) {
           </View>
         )}
         {!isNavigating ? (
-          <TouchableOpacity style={s.startBtn} onPress={startNavigation} disabled={gpsLoading}>
+          <AnimatedPressable style={s.startBtn} onPress={startNavigation} disabled={gpsLoading}>
             {gpsLoading ? <ActivityIndicator color="#fff" /> : <Ionicons name="navigate" size={20} color="#fff" />}
             <Text style={s.btnText}>{gpsLoading ? "Calculating Route..." : "Start Navigation"}</Text>
-          </TouchableOpacity>
+          </AnimatedPressable>
         ) : (
-          <TouchableOpacity style={[s.startBtn, s.stopBtn]} onPress={() => { setIsNavigating(false); Speech.stop(); }}>
+          <AnimatedPressable style={[s.startBtn, s.stopBtn]} onPress={() => { setIsNavigating(false); Speech.stop(); }}>
             <Ionicons name="stop" size={20} color="#fff" />
             <Text style={s.btnText}>Stop Navigation</Text>
-          </TouchableOpacity>
+          </AnimatedPressable>
         )}
-        <TouchableOpacity style={s.arToggle} onPress={() => navigation.navigate("AR", { routeData, room: targetRoom, heading: posEngine.heading, userPos, campusId })}>
+        <AnimatedPressable style={s.arToggle} onPress={() => navigation.navigate("AR", { routeData, room: targetRoom, heading: posEngine.heading, userPos, campusId })}>
           <Ionicons name="camera" size={18} color={colors.primary} />
           <Text style={{ color: colors.primary, fontWeight: "700", fontSize: 14, marginLeft: 8 }}>Switch to AR View</Text>
-        </TouchableOpacity>
+        </AnimatedPressable>
       </View>
     </View>
   );

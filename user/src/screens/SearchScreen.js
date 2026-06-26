@@ -8,6 +8,7 @@ import { ThemeContext } from "../context/ThemeContext";
 import { useGeofence } from "../context/GeofenceContext";
 import { searchRooms, getRoomsByCat } from "../api";
 import { SHADOWS, RADIUS, ROOM_COLORS, ROOM_ICONS } from "../theme/designSystem";
+import AnimatedPressable from "../components/AnimatedPressable";
 
 const CATS = [
   { label: "All", filter: null, icon: "apps" },
@@ -158,10 +159,9 @@ export default function SearchScreen({ navigation, route }) {
     const color = ROOM_COLORS[item.type] || colors.primary;
     return (
       <Animated.View style={{ opacity: listAnim, transform: [{ translateY: listAnim.interpolate({ inputRange: [0, 1], outputRange: [10, 0] }) }] }}>
-        <TouchableOpacity
+        <AnimatedPressable
           style={s.resultItem}
           onPress={() => navigation.navigate("Navigation", { room: item, campusId })}
-          activeOpacity={0.8}
         >
           <View style={[s.iconWrap, { backgroundColor: color + "18" }]}>
             <Ionicons name={ROOM_ICONS[item.type] || "location"} size={22} color={color} />
@@ -174,13 +174,13 @@ export default function SearchScreen({ navigation, route }) {
               {item.floorId?.name ? ` · ${item.floorId.name}` : ""}
             </Text>
           </View>
-          <TouchableOpacity
+          <AnimatedPressable
             style={s.navChip}
             onPress={() => navigation.navigate("Navigation", { room: item, campusId })}
           >
             <Ionicons name="navigate" size={16} color={colors.primary} />
-          </TouchableOpacity>
-        </TouchableOpacity>
+          </AnimatedPressable>
+        </AnimatedPressable>
       </Animated.View>
     );
   };
@@ -229,14 +229,14 @@ export default function SearchScreen({ navigation, route }) {
             const isActive = activeCat === c.filter;
             const color = isActive ? colors.primary : colors.textMuted;
             return (
-              <TouchableOpacity
+              <AnimatedPressable
                 key={i}
                 style={[s.catChip, { borderColor: isActive ? colors.primary : colors.border, backgroundColor: isActive ? colors.primary + "15" : "transparent" }]}
                 onPress={() => setActiveCat(isActive ? null : c.filter)}
               >
                 <Ionicons name={c.icon} size={14} color={color} />
                 <Text style={[s.catLabel, { color }]}>{c.label}</Text>
-              </TouchableOpacity>
+              </AnimatedPressable>
             );
           })}
         </ScrollView>
@@ -275,14 +275,14 @@ export default function SearchScreen({ navigation, route }) {
           <Text style={s.sectionTitle}>Popular Searches</Text>
           <View style={s.suggestWrap}>
             {SUGGESTED.map((s2, i) => (
-              <TouchableOpacity key={i} style={s.suggestChip} onPress={() => setQuery(s2)}>
+              <AnimatedPressable key={i} style={s.suggestChip} onPress={() => setQuery(s2)}>
                 <Text style={s.suggestText}>{s2}</Text>
-              </TouchableOpacity>
+              </AnimatedPressable>
             ))}
           </View>
           <Text style={s.sectionTitle}>Browse Categories</Text>
           {CATS.filter(c => c.filter).map((c, i) => (
-            <TouchableOpacity
+            <AnimatedPressable
               key={i}
               style={[s.resultItem]}
               onPress={() => setActiveCat(c.filter)}
@@ -292,7 +292,7 @@ export default function SearchScreen({ navigation, route }) {
               </View>
               <Text style={s.roomName}>{c.label}</Text>
               <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-            </TouchableOpacity>
+            </AnimatedPressable>
           ))}
         </ScrollView>
       )}

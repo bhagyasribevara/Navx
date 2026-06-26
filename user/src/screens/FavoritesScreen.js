@@ -6,7 +6,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { ThemeContext } from "../context/ThemeContext";
 import { SHADOWS, RADIUS, ROOM_COLORS } from "../theme/designSystem";
-
+import AnimatedPressable from "../components/AnimatedPressable";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 export default function FavoritesScreen({ navigation }) {
@@ -114,31 +114,31 @@ export default function FavoritesScreen({ navigation }) {
     <View style={s.container}>
       <Animated.View style={[s.header, { opacity: headerAnim, transform: [{ translateY: headerAnim.interpolate({ inputRange: [0, 1], outputRange: [-16, 0] }) }] }]}>
         <View style={s.headerRow}>
-          <TouchableOpacity style={{ marginRight: 14 }} onPress={() => navigation.goBack()}>
+          <AnimatedPressable style={{ marginRight: 14 }} onPress={() => navigation.goBack()}>
             <Ionicons name="arrow-back" size={24} color={colors.text} />
-          </TouchableOpacity>
+          </AnimatedPressable>
           <Text style={s.title}>Saved Places</Text>
-          <TouchableOpacity style={s.addBtn}>
+          <AnimatedPressable style={s.addBtn}>
             <Ionicons name="add" size={22} color={colors.primary} />
-          </TouchableOpacity>
+          </AnimatedPressable>
         </View>
         <View style={s.tabs}>
-          <TouchableOpacity
+          <AnimatedPressable
             style={[s.tab, { borderColor: activeTab === "favorites" ? colors.primary : colors.border, backgroundColor: activeTab === "favorites" ? colors.primary + "15" : "transparent" }]}
             onPress={() => setActiveTab("favorites")}
           >
             <Text style={[s.tabText, { color: activeTab === "favorites" ? colors.primary : colors.textMuted }]}>
               ⭐ Favorites
             </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
+          </AnimatedPressable>
+          <AnimatedPressable
             style={[s.tab, { borderColor: activeTab === "recent" ? colors.primary : colors.border, backgroundColor: activeTab === "recent" ? colors.primary + "15" : "transparent" }]}
             onPress={() => setActiveTab("recent")}
           >
             <Text style={[s.tabText, { color: activeTab === "recent" ? colors.primary : colors.textMuted }]}>
               🕐 Recent
             </Text>
-          </TouchableOpacity>
+          </AnimatedPressable>
         </View>
       </Animated.View>
 
@@ -174,10 +174,9 @@ export default function FavoritesScreen({ navigation }) {
                 { translateX: itemAnims[i].interpolate({ inputRange: [0, 1], outputRange: [-30, 0] }) }
               ],
             }}>
-              <TouchableOpacity
+              <AnimatedPressable
                 style={s.card}
                 onPress={() => navigation.navigate("Navigation", { room: loc, campusId: loc.campusId })}
-                activeOpacity={0.85}
               >
                 <View style={[s.iconWrap, { backgroundColor: (ROOM_COLORS[loc.type] || colors.primary) + "20" }]}>
                   <Ionicons name="location" size={24} color={ROOM_COLORS[loc.type] || colors.primary} />
@@ -187,22 +186,22 @@ export default function FavoritesScreen({ navigation }) {
                   <Text style={s.meta}>{loc.type.toUpperCase()}</Text>
                 </View>
                 <View style={s.actions}>
-                  <TouchableOpacity
+                  <AnimatedPressable
                     style={[s.actionBtn, { backgroundColor: colors.primary + "15" }]}
                     onPress={() => navigation.navigate("Navigation", { room: loc, campusId: loc.campusId })}
                   >
                     <Ionicons name="navigate" size={18} color={colors.primary} />
-                  </TouchableOpacity>
+                  </AnimatedPressable>
                   {activeTab === "favorites" && (
-                    <TouchableOpacity
+                    <AnimatedPressable
                       style={[s.actionBtn, { backgroundColor: colors.danger + "15" }]}
                       onPress={() => removeFavorite(loc._id)}
                     >
                       <Ionicons name="heart-dislike" size={18} color={colors.danger} />
-                    </TouchableOpacity>
+                    </AnimatedPressable>
                   )}
                 </View>
-              </TouchableOpacity>
+              </AnimatedPressable>
             </Animated.View>
           ))
         )}
