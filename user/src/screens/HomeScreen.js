@@ -8,13 +8,12 @@ import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { ThemeContext } from "../context/ThemeContext";
 import { useGeofence } from "../context/GeofenceContext";
-import { LinearGradient } from "expo-linear-gradient";
-import { BlurView } from "expo-blur";
 import { getCampuses, cachedGet, downloadCampusOffline, getRoomsByCat, getCampaigns, SOCKET_URL, createMeetSession } from "../api";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SHADOWS, RADIUS, QUICK_ACTIONS, ROOM_COLORS } from "../theme/designSystem";
 import WeatherWidget from "../components/WeatherWidget";
 import AnimatedPressable from "../components/AnimatedPressable";
+import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
 
 
@@ -25,45 +24,45 @@ const GREETING = HOUR < 12 ? "Good Morning" : HOUR < 17 ? "Good Afternoon" : "Go
 
 const VENUE_CATS = {
   campus: [
-    { label: "Labs", icon: "flask", color: "#34d399", filter: "lab" },
-    { label: "Classes", icon: "school", color: "#60a5fa", filter: "classroom" },
-    { label: "Offices", icon: "business", color: "#a78bfa", filter: "office" },
-    { label: "Cafeteria", icon: "restaurant", color: "#f87171", filter: "cafeteria" },
-    { label: "Library", icon: "library", color: "#2dd4bf", filter: "library" },
-    { label: "Restrooms", icon: "water", color: "#fbbf24", filter: "restroom" },
-    { label: "Parking", icon: "car", color: "#94a3b8", filter: "parking" },
+    { label: "Labs", icon: "flask", color: "#22c55e", filter: "lab" },
+    { label: "Classes", icon: "school", color: "#3b82f6", filter: "classroom" },
+    { label: "Offices", icon: "business", color: "#8b5cf6", filter: "office" },
+    { label: "Cafeteria", icon: "restaurant", color: "#ef4444", filter: "cafeteria" },
+    { label: "Library", icon: "library", color: "#06b6d4", filter: "library" },
+    { label: "Restrooms", icon: "water", color: "#f59e0b", filter: "restroom" },
+    { label: "Parking", icon: "car", color: "#64748b", filter: "parking" },
   ],
   hospital: [
-    { label: "Wards", icon: "bed", color: "#60a5fa", filter: "ward" },
-    { label: "ICU", icon: "pulse", color: "#f87171", filter: "icu" },
-    { label: "Emergency", icon: "alert-circle", color: "#f87171", filter: "emergency" },
-    { label: "Pharmacy", icon: "medkit", color: "#34d399", filter: "pharmacy" },
-    { label: "Reception", icon: "information-circle", color: "#a78bfa", filter: "reception" },
-    { label: "Radiology", icon: "scan", color: "#fbbf24", filter: "radiology" },
+    { label: "Wards", icon: "bed", color: "#3b82f6", filter: "ward" },
+    { label: "ICU", icon: "pulse", color: "#ef4444", filter: "icu" },
+    { label: "Emergency", icon: "alert-circle", color: "#dc2626", filter: "emergency" },
+    { label: "Pharmacy", icon: "medkit", color: "#22c55e", filter: "pharmacy" },
+    { label: "Reception", icon: "information-circle", color: "#8b5cf6", filter: "reception" },
+    { label: "Radiology", icon: "scan", color: "#f59e0b", filter: "radiology" },
   ],
   airport: [
-    { label: "Gates", icon: "airplane", color: "#60a5fa", filter: "gate" },
-    { label: "Check-in", icon: "checkmark-circle", color: "#34d399", filter: "check_in" },
-    { label: "Lounge", icon: "cafe", color: "#a78bfa", filter: "lounge" },
-    { label: "Baggage", icon: "briefcase", color: "#fbbf24", filter: "baggage_claim" },
-    { label: "Security", icon: "shield-checkmark", color: "#f87171", filter: "security" },
-    { label: "Duty Free", icon: "bag-handle", color: "#f472b6", filter: "duty_free" },
+    { label: "Gates", icon: "airplane", color: "#3b82f6", filter: "gate" },
+    { label: "Check-in", icon: "checkmark-circle", color: "#22c55e", filter: "check_in" },
+    { label: "Lounge", icon: "cafe", color: "#8b5cf6", filter: "lounge" },
+    { label: "Baggage", icon: "briefcase", color: "#f59e0b", filter: "baggage_claim" },
+    { label: "Security", icon: "shield-checkmark", color: "#ef4444", filter: "security" },
+    { label: "Duty Free", icon: "bag-handle", color: "#ec4899", filter: "duty_free" },
   ],
   mall: [
-    { label: "Stores", icon: "storefront", color: "#60a5fa", filter: "store" },
-    { label: "Food Court", icon: "fast-food", color: "#f87171", filter: "food_court" },
-    { label: "Entertain", icon: "game-controller", color: "#f472b6", filter: "entertainment" },
-    { label: "ATM", icon: "card", color: "#34d399", filter: "atm" },
-    { label: "Parking", icon: "car", color: "#94a3b8", filter: "parking" },
-    { label: "Restrooms", icon: "water", color: "#fbbf24", filter: "restroom" },
+    { label: "Stores", icon: "storefront", color: "#3b82f6", filter: "store" },
+    { label: "Food Court", icon: "fast-food", color: "#ef4444", filter: "food_court" },
+    { label: "Entertain", icon: "game-controller", color: "#ec4899", filter: "entertainment" },
+    { label: "ATM", icon: "card", color: "#22c55e", filter: "atm" },
+    { label: "Parking", icon: "car", color: "#64748b", filter: "parking" },
+    { label: "Restrooms", icon: "water", color: "#f59e0b", filter: "restroom" },
   ],
   building: [
-    { label: "Offices", icon: "business", color: "#a78bfa", filter: "office" },
-    { label: "Conference", icon: "people", color: "#60a5fa", filter: "conference" },
-    { label: "Lobby", icon: "home", color: "#818cf8", filter: "lobby" },
-    { label: "Gym", icon: "fitness", color: "#34d399", filter: "gym" },
-    { label: "Cafeteria", icon: "restaurant", color: "#f87171", filter: "cafeteria" },
-    { label: "Restrooms", icon: "water", color: "#fbbf24", filter: "restroom" },
+    { label: "Offices", icon: "business", color: "#8b5cf6", filter: "office" },
+    { label: "Conference", icon: "people", color: "#3b82f6", filter: "conference" },
+    { label: "Lobby", icon: "home", color: "#6366f1", filter: "lobby" },
+    { label: "Gym", icon: "fitness", color: "#22c55e", filter: "gym" },
+    { label: "Cafeteria", icon: "restaurant", color: "#ef4444", filter: "cafeteria" },
+    { label: "Restrooms", icon: "water", color: "#f59e0b", filter: "restroom" },
   ],
 };
 
@@ -185,15 +184,14 @@ export default function HomeScreen({ navigation }) {
   const [showNotifs, setShowNotifs] = useState(false);
   const { notifications, markNotifRead, hasUnread } = useLiveMeet() || { notifications: [], markNotifRead: () => {}, hasUnread: false };
 
-  const s = StyleSheet.create({
-    container: { flex: 1, backgroundColor: colors.bg },
-    header: {
-      paddingTop: 16,
-      paddingHorizontal: 20, paddingBottom: 24,
-      backgroundColor: "#eef2ff",
-      borderBottomLeftRadius: 28, borderBottomRightRadius: 28,
-    },
-    headerTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 18 },
+    const s = StyleSheet.create({
+      container: { flex: 1, backgroundColor: 'transparent' },
+      header: {
+        paddingTop: Platform.OS === 'ios' ? 8 : 22,
+        paddingHorizontal: 20, paddingBottom: 8,
+        backgroundColor: "transparent",
+      },
+    headerTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 14 },
     greetingText: { fontSize: 13, color: colors.textSec, fontWeight: "600" },
     appName: { fontSize: 28, fontWeight: "800", color: colors.text, letterSpacing: -0.5 },
     appAccent: { color: colors.primary },
@@ -211,36 +209,31 @@ export default function HomeScreen({ navigation }) {
     },
     searchRow: {
       flexDirection: "row", alignItems: "center",
-      backgroundColor: "rgba(255, 255, 255, 0.4)",
-      borderRadius: RADIUS.md, paddingHorizontal: 14,
-      borderWidth: 1, borderColor: "rgba(255, 255, 255, 0.6)",
-      shadowColor: "#6366f1", shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.04, shadowRadius: 8, elevation: 2,
-      overflow: 'hidden',
+      backgroundColor: colors.card,
+      borderRadius: 99, paddingHorizontal: 16,
+      borderWidth: 1, borderColor: "rgba(99, 102, 241, 0.12)",
+      ...SHADOWS.sm,
     },
-    searchInput: { flex: 1, paddingVertical: 14, fontSize: 15, color: colors.text, marginLeft: 10 },
-    section: { paddingHorizontal: 20, marginTop: 22 },
+    searchInput: { flex: 1, paddingVertical: 12, fontSize: 15, color: colors.text, marginLeft: 8 },
+    qrBtn: {
+      width: 36, height: 36, borderRadius: RADIUS.sm,
+      backgroundColor: colors.primary, alignItems: "center", justifyContent: "center",
+    },
+    section: { paddingHorizontal: 20, marginTop: 14 },
     secRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 14 },
-    secTitle: { fontSize: 17, fontWeight: "700", color: colors.text },
+    secTitle: { fontSize: 18, fontWeight: "800", color: colors.text, letterSpacing: -0.3 },
     seeAll: { fontSize: 13, fontWeight: "600", color: colors.primary },
     quickRow: { flexDirection: "row", justifyContent: "space-between" },
     quickCard: {
       width: (SW - 56) / 4, alignItems: "center",
-      backgroundColor: "rgba(255, 255, 255, 0.4)", paddingVertical: 10, paddingHorizontal: 4,
-      borderRadius: RADIUS.md, borderWidth: 1, borderColor: "rgba(255, 255, 255, 0.6)",
-      shadowColor: "#6366f1", shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.04, shadowRadius: 8, elevation: 2,
+      backgroundColor: colors.card, paddingVertical: 14, paddingHorizontal: 4,
+      borderRadius: 18, borderWidth: 1, borderColor: "rgba(99, 102, 241, 0.08)",
+      ...SHADOWS.sm,
     },
-    quickIcon: {
-      width: 42, height: 42, borderRadius: 14,
-      backgroundColor: "rgba(255, 255, 255, 0.55)",
-      borderWidth: 1, borderColor: "rgba(255, 255, 255, 0.5)",
-      alignItems: "center", justifyContent: "center",
-      marginBottom: 6,
-    },
+    quickIcon: { width: 48, height: 48, borderRadius: 16, alignItems: "center", justifyContent: "center", marginBottom: 8 },
     quickLabel: { fontSize: 11, fontWeight: "700", color: colors.textSec, textAlign: "center" },
     banner: {
-      marginHorizontal: 20, marginTop: 22, borderRadius: RADIUS.lg, overflow: "hidden",
+      marginHorizontal: 20, marginTop: 22, borderRadius: 20, overflow: "hidden",
       ...SHADOWS.lg,
     },
     bannerInner: { padding: 20 },
@@ -254,57 +247,54 @@ export default function HomeScreen({ navigation }) {
     bannerSub: { fontSize: 13, color: "rgba(255,255,255,0.75)", marginBottom: 14 },
     bannerBtn: {
       flexDirection: "row", alignItems: "center",
-      paddingHorizontal: 14,
-      paddingVertical: 9, borderRadius: RADIUS.sm, alignSelf: "flex-start",
+      backgroundColor: "#fff", paddingHorizontal: 16,
+      paddingVertical: 9, borderRadius: 99, alignSelf: "flex-start",
+      ...SHADOWS.sm,
     },
     bannerBtnText: { fontSize: 13, fontWeight: "700", color: "#4f46e5", marginLeft: 6 },
     catChip: {
       flexDirection: "row", alignItems: "center",
-      paddingHorizontal: 14, paddingVertical: 8,
+      backgroundColor: colors.card,
+      paddingHorizontal: 14, paddingVertical: 9,
       borderRadius: 99, marginRight: 8,
-      borderWidth: 1,
+      borderWidth: 1, borderColor: colors.border,
     },
     catLabel: { fontSize: 13, fontWeight: "600", color: colors.textSec, marginLeft: 6 },
     recentCard: {
       flexDirection: "row", alignItems: "center",
-      backgroundColor: "rgba(255, 255, 255, 0.4)", borderRadius: RADIUS.md,
-      padding: 14, marginBottom: 10,
-      borderWidth: 1, borderColor: "rgba(255, 255, 255, 0.6)",
-      shadowColor: "#6366f1", shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.04, shadowRadius: 8, elevation: 2,
+      backgroundColor: colors.card, borderRadius: 16,
+      padding: 12, marginBottom: 10,
+      borderWidth: 1, borderColor: "rgba(99, 102, 241, 0.25)", ...SHADOWS.sm,
     },
-    recentIcon: { width: 44, height: 44, borderRadius: RADIUS.sm, alignItems: "center", justifyContent: "center", marginRight: 12 },
+    recentIcon: { width: 40, height: 40, borderRadius: 99, alignItems: "center", justifyContent: "center", marginRight: 12 },
     recentName: { fontSize: 15, fontWeight: "700", color: colors.text },
     recentMeta: { fontSize: 12, color: colors.textSec, marginTop: 2 },
-    navBadgeGradient: {
-      width: 36, height: 36, borderRadius: 18,
-      alignItems: "center", justifyContent: "center",
-      shadowColor: "#6366f1", shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.15, shadowRadius: 4, elevation: 2,
+    navBadge: {
+      width: 36, height: 36, borderRadius: 99,
+      backgroundColor: colors.primary + "15", alignItems: "center", justifyContent: "center",
     },
     campusCard: {
-      backgroundColor: "rgba(255, 255, 255, 0.5)", borderRadius: RADIUS.lg,
+      backgroundColor: colors.card, borderRadius: 20,
       overflow: "hidden", marginBottom: 12,
-      borderWidth: 1, borderColor: "rgba(255, 255, 255, 0.6)",
-      shadowColor: "#6366f1", shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.04, shadowRadius: 8, elevation: 2,
+      borderWidth: 1, borderColor: "rgba(99, 102, 241, 0.25)", ...SHADOWS.md,
     },
+    campusBar: { height: 4 },
     campusBody: { padding: 16 },
     campusName: { fontSize: 17, fontWeight: "800", color: colors.text },
     campusDesc: { fontSize: 13, color: colors.textSec, marginTop: 4, lineHeight: 18 },
     campusAddr: { flexDirection: "row", alignItems: "center", marginTop: 8 },
-    campusActions: { flexDirection: "row", gap: 8, marginTop: 14 },
+    campusActions: { marginTop: 14 },
+    mapBtn: {
+      flexDirection: "row", alignItems: "center",
+      backgroundColor: colors.primary, paddingVertical: 12,
+      borderRadius: 99, justifyContent: "center",
+      ...SHADOWS.primary(),
+    },
     arBtn: {
-      flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center",
-      backgroundColor: "rgba(255, 255, 255, 0.5)", paddingVertical: 11, borderRadius: RADIUS.sm,
-      borderWidth: 1, borderColor: "rgba(255, 255, 255, 0.8)",
-    },
-    campusExploreGradient: {
-      flex: 1, borderRadius: RADIUS.sm, overflow: 'hidden'
-    },
-    campusExploreBtn: {
-      flexDirection: "row", alignItems: "center", justifyContent: "center",
-      paddingVertical: 11,
+      flexDirection: "row", alignItems: "center",
+      backgroundColor: colors.primary + "18", paddingHorizontal: 14,
+      paddingVertical: 11, borderRadius: 99,
+      borderWidth: 1, borderColor: colors.primary + "35",
     },
     empty: { alignItems: "center", paddingVertical: 36 },
     emptyIcon: {
@@ -314,28 +304,27 @@ export default function HomeScreen({ navigation }) {
     emptyTitle: { fontSize: 16, fontWeight: "700", color: colors.text, marginBottom: 6 },
     emptyText: { fontSize: 13, color: colors.textSec, textAlign: "center", lineHeight: 20 },
     campaignCard: {
-      width: 280, backgroundColor: colors.card,
-      borderRadius: RADIUS.lg, marginRight: 16,
-      borderWidth: 1, borderColor: colors.border, ...SHADOWS.md, overflow: 'hidden'
+      width: 230, height: 240, backgroundColor: colors.card,
+      borderRadius: RADIUS.md, marginRight: 14,
+      borderWidth: 1, borderColor: "rgba(99, 102, 241, 0.25)", ...SHADOWS.sm, overflow: 'hidden'
     },
-    campaignImg: { width: '100%', height: 120, backgroundColor: colors.border },
-    campaignContent: { padding: 16, paddingBottom: 12 },
-    campaignTitle: { fontSize: 16, fontWeight: "800", color: colors.text, marginBottom: 4 },
-    campaignDesc: { fontSize: 13, color: colors.textSec, lineHeight: 18 },
+    campaignImg: { width: '100%', height: 90 },
+    campaignImgPlaceholder: { width: '100%', height: 90, alignItems: 'center', justifyContent: 'center' },
+    campaignContent: { flex: 1, padding: 10, justifyContent: 'space-between' },
+    campaignInfo: { flex: 1 },
+    campaignTitle: { fontSize: 14, fontWeight: "800", color: colors.text, marginBottom: 2 },
+    campaignDesc: { fontSize: 12, color: colors.textSec, lineHeight: 16, marginBottom: 4 },
     campaignBadge: {
-      alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 4,
-      borderRadius: 6, backgroundColor: colors.borderLight,
-      marginBottom: 8
+      alignSelf: 'flex-start', paddingHorizontal: 6, paddingVertical: 2,
+      borderRadius: 4,
+      marginBottom: 4
     },
-    campaignBadgeText: { fontSize: 10, fontWeight: "600", color: colors.textSec, textTransform: 'uppercase', letterSpacing: 0.5 },
-    campaignNavBtnContainer: {
-      width: '100%',
-    },
+    campaignBadgeText: { fontSize: 9, fontWeight: "800", color: colors.primary, textTransform: 'uppercase' },
     campaignNavBtn: {
       flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-      paddingVertical: 12,
+      backgroundColor: colors.primary, paddingVertical: 7, borderRadius: RADIUS.xs,
     },
-    campaignNavText: { color: '#fff', fontSize: 13, fontWeight: "700", marginLeft: 6 }
+    campaignNavText: { color: '#fff', fontSize: 12, fontWeight: "700", marginLeft: 4 }
   });
 
   if (loading) {
@@ -542,22 +531,21 @@ export default function HomeScreen({ navigation }) {
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.bg }}>
+    <View style={{ flex: 1, backgroundColor: '#ffffff' }}>
       <LinearGradient
-        colors={['rgba(99, 102, 241, 0.15)', 'rgba(139, 92, 246, 0.04)', 'rgba(255, 255, 255, 0)']}
+        colors={['rgba(139, 92, 246, 0.22)', 'rgba(99, 102, 241, 0.10)', 'rgba(255, 255, 255, 0)']}
         style={{
           position: 'absolute',
           top: 0,
           left: 0,
           right: 0,
-          height: 350,
-          zIndex: 0
+          height: 380,
         }}
         start={{ x: 0.5, y: 0 }}
         end={{ x: 0.5, y: 1 }}
       />
       <ScrollView
-        style={[s.container, { backgroundColor: 'transparent' }]}
+        style={s.container}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 100 }}
         refreshControl={
@@ -578,22 +566,21 @@ export default function HomeScreen({ navigation }) {
               <Text style={s.greetingText}>{GREETING} 👋</Text>
               <Text style={s.appName}>Nav<Text style={s.appAccent}>X</Text></Text>
             </View>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
               <WeatherWidget />
-              <TouchableOpacity style={[s.avatar, { width: 42, height: 42 }]} onPress={() => setShowNotifs(true)}>
+              <AnimatedPressable style={[s.avatar, { width: 42, height: 42 }]} onPress={() => setShowNotifs(true)}>
                 <Ionicons name="notifications" size={20} color={colors.primary} />
                 {hasUnread && <View style={s.notifDot} />}
-              </TouchableOpacity>
-              <TouchableOpacity style={[s.avatar, { width: 42, height: 42 }]} onPress={() => navigation.navigate("Settings")}>
+              </AnimatedPressable>
+              <AnimatedPressable style={[s.avatar, { width: 42, height: 42 }]} onPress={() => navigation.navigate("Settings")}>
                 <Ionicons name="person" size={20} color={colors.primary} />
-              </TouchableOpacity>
+              </AnimatedPressable>
             </View>
           </View>
           <View style={s.searchRow}>
-            <BlurView intensity={25} tint="light" style={StyleSheet.absoluteFill} />
-            <Ionicons name="search" size={20} color={colors.textMuted} style={{ zIndex: 1 }} />
+            <Ionicons name="search" size={20} color={colors.textMuted} />
             <TextInput
-              style={[s.searchInput, { zIndex: 1 }]}
+              style={s.searchInput}
               placeholder="Search rooms, labs, blocks…"
               placeholderTextColor={colors.textMuted}
               onFocus={() => navigation.navigate("Search")}
@@ -616,12 +603,11 @@ export default function HomeScreen({ navigation }) {
                 ],
               }}>
                 <AnimatedPressable 
-                  style={[s.quickCard, { overflow: 'hidden' }]} 
+                  style={[s.quickCard, { borderColor: a.color + '22', shadowColor: a.color }]} 
                   onPress={() => a.screen === 'MeetModal' ? setShowMeetModal(true) : navigation.navigate(a.screen)}
                 >
-                  <BlurView intensity={25} tint="light" style={StyleSheet.absoluteFill} />
-                  <View style={s.quickIcon}>
-                    <Ionicons name={a.icon} size={22} color={a.color} />
+                  <View style={[s.quickIcon, { backgroundColor: a.bg }]}>
+                    <Ionicons name={a.icon} size={24} color={a.color} />
                   </View>
                   <Text style={s.quickLabel}>{a.label}</Text>
                 </AnimatedPressable>
@@ -642,31 +628,34 @@ export default function HomeScreen({ navigation }) {
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingRight: 20 }}>
               {campaigns.map(c => (
                 <AnimatedPressable key={c._id} style={s.campaignCard} onPress={() => navigation.navigate('CampaignDetail', { campaign: c })}>
-                  {c.image && <Image source={{ uri: c.image.startsWith('http') ? c.image : `${SOCKET_URL}${c.image}` }} style={s.campaignImg} resizeMode="cover" />}
+                  {c.image ? (
+                    <Image source={{ uri: c.image.startsWith('http') ? c.image : `${SOCKET_URL}${c.image}` }} style={s.campaignImg} resizeMode="cover" />
+                  ) : (
+                    <LinearGradient
+                      colors={[colors.primary + '35', colors.primary + '10']}
+                      style={s.campaignImgPlaceholder}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                    >
+                      <Ionicons name="megaphone-outline" size={32} color={colors.primary} />
+                    </LinearGradient>
+                  )}
                   <View style={s.campaignContent}>
-                    {c.category && (
-                      <View style={s.campaignBadge}>
-                        <Text style={s.campaignBadgeText}>{c.category}</Text>
+                    <View style={s.campaignInfo}>
+                      <View style={[s.campaignBadge, { backgroundColor: c.category ? (colors.primary + "15") : "transparent" }]}>
+                        <Text style={s.campaignBadgeText}>{c.category || "UPDATE"}</Text>
                       </View>
-                    )}
-                    <Text style={s.campaignTitle} numberOfLines={1}>{c.title}</Text>
-                    <Text style={s.campaignDesc} numberOfLines={2}>{c.description}</Text>
-                  </View>
-                  <LinearGradient
-                    colors={['#8b5cf6', '#3b82f6']}
-                    style={s.campaignNavBtnContainer}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                  >
-                    <TouchableOpacity
+                      <Text style={s.campaignTitle} numberOfLines={1}>{c.title}</Text>
+                      <Text style={s.campaignDesc} numberOfLines={2}>{c.description}</Text>
+                    </View>
+                    <AnimatedPressable 
                       style={s.campaignNavBtn}
                       onPress={() => navigation.navigate('CampaignDetail', { campaign: c })}
-                      activeOpacity={0.8}
                     >
                       <Ionicons name="navigate" size={15} color="#fff" />
                       <Text style={s.campaignNavText}>Navigate Here</Text>
-                    </TouchableOpacity>
-                  </LinearGradient>
+                    </AnimatedPressable>
+                  </View>
                 </AnimatedPressable>
               ))}
             </ScrollView>
@@ -674,21 +663,15 @@ export default function HomeScreen({ navigation }) {
         )}
 
         {/* Banner */}
-        <AnimatedPressable style={[s.banner, { overflow: 'hidden' }]} onPress={() => navigation.navigate("Map", { campusId: activeCampusId })}>
+        <AnimatedPressable style={s.banner} onPress={() => navigation.navigate("Map", { campusId: activeCampusId })}>
           <LinearGradient
-            colors={['rgba(139, 92, 246, 0.45)', 'rgba(6, 182, 212, 0.45)']}
-            style={s.bannerInner}
+            colors={[colors.secondary || '#d946ef', colors.primary || '#8b5cf6']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
+            style={s.bannerInner}
           >
-            <BlurView intensity={25} tint="light" style={StyleSheet.absoluteFill} />
-            <View style={{ position: 'absolute', right: 15, top: 15, width: 110, height: 90, opacity: 0.2 }}>
-              <View style={{ width: 60, height: 45, borderRightWidth: 1.5, borderBottomWidth: 1.5, borderColor: '#fff' }} />
-              <View style={{ width: 45, height: 35, position: 'absolute', right: 0, top: 0, borderLeftWidth: 1.5, borderBottomWidth: 1.5, borderColor: '#fff' }} />
-              <View style={{ width: 40, height: 35, position: 'absolute', left: 0, bottom: 0, borderTopWidth: 1.5, borderRightWidth: 1.5, borderColor: '#fff' }} />
-              <View style={{ width: 50, height: 40, position: 'absolute', right: 0, bottom: 0, borderTopWidth: 1.5, borderLeftWidth: 1.5, borderColor: '#fff' }} />
-              <View style={{ width: 25, height: 2, backgroundColor: '#fff', position: 'absolute', left: 15, top: 20 }} />
-              <View style={{ width: 2, height: 20, backgroundColor: '#fff', position: 'absolute', right: 25, bottom: 10 }} />
+            <View style={{ position: "absolute", right: 20, top: 10, opacity: 0.15 }}>
+              <Ionicons name="map" size={90} color="#fff" />
             </View>
             <View style={s.bannerBadge}>
               <Ionicons name="flash" size={10} color="#fff" />
@@ -696,22 +679,10 @@ export default function HomeScreen({ navigation }) {
             </View>
             <Text style={s.bannerTitle}>Interactive Floor Map</Text>
             <Text style={s.bannerSub}>Explore with real-time indoor positioning</Text>
-            <TouchableOpacity 
-              style={[s.bannerBtn, { 
-                backgroundColor: 'rgba(255, 255, 255, 0.65)', 
-                borderWidth: 1, 
-                borderColor: 'rgba(255, 255, 255, 0.85)',
-                shadowColor: '#fff',
-                shadowOffset: { width: 0, height: 0 },
-                shadowOpacity: 0.3,
-                shadowRadius: 5,
-                elevation: 1
-              }]} 
-              onPress={() => navigation.navigate("Map", { campusId: activeCampusId })}
-            >
-              <Ionicons name="map" size={16} color="#6366f1" />
-              <Text style={[s.bannerBtnText, { color: '#6366f1' }]}>Open Map</Text>
-            </TouchableOpacity>
+            <AnimatedPressable style={s.bannerBtn} onPress={() => navigation.navigate("Map", { campusId: activeCampusId })}>
+              <Ionicons name="map" size={16} color={colors.secondary || "#8b5cf6"} />
+              <Text style={s.bannerBtnText}>Open Map</Text>
+            </AnimatedPressable>
           </LinearGradient>
         </AnimatedPressable>
 
@@ -720,12 +691,9 @@ export default function HomeScreen({ navigation }) {
           <View style={[s.secRow, { paddingHorizontal: 20 }]}>
             <Text style={s.secTitle}>Browse by Category</Text>
           </View>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 10 }}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20 }}>
             {(VENUE_CATS[campuses.find(c => c._id === activeCampusId)?.venueType] || VENUE_CATS.campus).map((c, i) => (
-              <AnimatedPressable 
-                key={i} 
-                style={[s.catChip, { backgroundColor: c.color + "12", borderColor: c.color + "35" }]} 
-                onPress={async () => {
+              <AnimatedPressable key={i} style={s.catChip} onPress={async () => {
                 if (c.filter === 'parking' && activeCampusId) {
                   try {
                     const rooms = await getRoomsByCat(activeCampusId, 'parking');
@@ -764,23 +732,17 @@ export default function HomeScreen({ navigation }) {
             {recentRooms.map(rm => {
               const roomColor = ROOM_COLORS[rm.type] || colors.primary;
               return (
-                <AnimatedPressable key={rm._id} style={[s.recentCard, { overflow: 'hidden' }]} onPress={() => navigation.navigate("Navigation", { room: rm, campusId: rm.campusId })}>
-                  <BlurView intensity={15} tint="light" style={StyleSheet.absoluteFill} />
-                  <View style={[s.recentIcon, { backgroundColor: colors.primary + "18", borderWidth: 1, borderColor: "rgba(255, 255, 255, 0.4)" }]}>
-                    <Ionicons name="location" size={20} color={colors.primary} />
+                <AnimatedPressable key={rm._id} style={s.recentCard} onPress={() => navigation.navigate("Navigation", { room: rm, campusId: rm.campusId })}>
+                  <View style={[s.recentIcon, { backgroundColor: roomColor + "20" }]}>
+                    <Ionicons name="location" size={22} color={roomColor} />
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={s.recentName}>{rm.name}</Text>
                     <Text style={s.recentMeta}>{(rm.type || "room").toUpperCase()}{rm.roomNumber ? ` · Room ${rm.roomNumber}` : ""}</Text>
                   </View>
-                  <LinearGradient
-                    colors={['#8b5cf6', '#3b82f6']}
-                    style={s.navBadgeGradient}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                  >
-                    <Ionicons name="navigate" size={15} color="#fff" />
-                  </LinearGradient>
+                  <View style={s.navBadge}>
+                    <Ionicons name="navigate" size={18} color={colors.primary} />
+                  </View>
                 </AnimatedPressable>
               );
             })}
@@ -794,43 +756,23 @@ export default function HomeScreen({ navigation }) {
             <Ionicons name={VENUE_ICONS_MAP[campuses.find(c => c._id === activeCampusId)?.venueType] || "business-outline"} size={18} color={colors.textMuted} />
           </View>
           {campuses.filter(c => c._id === activeCampusId).map((campus, i) => {
+            const g = GRAD_BARS[i % GRAD_BARS.length];
             return (
-              <AnimatedPressable key={campus._id} style={[s.campusCard, { overflow: 'hidden' }]} onPress={() => navigation.navigate("Map", { campusId: campus._id, campusName: campus.name })}>
-                <BlurView intensity={16} tint="light" style={StyleSheet.absoluteFill} />
-                <LinearGradient
-                  colors={['#8b5cf6', '#3b82f6']}
-                  style={{ height: 4, width: '100%' }}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                />
+              <AnimatedPressable key={campus._id} style={s.campusCard} onPress={() => navigation.navigate("Map", { campusId: campus._id, campusName: campus.name })}>
+                <View style={[s.campusBar, { backgroundColor: colors.secondary || g[0] }]} />
                 <View style={s.campusBody}>
                   <Text style={s.campusName}>{campus.name}</Text>
                   <Text style={s.campusDesc}>{campus.description || "Tap to explore campus map"}</Text>
                   {campus.address && (
                     <View style={s.campusAddr}>
-                      <Ionicons name="location" size={14} color="#6366f1" />
-                      <Text style={{ fontSize: 12, color: "#334155", fontWeight: '600', marginLeft: 4 }}>{campus.address.toUpperCase()}</Text>
+                      <Ionicons name="location" size={12} color={colors.textMuted} />
+                      <Text style={{ fontSize: 12, color: colors.textMuted, marginLeft: 4 }}>{campus.address}</Text>
                     </View>
                   )}
                   <View style={s.campusActions}>
-                    <LinearGradient
-                      colors={['#3b82f6', '#8b5cf6']}
-                      style={s.campusExploreGradient}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 0 }}
-                    >
-                      <TouchableOpacity 
-                        style={s.campusExploreBtn} 
-                        onPress={() => navigation.navigate("Map", { campusId: campus._id })}
-                        activeOpacity={0.8}
-                      >
-                        <Ionicons name="map" size={16} color="#fff" />
-                        <Text style={{ color: "#fff", fontWeight: "700", fontSize: 13, marginLeft: 6 }}>Explore Map</Text>
-                      </TouchableOpacity>
-                    </LinearGradient>
-                    <AnimatedPressable style={s.arBtn} onPress={() => navigation.navigate("Search", { campusId: campus._id })}>
-                      <Ionicons name="search" size={16} color={colors.primary} />
-                      <Text style={{ color: colors.primary, fontWeight: "700", fontSize: 13, marginLeft: 6 }}>Search</Text>
+                    <AnimatedPressable style={s.mapBtn} onPress={() => navigation.navigate("Map", { campusId: campus._id })}>
+                      <Ionicons name="map" size={16} color="#fff" />
+                      <Text style={{ color: "#fff", fontWeight: "700", fontSize: 13, marginLeft: 6 }}>Explore Map</Text>
                     </AnimatedPressable>
                   </View>
                 </View>
@@ -841,30 +783,13 @@ export default function HomeScreen({ navigation }) {
 
         {activeCampusId && (
           <TouchableOpacity 
-            style={{ 
-              marginHorizontal: 20, 
-              marginTop: 30, 
-              marginBottom: 10, 
-              padding: 14, 
-              backgroundColor: 'rgba(239, 68, 68, 0.1)', 
-              borderRadius: 12, 
-              borderWidth: 1, 
-              borderColor: 'rgba(239, 68, 68, 0.6)', 
-              flexDirection: 'row', 
-              justifyContent: 'center', 
-              alignItems: 'center',
-              shadowColor: '#ef4444',
-              shadowOffset: { width: 0, height: 2 },
-              shadowOpacity: 0.05,
-              shadowRadius: 5,
-              elevation: 1
-            }}
+            style={{ marginHorizontal: 20, marginTop: 30, marginBottom: 10, padding: 14, backgroundColor: colors.card, borderRadius: 12, borderWidth: 1, borderColor: colors.danger, flexDirection: 'row', justifyContent: 'center', alignItems: 'center' }}
             onPress={() => {
               if (deactivateCampus) deactivateCampus();
             }}
           >
-            <Ionicons name="exit-outline" size={18} color="#ef4444" />
-            <Text style={{ marginLeft: 8, color: '#ef4444', fontWeight: '700', fontSize: 14 }}>Exit Campus</Text>
+            <Ionicons name="exit-outline" size={18} color={colors.danger} />
+            <Text style={{ marginLeft: 8, color: colors.danger, fontWeight: '700', fontSize: 14 }}>Exit Campus</Text>
           </TouchableOpacity>
         )}
       </ScrollView>

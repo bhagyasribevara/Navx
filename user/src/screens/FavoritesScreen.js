@@ -5,10 +5,10 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { ThemeContext } from "../context/ThemeContext";
-import { LinearGradient } from "expo-linear-gradient";
 import { SHADOWS, RADIUS, ROOM_COLORS } from "../theme/designSystem";
 import AnimatedPressable from "../components/AnimatedPressable";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { LinearGradient } from 'expo-linear-gradient';
 
 export default function FavoritesScreen({ navigation }) {
   const { colors } = useContext(ThemeContext);
@@ -61,12 +61,11 @@ export default function FavoritesScreen({ navigation }) {
   };
 
   const s = StyleSheet.create({
-    container: { flex: 1, backgroundColor: colors.bg },
+    container: { flex: 1, backgroundColor: 'transparent' },
     header: {
-      paddingTop: 16,
+      paddingTop: Platform.OS === 'ios' ? 8 : 22,
       paddingHorizontal: 20, paddingBottom: 20,
-      backgroundColor: 'transparent',
-      borderBottomWidth: 1, borderBottomColor: colors.border,
+      backgroundColor: "transparent",
     },
     headerRow: { flexDirection: "row", alignItems: "center", marginBottom: 16 },
     title: { fontSize: 24, fontWeight: "800", color: colors.text, flex: 1 },
@@ -82,21 +81,21 @@ export default function FavoritesScreen({ navigation }) {
     tabText: { fontSize: 14, fontWeight: "700" },
     listContent: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 100 },
     card: {
-      backgroundColor: colors.card, borderRadius: RADIUS.lg,
-      padding: 16, marginBottom: 12,
-      borderWidth: 1, borderColor: colors.border,
+      backgroundColor: colors.card, borderRadius: 18,
+      padding: 14, marginBottom: 12,
+      borderWidth: 1, borderColor: "rgba(99, 102, 241, 0.25)",
       flexDirection: "row", alignItems: "center",
       ...SHADOWS.sm,
     },
     iconWrap: {
-      width: 50, height: 50, borderRadius: 16,
+      width: 48, height: 48, borderRadius: 99,
       alignItems: "center", justifyContent: "center", marginRight: 14,
     },
     name: { fontSize: 15, fontWeight: "700", color: colors.text },
     meta: { fontSize: 12, color: colors.textSec, marginTop: 3 },
     actions: { flexDirection: "row", gap: 6, marginLeft: 8 },
     actionBtn: {
-      width: 36, height: 36, borderRadius: 10,
+      width: 36, height: 36, borderRadius: 99,
       alignItems: "center", justifyContent: "center",
     },
     empty: { alignItems: "center", paddingTop: 60 },
@@ -112,114 +111,115 @@ export default function FavoritesScreen({ navigation }) {
   const data = activeTab === "favorites" ? favorites : recents;
 
   return (
-    <View style={s.container}>
+    <View style={{ flex: 1, backgroundColor: '#ffffff' }}>
       <LinearGradient
-        colors={['rgba(99, 102, 241, 0.15)', 'rgba(139, 92, 246, 0.04)', 'rgba(255, 255, 255, 0)']}
+        colors={['rgba(139, 92, 246, 0.22)', 'rgba(99, 102, 241, 0.10)', 'rgba(255, 255, 255, 0)']}
         style={{
           position: 'absolute',
           top: 0,
           left: 0,
           right: 0,
-          height: 280,
-          zIndex: 0
+          height: 380,
         }}
         start={{ x: 0.5, y: 0 }}
         end={{ x: 0.5, y: 1 }}
       />
-      <Animated.View style={[s.header, { opacity: headerAnim, transform: [{ translateY: headerAnim.interpolate({ inputRange: [0, 1], outputRange: [-16, 0] }) }] }]}>
-        <View style={s.headerRow}>
-          <AnimatedPressable style={{ marginRight: 14 }} onPress={() => navigation.goBack()}>
-            <Ionicons name="arrow-back" size={24} color={colors.text} />
-          </AnimatedPressable>
-          <Text style={s.title}>Saved Places</Text>
-          <AnimatedPressable style={s.addBtn}>
-            <Ionicons name="add" size={22} color={colors.primary} />
-          </AnimatedPressable>
-        </View>
-        <View style={s.tabs}>
-          <AnimatedPressable
-            style={[s.tab, { borderColor: activeTab === "favorites" ? colors.primary : colors.border, backgroundColor: activeTab === "favorites" ? colors.primary + "15" : "transparent" }]}
-            onPress={() => setActiveTab("favorites")}
-          >
-            <Text style={[s.tabText, { color: activeTab === "favorites" ? colors.primary : colors.textMuted }]}>
-              ⭐ Favorites
-            </Text>
-          </AnimatedPressable>
-          <AnimatedPressable
-            style={[s.tab, { borderColor: activeTab === "recent" ? colors.primary : colors.border, backgroundColor: activeTab === "recent" ? colors.primary + "15" : "transparent" }]}
-            onPress={() => setActiveTab("recent")}
-          >
-            <Text style={[s.tabText, { color: activeTab === "recent" ? colors.primary : colors.textMuted }]}>
-              🕐 Recent
-            </Text>
-          </AnimatedPressable>
-        </View>
-      </Animated.View>
-
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={s.listContent}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            colors={[colors.primary]}
-            tintColor={colors.primary}
-            title="Pull to refresh…"
-            titleColor={colors.textSec}
-          />
-        }
-      >
-        {data.length === 0 ? (
-          <View style={s.empty}>
-            <View style={s.emptyIcon}>
-              <Ionicons name="heart-outline" size={32} color={colors.textMuted} />
-            </View>
-            <Text style={s.emptyTitle}>No {activeTab === "favorites" ? "Saved" : "Recent"} Places</Text>
-            <Text style={s.emptyText}>
-              {activeTab === "favorites" ? "Tap the ❤️ icon on any\nroom to save it here." : "Your recent navigation history\nwill appear here."}
-            </Text>
+      <View style={s.container}>
+        <Animated.View style={[s.header, { opacity: headerAnim, transform: [{ translateY: headerAnim.interpolate({ inputRange: [0, 1], outputRange: [-16, 0] }) }] }]}>
+          <View style={s.headerRow}>
+            <AnimatedPressable style={{ marginRight: 14 }} onPress={() => navigation.goBack()}>
+              <Ionicons name="arrow-back" size={24} color={colors.text} />
+            </AnimatedPressable>
+            <Text style={s.title}>Saved Places</Text>
+            <AnimatedPressable style={s.addBtn}>
+              <Ionicons name="add" size={22} color={colors.primary} />
+            </AnimatedPressable>
           </View>
-        ) : (
-          data.map((loc, i) => (
-            <Animated.View key={loc._id || loc.id || i} style={{
-              opacity: itemAnims[i],
-              transform: [
-                { translateX: itemAnims[i].interpolate({ inputRange: [0, 1], outputRange: [-30, 0] }) }
-              ],
-            }}>
-              <AnimatedPressable
-                style={s.card}
-                onPress={() => navigation.navigate("Navigation", { room: loc, campusId: loc.campusId })}
-              >
-                <View style={[s.iconWrap, { backgroundColor: (ROOM_COLORS[loc.type] || colors.primary) + "20" }]}>
-                  <Ionicons name="location" size={24} color={ROOM_COLORS[loc.type] || colors.primary} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={s.name}>{loc.name}</Text>
-                  <Text style={s.meta}>{loc.type.toUpperCase()}</Text>
-                </View>
-                <View style={s.actions}>
-                  <AnimatedPressable
-                    style={[s.actionBtn, { backgroundColor: colors.primary + "15" }]}
-                    onPress={() => navigation.navigate("Navigation", { room: loc, campusId: loc.campusId })}
-                  >
-                    <Ionicons name="navigate" size={18} color={colors.primary} />
-                  </AnimatedPressable>
-                  {activeTab === "favorites" && (
+          <View style={s.tabs}>
+            <AnimatedPressable
+              style={[s.tab, { borderColor: activeTab === "favorites" ? colors.primary : colors.border, backgroundColor: activeTab === "favorites" ? colors.primary + "15" : "transparent" }]}
+              onPress={() => setActiveTab("favorites")}
+            >
+              <Text style={[s.tabText, { color: activeTab === "favorites" ? colors.primary : colors.textMuted }]}>
+                ⭐ Favorites
+              </Text>
+            </AnimatedPressable>
+            <AnimatedPressable
+              style={[s.tab, { borderColor: activeTab === "recent" ? colors.primary : colors.border, backgroundColor: activeTab === "recent" ? colors.primary + "15" : "transparent" }]}
+              onPress={() => setActiveTab("recent")}
+            >
+              <Text style={[s.tabText, { color: activeTab === "recent" ? colors.primary : colors.textMuted }]}>
+                🕐 Recent
+              </Text>
+            </AnimatedPressable>
+          </View>
+        </Animated.View>
+
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={s.listContent}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={[colors.primary]}
+              tintColor={colors.primary}
+              title="Pull to refresh…"
+              titleColor={colors.textSec}
+            />
+          }
+        >
+          {data.length === 0 ? (
+            <View style={s.empty}>
+              <View style={s.emptyIcon}>
+                <Ionicons name="heart-outline" size={32} color={colors.textMuted} />
+              </View>
+              <Text style={s.emptyTitle}>No {activeTab === "favorites" ? "Saved" : "Recent"} Places</Text>
+              <Text style={s.emptyText}>
+                {activeTab === "favorites" ? "Tap the ❤️ icon on any\nroom to save it here." : "Your recent navigation history\nwill appear here."}
+              </Text>
+            </View>
+          ) : (
+            data.map((loc, i) => (
+              <Animated.View key={loc._id || loc.id || i} style={{
+                opacity: itemAnims[i],
+                transform: [
+                  { translateX: itemAnims[i].interpolate({ inputRange: [0, 1], outputRange: [-30, 0] }) }
+                ],
+              }}>
+                <AnimatedPressable
+                  style={s.card}
+                  onPress={() => navigation.navigate("Navigation", { room: loc, campusId: loc.campusId })}
+                >
+                  <View style={[s.iconWrap, { backgroundColor: (ROOM_COLORS[loc.type] || colors.primary) + "20" }]}>
+                    <Ionicons name="location" size={24} color={ROOM_COLORS[loc.type] || colors.primary} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.name}>{loc.name}</Text>
+                    <Text style={s.meta}>{loc.type.toUpperCase()}</Text>
+                  </View>
+                  <View style={s.actions}>
                     <AnimatedPressable
-                      style={[s.actionBtn, { backgroundColor: colors.danger + "15" }]}
-                      onPress={() => removeFavorite(loc._id)}
+                      style={[s.actionBtn, { backgroundColor: colors.primary + "15" }]}
+                      onPress={() => navigation.navigate("Navigation", { room: loc, campusId: loc.campusId })}
                     >
-                      <Ionicons name="heart-dislike" size={18} color={colors.danger} />
+                      <Ionicons name="navigate" size={18} color={colors.primary} />
                     </AnimatedPressable>
-                  )}
-                </View>
-              </AnimatedPressable>
-            </Animated.View>
-          ))
-        )}
-      </ScrollView>
+                    {activeTab === "favorites" && (
+                      <AnimatedPressable
+                        style={[s.actionBtn, { backgroundColor: colors.danger + "15" }]}
+                        onPress={() => removeFavorite(loc._id)}
+                      >
+                        <Ionicons name="heart-dislike" size={18} color={colors.danger} />
+                      </AnimatedPressable>
+                    )}
+                  </View>
+                </AnimatedPressable>
+              </Animated.View>
+            ))
+          )}
+        </ScrollView>
+      </View>
     </View>
   );
 }

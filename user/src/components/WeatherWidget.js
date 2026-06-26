@@ -189,12 +189,17 @@ export default function WeatherWidget() {
       <Animated.View style={{ transform: [{ scale: btnP }, { translateY: btnF }] }}>
         <TouchableOpacity 
           onPress={tap} 
-          activeOpacity={0.8} 
-          style={[s.btn, { backgroundColor: colors.primary + "18", borderColor: colors.primary + "35", shadowColor: colors.primary }]}
+          activeOpacity={0.85} 
+          style={[
+            s.btn,
+            {
+              backgroundColor: colors.primary + "18",
+              borderColor: colors.primary + "35"
+            }
+          ]}
         >
-          <Animated.View style={[s.btnGlow, { borderColor: colors.primary + "25", opacity: btnG }]} />
           {weather ? (
-            <Text style={{ fontSize: 13, fontWeight: 'bold', color: colors.primary, textAlign: 'center' }}>
+            <Text style={{ fontSize: 13, fontWeight: '800', color: colors.primary, textAlign: 'center' }}>
               {weather.temperature}°
             </Text>
           ) : (
@@ -331,14 +336,8 @@ export default function WeatherWidget() {
 }
 
 const s = StyleSheet.create({
-  btn: { 
-    width: 42, height: 42, borderRadius: 21, 
-    alignItems: 'center', justifyContent: 'center', 
-    borderWidth: 2, 
-    shadowOffset: { width: 0, height: 2 }, 
-    shadowOpacity: 0.05, shadowRadius: 5, elevation: 1 
-  },
-  btnGlow: { ...StyleSheet.absoluteFillObject, borderRadius: 21, borderWidth: 3 },
+  btn: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5 },
+  btnGlow: { ...StyleSheet.absoluteFillObject, borderRadius: 21, borderWidth: 3, borderColor: '#A78BFA' },
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },
   fullScreen: { flex: 1 },
   closeBtn: { position: 'absolute', top: Platform.OS === 'ios' ? 56 : 40, right: 20, width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', zIndex: 50 },

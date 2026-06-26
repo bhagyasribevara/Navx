@@ -6,10 +6,10 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { ThemeContext } from "../context/ThemeContext";
 import { useGeofence } from "../context/GeofenceContext";
-import { LinearGradient } from "expo-linear-gradient";
 import { searchRooms, getRoomsByCat } from "../api";
 import { SHADOWS, RADIUS, ROOM_COLORS, ROOM_ICONS } from "../theme/designSystem";
 import AnimatedPressable from "../components/AnimatedPressable";
+import { LinearGradient } from 'expo-linear-gradient';
 
 const CATS = [
   { label: "All", filter: null, icon: "apps" },
@@ -93,25 +93,25 @@ export default function SearchScreen({ navigation, route }) {
   };
 
   const s = StyleSheet.create({
-    container: { flex: 1, backgroundColor: colors.bg },
+    container: { flex: 1, backgroundColor: 'transparent' },
     header: {
-      paddingTop: 16,
+      paddingTop: Platform.OS === 'ios' ? 8 : 22,
       paddingHorizontal: 16, paddingBottom: 12,
-      backgroundColor: 'transparent',
-      borderBottomWidth: 1, borderBottomColor: colors.border,
+      backgroundColor: "transparent",
     },
     headerRow: { flexDirection: "row", alignItems: "center", marginBottom: 12 },
     backBtn: {
-      width: 40, height: 40, borderRadius: RADIUS.sm,
+      width: 40, height: 40, borderRadius: 99,
       backgroundColor: colors.surface, alignItems: "center", justifyContent: "center", marginRight: 12,
     },
     searchBar: {
       flex: 1, flexDirection: "row", alignItems: "center",
-      backgroundColor: colors.surface, borderRadius: RADIUS.md,
-      paddingHorizontal: 12, borderWidth: 1.5,
-      borderColor: searchFocused ? colors.primary : colors.border,
+      backgroundColor: colors.surface, borderRadius: 99,
+      paddingHorizontal: 16, borderWidth: 1,
+      borderColor: searchFocused ? colors.primary : "rgba(99, 102, 241, 0.12)",
+      ...SHADOWS.sm,
     },
-    searchInput: { flex: 1, paddingVertical: 12, fontSize: 15, color: colors.text, marginLeft: 8 },
+    searchInput: { flex: 1, paddingVertical: 10, fontSize: 15, color: colors.text, marginLeft: 8 },
     catRow: { flexDirection: "row" },
     catChip: {
       flexDirection: "row", alignItems: "center",
@@ -128,10 +128,10 @@ export default function SearchScreen({ navigation, route }) {
     resultItem: {
       flexDirection: "row", alignItems: "center",
       paddingHorizontal: 20, paddingVertical: 14,
-      borderBottomWidth: 1, borderBottomColor: colors.border,
+      borderBottomWidth: 1, borderBottomColor: "rgba(99, 102, 241, 0.05)",
     },
     iconWrap: {
-      width: 44, height: 44, borderRadius: RADIUS.sm,
+      width: 42, height: 42, borderRadius: 99,
       alignItems: "center", justifyContent: "center", marginRight: 14,
     },
     roomName: { fontSize: 15, fontWeight: "700", color: colors.text },
@@ -144,7 +144,8 @@ export default function SearchScreen({ navigation, route }) {
     suggestWrap: { paddingHorizontal: 20, flexDirection: "row", flexWrap: "wrap", gap: 8, paddingTop: 4 },
     suggestChip: {
       paddingHorizontal: 14, paddingVertical: 8, borderRadius: 99,
-      backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
+      backgroundColor: colors.card, borderWidth: 1, borderColor: "rgba(99, 102, 241, 0.08)",
+      ...SHADOWS.sm,
     },
     suggestText: { fontSize: 13, color: colors.textSec, fontWeight: "600" },
     empty: { alignItems: "center", paddingTop: 60 },
@@ -184,132 +185,146 @@ export default function SearchScreen({ navigation, route }) {
         </AnimatedPressable>
       </Animated.View>
     );
-  };
-
-  if (!campusId) {
+  };  if (!campusId) {
     return (
-      <View style={[s.container, { justifyContent: 'center', alignItems: 'center', padding: 20 }]}>
-        <Ionicons name="lock-closed" size={80} color={colors.textMuted} />
-        <Text style={{ marginTop: 24, fontSize: 22, fontWeight: '800', color: colors.text }}>Search Locked</Text>
-        <Text style={{ marginTop: 12, fontSize: 15, color: colors.textSec, textAlign: 'center', lineHeight: 22 }}>
-          You need to be inside a campus to search for its rooms and facilities. Please scan a QR code from the Home tab.
-        </Text>
+      <View style={{ flex: 1, backgroundColor: '#ffffff' }}>
+        <LinearGradient
+          colors={['rgba(139, 92, 246, 0.22)', 'rgba(99, 102, 241, 0.10)', 'rgba(255, 255, 255, 0)']}
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            height: 380,
+          }}
+          start={{ x: 0.5, y: 0 }}
+          end={{ x: 0.5, y: 1 }}
+        />
+        <View style={[s.container, { justifyContent: 'center', alignItems: 'center', padding: 20 }]}>
+          <Ionicons name="lock-closed" size={80} color={colors.textMuted} />
+          <Text style={{ marginTop: 24, fontSize: 22, fontWeight: '800', color: colors.text }}>Search Locked</Text>
+          <Text style={{ marginTop: 12, fontSize: 15, color: colors.textSec, textAlign: 'center', lineHeight: 22 }}>
+            You need to be inside a campus to search for its rooms and facilities. Please scan a QR code from the Home tab.
+          </Text>
+        </View>
       </View>
     );
   }
 
   return (
-    <View style={s.container}>
+    <View style={{ flex: 1, backgroundColor: '#ffffff' }}>
       <LinearGradient
-        colors={['rgba(99, 102, 241, 0.15)', 'rgba(139, 92, 246, 0.04)', 'rgba(255, 255, 255, 0)']}
+        colors={['rgba(139, 92, 246, 0.22)', 'rgba(99, 102, 241, 0.10)', 'rgba(255, 255, 255, 0)']}
         style={{
           position: 'absolute',
           top: 0,
           left: 0,
           right: 0,
-          height: 280,
-          zIndex: 0
+          height: 380,
         }}
         start={{ x: 0.5, y: 0 }}
         end={{ x: 0.5, y: 1 }}
       />
-      <View style={s.header}>
-        <View style={s.headerRow}>
-          <TouchableOpacity style={s.backBtn} onPress={() => navigation.goBack()}>
-            <Ionicons name="arrow-back" size={22} color={colors.text} />
-          </TouchableOpacity>
-          <View style={[s.searchBar]}>
-            <Ionicons name="search" size={20} color={colors.textMuted} />
-            <TextInput
-              ref={inputRef}
-              style={s.searchInput}
-              placeholder="Search rooms, labs, blocks…"
-              placeholderTextColor={colors.textMuted}
-              value={query}
-              onChangeText={setQuery}
-              onFocus={() => handleFocus(true)}
-              onBlur={() => handleFocus(false)}
-            />
-            {query.length > 0 && (
-              <TouchableOpacity onPress={() => { setQuery(""); setResults([]); }}>
-                <Ionicons name="close-circle" size={20} color={colors.textMuted} />
-              </TouchableOpacity>
-            )}
+      <View style={s.container}>
+        <View style={s.header}>
+          <View style={s.headerRow}>
+            <TouchableOpacity style={s.backBtn} onPress={() => navigation.goBack()}>
+              <Ionicons name="arrow-back" size={22} color={colors.text} />
+            </TouchableOpacity>
+            <View style={[s.searchBar]}>
+              <Ionicons name="search" size={20} color={colors.textMuted} />
+              <TextInput
+                ref={inputRef}
+                style={s.searchInput}
+                placeholder="Search rooms, labs, blocks…"
+                placeholderTextColor={colors.textMuted}
+                value={query}
+                onChangeText={setQuery}
+                onFocus={() => handleFocus(true)}
+                onBlur={() => handleFocus(false)}
+              />
+              {query.length > 0 && (
+                <TouchableOpacity onPress={() => { setQuery(""); setResults([]); }}>
+                  <Ionicons name="close-circle" size={20} color={colors.textMuted} />
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
+          {/* Category filter */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.catRow}>
+            {CATS.map((c, i) => {
+              const isActive = activeCat === c.filter;
+              const color = isActive ? colors.primary : colors.textMuted;
+              return (
+                <AnimatedPressable
+                  key={i}
+                  style={[s.catChip, { borderColor: isActive ? colors.primary : colors.border, backgroundColor: isActive ? colors.primary + "15" : "transparent" }]}
+                  onPress={() => setActiveCat(isActive ? null : c.filter)}
+                >
+                  <Ionicons name={c.icon} size={14} color={color} />
+                  <Text style={[s.catLabel, { color }]}>{c.label}</Text>
+                </AnimatedPressable>
+              );
+            })}
+          </ScrollView>
         </View>
-        {/* Category filter */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.catRow}>
-          {CATS.map((c, i) => {
-            const isActive = activeCat === c.filter;
-            const color = isActive ? colors.primary : colors.textMuted;
-            return (
+
+        {results.length > 0 ? (
+          <>
+            <Text style={s.sectionTitle}>Results ({results.length})</Text>
+            <FlatList
+              data={results}
+              renderItem={renderItem}
+              keyExtractor={item => item._id}
+              showsVerticalScrollIndicator={false}
+              refreshControl={
+                <RefreshControl
+                  refreshing={refreshing}
+                  onRefresh={onRefresh}
+                  colors={[colors.primary]}
+                  tintColor={colors.primary}
+                  title="Pull to refresh…"
+                  titleColor={colors.textSec}
+                />
+              }
+            />
+          </>
+        ) : query.length >= 2 ? (
+          <View style={s.empty}>
+            <View style={s.emptyIcon}>
+              <Ionicons name="search-outline" size={30} color={colors.textMuted} />
+            </View>
+            <Text style={s.emptyTitle}>No Results Found</Text>
+            <Text style={s.emptyText}>Admin will upload soon</Text>
+          </View>
+        ) : (
+          <ScrollView showsVerticalScrollIndicator={false}>
+            <Text style={s.sectionTitle}>Popular Searches</Text>
+            <View style={s.suggestWrap}>
+              {SUGGESTED.map((s2, i) => (
+                <AnimatedPressable key={i} style={s.suggestChip} onPress={() => setQuery(s2)}>
+                  <Text style={s.suggestText}>{s2}</Text>
+                </AnimatedPressable>
+              ))}
+            </View>
+
+            <Text style={s.sectionTitle}>Browse Categories</Text>
+            {CATS.filter(c => c.filter).map((c, i) => (
               <AnimatedPressable
                 key={i}
-                style={[s.catChip, { borderColor: isActive ? colors.primary : colors.border, backgroundColor: isActive ? colors.primary + "15" : "transparent" }]}
-                onPress={() => setActiveCat(isActive ? null : c.filter)}
+                style={[s.resultItem]}
+                onPress={() => setActiveCat(c.filter)}
               >
-                <Ionicons name={c.icon} size={14} color={color} />
-                <Text style={[s.catLabel, { color }]}>{c.label}</Text>
-              </AnimatedPressable>
-            );
-          })}
-        </ScrollView>
-      </View>
-
-      {results.length > 0 ? (
-        <>
-          <Text style={s.sectionTitle}>Results ({results.length})</Text>
-          <FlatList
-            data={results}
-            renderItem={renderItem}
-            keyExtractor={item => item._id}
-            showsVerticalScrollIndicator={false}
-            refreshControl={
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={onRefresh}
-                colors={[colors.primary]}
-                tintColor={colors.primary}
-                title="Pull to refresh…"
-                titleColor={colors.textSec}
-              />
-            }
-          />
-        </>
-      ) : query.length >= 2 ? (
-        <View style={s.empty}>
-          <View style={s.emptyIcon}>
-            <Ionicons name="search-outline" size={30} color={colors.textMuted} />
-          </View>
-          <Text style={s.emptyTitle}>No Results Found</Text>
-          <Text style={s.emptyText}>Admin will upload soon</Text>
-        </View>
-      ) : (
-        <ScrollView showsVerticalScrollIndicator={false}>
-          <Text style={s.sectionTitle}>Popular Searches</Text>
-          <View style={s.suggestWrap}>
-            {SUGGESTED.map((s2, i) => (
-              <AnimatedPressable key={i} style={s.suggestChip} onPress={() => setQuery(s2)}>
-                <Text style={s.suggestText}>{s2}</Text>
+                <View style={[s.iconWrap, { backgroundColor: (ROOM_COLORS[c.filter] || colors.primary) + "18" }]}>
+                  <Ionicons name={c.icon} size={22} color={ROOM_COLORS[c.filter] || colors.primary} />
+                </View>
+                <Text style={s.roomName}>{c.label}</Text>
+                <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
               </AnimatedPressable>
             ))}
-          </View>
-          <Text style={s.sectionTitle}>Browse Categories</Text>
-          {CATS.filter(c => c.filter).map((c, i) => (
-            <AnimatedPressable
-              key={i}
-              style={[s.resultItem]}
-              onPress={() => setActiveCat(c.filter)}
-            >
-              <View style={[s.iconWrap, { backgroundColor: (ROOM_COLORS[c.filter] || colors.primary) + "18" }]}>
-                <Ionicons name={c.icon} size={22} color={ROOM_COLORS[c.filter] || colors.primary} />
-              </View>
-              <Text style={s.roomName}>{c.label}</Text>
-              <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-            </AnimatedPressable>
-          ))}
-        </ScrollView>
-      )}
+          </ScrollView>
+        )}
+      </View>
     </View>
   );
 }
