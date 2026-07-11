@@ -2,7 +2,7 @@ import React from 'react';
 import { Routes, Route, NavLink, useLocation, useNavigate, useParams, Outlet } from 'react-router-dom';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
-import { FiMap, FiGrid, FiLayers, FiNavigation, FiBarChart2, FiSettings, FiHome, FiAlertCircle, FiMenu, FiX } from 'react-icons/fi';
+import { FiMap, FiGrid, FiLayers, FiNavigation, FiBarChart2, FiSettings, FiHome, FiAlertCircle, FiMenu, FiX, FiUsers, FiCalendar, FiFileText, FiCpu } from 'react-icons/fi';
 import NavXAIChat from './components/NavXAIChat';
 import NavXAdminCopilot from './components/NavXAdminCopilot';
 import { AdminPageProvider } from './components/AdminPageContext';
@@ -15,6 +15,12 @@ import EmergencyDashboard from './pages/EmergencyDashboard';
 import CampaignManager from './pages/CampaignManager';
 import Login from './pages/Login';
 import SuperAdminDashboard from './pages/SuperAdminDashboard';
+import FacultyLogin from './pages/FacultyLogin';
+import FacultyDashboard from './pages/FacultyDashboard';
+import FacultyManager from './pages/FacultyManager';
+import TimetableAllocation from './pages/TimetableAllocation';
+import AdminReports from './pages/AdminReports';
+import AdminAiAssistant from './pages/AdminAiAssistant';
 import { getCampusByCode } from './api';
 
 const isCampusAdminRole = (role) => 
@@ -22,6 +28,7 @@ const isCampusAdminRole = (role) =>
 
 function App() {
   const [admin, setAdmin] = React.useState(null);
+  const [faculty, setFaculty] = React.useState(null);
   const location = useLocation();
   const navigate = useNavigate();
   const isEditorPage = location.pathname.includes('/editor/');
@@ -40,6 +47,13 @@ function App() {
         if (location.pathname === '/' && isCampusAdminRole(parsed.role) && parsed.campus?.campusCode) {
           navigate(`/campus/${parsed.campus.campusCode}`);
         }
+      } catch (e) {}
+    }
+
+    const savedFaculty = localStorage.getItem('navx_faculty');
+    if (savedFaculty) {
+      try {
+        setFaculty(JSON.parse(savedFaculty));
       } catch (e) {}
     }
   }, []);
@@ -70,8 +84,24 @@ function App() {
     navigate('/');
   };
 
+  const handleFacultyLogin = (facultyData, token) => {
+    localStorage.setItem('navx_faculty', JSON.stringify(facultyData));
+    localStorage.setItem('navx_faculty_token', token);
+    setFaculty(facultyData);
+    navigate('/faculty/dashboard');
+  };
+
+  const handleFacultyLogout = () => {
+    localStorage.removeItem('navx_faculty');
+    localStorage.removeItem('navx_faculty_token');
+    setFaculty(null);
+    navigate('/facultylogin');
+  };
+
+  const isFacultyRoute = location.pathname === '/facultylogin' || location.pathname.startsWith('/faculty');
+
   // If not authenticated and NOT accessing a specific campus workspace URL, show generic login
-  if (!admin && !isCampusSpecificWorkspace) {
+  if (!admin && !isCampusSpecificWorkspace && !isFacultyRoute) {
     return (
       <>
         <ToastContainer position="bottom-right" theme="dark" autoClose={3000} />
@@ -81,7 +111,7 @@ function App() {
   }
 
   // SuperAdmin layout
-  if (admin && admin.role === 'SuperAdmin' && !isCampusSpecificWorkspace && !isEditorPage) {
+  if (admin && admin.role === 'SuperAdmin' && !isCampusSpecificWorkspace && !isEditorPage && !isFacultyRoute) {
     return (
       <>
         <ToastContainer position="bottom-right" theme="dark" autoClose={3000} />
@@ -100,6 +130,21 @@ function App() {
       {/* <NavXAIChat campusId={adminCampusId} campusName={adminCampusName} /> */}
       <NavXAdminCopilot admin={admin} />
       <Routes>
+        <Route path="/facultylogin" element={<FacultyLogin onLogin={handleFacultyLogin} />} />
+        <Route
+          path="/faculty/dashboard"
+          element={
+            faculty ? (
+              <FacultyDashboard
+                faculty={faculty}
+                onLogout={handleFacultyLogout}
+                token={localStorage.getItem('navx_faculty_token')}
+              />
+            ) : (
+              <FacultyLogin onLogin={handleFacultyLogin} />
+            )
+          }
+        />
         {/* Default SuperAdmin or Legacy Routes */}
         <Route
           path="/"
@@ -193,6 +238,10 @@ function App() {
           <Route path="campaigns" element={<CampaignManager admin={admin} />} />
           <Route path="analytics" element={<AnalyticsDashboard admin={admin} />} />
           <Route path="emergency" element={<EmergencyDashboard admin={admin} />} />
+          <Route path="faculty" element={<FacultyManager admin={admin} />} />
+          <Route path="timetable" element={<TimetableAllocation admin={admin} />} />
+          <Route path="reports" element={<AdminReports admin={admin} />} />
+          <Route path="ai-assistant" element={<AdminAiAssistant admin={admin} />} />
         </Route>
       </Routes>
     </AdminPageProvider>
@@ -339,6 +388,22 @@ function Sidebar({ admin, onLogout, campusCode }) {
           <NavLink to={`${prefix}/campaigns`} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
             <FiLayers /> Campaigns
           </NavLink>
+          {campusCode && (
+            <>
+              <NavLink to={`${prefix}/faculty`} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+                <FiUsers /> Faculty
+              </NavLink>
+              <NavLink to={`${prefix}/timetable`} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+                <FiCalendar /> Timetable
+              </NavLink>
+              <NavLink to={`${prefix}/reports`} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+                <FiFileText /> Reports
+              </NavLink>
+              <NavLink to={`${prefix}/ai-assistant`} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+                <FiCpu /> AI Assistant
+              </NavLink>
+            </>
+          )}
           <NavLink to={`${prefix}/emergency`} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
             <FiAlertCircle /> Emergency Alert
           </NavLink>

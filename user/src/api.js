@@ -26,6 +26,16 @@ const api = axios.create({
   headers: { "Content-Type": "application/json" },
 });
 
+api.interceptors.request.use(async (config) => {
+  try {
+    const token = await AsyncStorage.getItem('navx_user_token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+  } catch (e) {}
+  return config;
+});
+
 let cachedConfig = null;
 
 export async function fetchAppConfig() {

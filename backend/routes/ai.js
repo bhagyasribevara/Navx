@@ -6,6 +6,14 @@
 const express = require('express');
 const router = express.Router();
 const { GoogleGenerativeAI } = require('@google/generative-ai');
+const jwt = require('jsonwebtoken');
+
+// Models
+const AppUser = require('../models/AppUser');
+const Timetable = require('../models/Timetable');
+const Faculty = require('../models/Faculty');
+const Fee = require('../models/Fee');
+const Attendance = require('../models/Attendance');
 
 // Services
 const { detectLanguage, detectIntent } = require('../services/intentDetector');
@@ -30,7 +38,7 @@ setInterval(() => {
 }, 5 * 60 * 1000); // Every 5 minutes
 
 // ─── System Prompt Builder ──────────────────────────────────────────────────
-function buildSystemPrompt(campusContext, userContext = {}) {
+function buildSystemPrompt(campusContext, userContext = {}, studentContext = '') {
   const timeOfDay = new Date().getHours();
   let greeting = 'Hello';
   if (timeOfDay < 12) greeting = 'Good morning';
@@ -44,7 +52,7 @@ You are a dedicated digital guide — NOT a general-purpose chatbot.
 IDENTITY & PERSONALITY
 ═══════════════════════════════════════════════════════
 • Name: NavX AI
-• Role: Campus Navigation & Information Expert
+• Role: Campus Navigation, Academics & Student Services Expert
 • Tone: Professional, friendly, helpful, concise
 • Current time greeting: "${greeting}"
 • Current time: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}
@@ -62,6 +70,9 @@ You MUST ONLY answer questions related to:
 ✅ Emergency navigation (exits, medical rooms, security)
 ✅ Live Meet assistance (sharing location, finding friends)
 ✅ Campus services (shuttle, lost & found, Wi-Fi)
+✅ Student Academics (timetable, today's classes, next class room)
+✅ Student Attendance percentages and logs
+✅ Student Pending Fees and billing status
 
 You MUST REFUSE these topics politely:
 ❌ Coding, programming, software development
@@ -72,10 +83,23 @@ You MUST REFUSE these topics politely:
 ❌ Personal advice, relationships
 ❌ General knowledge, trivia, history
 ❌ Recipes, cooking
-❌ Any topic NOT related to NavX or campus navigation
+❌ Any topic NOT related to NavX, campus navigation, or student services
 
 If asked off-topic, respond ONLY with:
 "I'm NavX AI, designed specifically to help with campus navigation and NavX-related services. I can assist you with locations, routes, events, facilities, and navigation inside the campus."
+
+═══════════════════════════════════════════════════════
+STUDENT ACADEMIC & ERP INSTRUCTIONS
+═══════════════════════════════════════════════════════
+If the logged-in student asks about:
+1. **Next Class Room**: Search the "Today's Timetable" context below. Compare the current time with the classes. If they ask "Where is my next class?", reply with the subject and room number, and set "action": "navigate" and "destination": "<Room Name/Number>" (e.g. "C-302").
+2. **Faculty meeting (e.g. Ganesh Sir)**: Find "Ganesh" or the faculty in the "Available Faculty Members" list.
+   - Check their Leave Status. If they are "On Leave", state they are away.
+   - Check their timetable. If they are currently in a lecture period, state: "Ganesh Sir is currently teaching DBMS in Room C-302. His class ends at 11:00 AM. You can meet him after 11:00 AM in Faculty Room F-12."
+   - Set "action": "navigate" and "destination": "F-12" (their faculty room) or the current teaching room depending on the context.
+3. **Show my Attendance**: Respond with their current subject/overall attendance details.
+4. **Show Fee Status**: State their pending fee amounts and due dates.
+5. **Show Today's Classes**: List their classes of the day.
 
 ═══════════════════════════════════════════════════════
 MULTI-LANGUAGE SUPPORT
@@ -107,7 +131,7 @@ RULES for responses:
 • Keep the 'text' field EXTREMELY short, conversational, and easy to understand (1-2 sentences max). Do NOT use complex formatting.
 • Use emoji sparingly for visual appeal (📍🚶🏫🍽️🚻🅿️🎉♿🚨)
 • Include 2-4 relevant follow-up suggestions
-• Extract the primary destination name in 'destination' if user wants to go to a single place
+• Extract the primary destination name in 'destination' if user wants to go to a single place (especially classrooms or faculty rooms for navigation)
 • If user asks to list multiple places (e.g. "show all academic blocks", "what are the cafeterias?"), list their names in the 'locations' array so the UI can render multiple navigation buttons
 • Set action type correctly for the frontend to trigger navigation/search
 
@@ -115,6 +139,13 @@ RULES for responses:
 CAMPUS DATA (LIVE FROM DATABASE)
 ═══════════════════════════════════════════════════════
 ${campusContext || 'No campus data loaded. Ask the user to specify their campus.'}
+
+${studentContext ? `
+═══════════════════════════════════════════════════════
+LOGGED-IN STUDENT SERVICES CONTEXT (LIVE FROM DATABASE)
+═══════════════════════════════════════════════════════
+${studentContext}
+` : ''}
 
 ═══════════════════════════════════════════════════════
 USER CONTEXT
@@ -202,6 +233,73 @@ router.post('/chat', async (req, res) => {
     }
     console.log('[AI] Step 5a done');
 
+    // Fetch student info if JWT token is provided
+    let studentContext = '';
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.split(' ')[1];
+      try {
+        const decoded = jwt.verify(token, JWT_SECRET);
+        const student = await AppUser.findById(decoded.userId);
+        if (student) {
+          // 1. Timetable
+          const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+          const today = days[new Date().getDay()];
+          const queryDay = (today === 'Sunday' || today === 'Saturday') ? 'Monday' : today;
+          
+          const studentTimetable = await Timetable.find({
+            campusId: campusId || student.activeCampusId || student.campusId,
+            department: student.department,
+            semester: student.semester,
+            section: student.section,
+            dayOfWeek: queryDay
+          }).sort({ period: 1 });
+
+          // 2. Faculty
+          const facultyList = await Faculty.find({ campusId: campusId || student.activeCampusId || student.campusId });
+
+          // 3. Fees
+          const feesList = await Fee.find({ studentId: student._id });
+
+          // 4. Attendance
+          const attendanceList = await Attendance.find({ studentId: student._id });
+          const attendanceSummary = {};
+          attendanceList.forEach(a => {
+            if (!attendanceSummary[a.subject]) attendanceSummary[a.subject] = { present: 0, total: 0 };
+            attendanceSummary[a.subject].total++;
+            if (a.status === 'Present') attendanceSummary[a.subject].present++;
+          });
+          const formattedAttendance = Object.keys(attendanceSummary).map(sub => {
+            const item = attendanceSummary[sub];
+            return `${sub}: ${item.present}/${item.total} (${Math.round((item.present/item.total)*100)}%)`;
+          }).join(', ');
+
+          studentContext = `
+Student Name: ${student.username}
+Roll Number: ${student.rollNumber}
+Department: ${student.department}
+Semester: ${student.semester}
+Section: ${student.section}
+Academic Status: ${student.academicStatus}
+Fee Status: ${student.feeStatus}
+Overall Attendance: ${student.attendancePercent}%
+Subject Attendance Breakdown: ${formattedAttendance || 'No logs registered yet.'}
+
+Today's Timetable (${queryDay}):
+${studentTimetable.map(t => `- Period ${t.period}: ${t.subject} in Room ${t.roomName} (Starts: ${t.startTime}, Ends: ${t.endTime}) with ${t.facultyName}`).join('\n') || 'No classes scheduled for today.'}
+
+Fees Invoice List:
+${feesList.map(f => `- ${f.title}: ₹${f.amount} (${f.status}) Due: ${f.dueDate.toDateString()}`).join('\n') || 'No invoices found.'}
+
+Faculty Roster & Leave/Room Status:
+${facultyList.map(f => `- Faculty: ${f.name} (employeeId: ${f.employeeId}, room: ${f.facultyRoom}, status: ${f.leaveStatus}, officeHours: ${f.officeHours}, subjects: ${f.subjects.join(', ')})`).join('\n') || 'No faculty members registered.'}
+`;
+        }
+      } catch (err) {
+        console.log('[AI Chat] Student context fetch error:', err.message);
+      }
+    }
+
     // Enrich with specific data based on intent
     let extraContext = '';
 
@@ -229,7 +327,7 @@ router.post('/chat', async (req, res) => {
     console.log('[AI] Step 5b done');
 
     // ─── Step 6: Build System Prompt ─────────────────────────────────────
-    const systemPrompt = buildSystemPrompt(campusContext + extraContext, context);
+    const systemPrompt = buildSystemPrompt(campusContext + extraContext, context, studentContext);
     console.log('[AI] Step 6 done');
 
     // ─── Step 7: Session History ─────────────────────────────────────────

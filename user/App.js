@@ -20,6 +20,8 @@ import NavigationScreen from "./src/screens/NavigationScreen";
 import ARScreen from "./src/screens/ARScreen";
 import QRScanScreen from "./src/screens/QRScanScreen";
 import SettingsScreen from "./src/screens/SettingsScreen";
+import AcademicsScreen from "./src/screens/AcademicsScreen";
+import FeesScreen from "./src/screens/FeesScreen";
 
 import SplashScreen from "./src/screens/SplashScreen";
 import OfflineMapsScreen from "./src/screens/OfflineMapsScreen";
@@ -219,6 +221,8 @@ function AppNavigator() {
           ) : (
             <>
               <Stack.Screen name="MainTabs" component={MainTabs} />
+              <Stack.Screen name="Academics" component={AcademicsScreen} />
+              <Stack.Screen name="Fees" component={FeesScreen} />
               <Stack.Screen
                 name="QRScan"
                 component={QRScanScreen}

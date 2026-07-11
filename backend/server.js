@@ -148,6 +148,8 @@ app.use('/api/landmarks', require('./routes/landmarks'));
 app.use('/api/announcements', require('./routes/announcements'));
 app.use('/api/navigationGraphs', require('./routes/navigationGraphs'));
 app.use('/api/meet', require('./routes/liveMeet'));
+app.use('/api/student', require('./routes/student'));
+app.use('/api/faculty', require('./routes/faculty'));
 
 // Health check (includes MongoDB status)
 app.get('/api/health', (req, res) => {

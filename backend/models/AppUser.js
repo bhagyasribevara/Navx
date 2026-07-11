@@ -45,6 +45,41 @@ const AppUserSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Campus',
     default: null
+  },
+  role: { 
+    type: String, 
+    enum: ['student', 'guest'], 
+    default: 'student' 
+  },
+  department: { 
+    type: String, 
+    default: 'CSE' 
+  },
+  semester: { 
+    type: String, 
+    default: '6' 
+  },
+  section: { 
+    type: String, 
+    default: 'A' 
+  },
+  rollNumber: { 
+    type: String, 
+    default: '2026CS101' 
+  },
+  academicStatus: { 
+    type: String, 
+    enum: ['Active', 'Suspended', 'Probation'], 
+    default: 'Active' 
+  },
+  feeStatus: { 
+    type: String, 
+    enum: ['Paid', 'Pending'], 
+    default: 'Pending' 
+  },
+  attendancePercent: { 
+    type: Number, 
+    default: 85 
   }
 });
 

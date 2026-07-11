@@ -91,9 +91,15 @@ export function GeofenceProvider({ children }) {
           );
           // Add a 20m buffer for GPS inaccuracy during app restore
           if (dist > parsed.radius + 20) {
-            console.log(`🚫 Session restore blocked: ${Math.round(dist)}m outside ${parsed.radius}m radius. Wiping.`);
-            await wipeAllCampusData(parsed.id);
-            setActiveCampus(null);
+            console.log(`🚫 User is off-campus: ${Math.round(dist)}m outside ${parsed.radius}m radius.`);
+            if (user?.isGuest) {
+              await wipeAllCampusData(parsed.id);
+              setActiveCampus(null);
+            } else {
+              // Registered student: delete only offline map data
+              await AsyncStorage.removeItem(`navx_offline_${parsed.id}`);
+              setActiveCampus(parsed);
+            }
             return;
           }
           // ✅ User is inside — safe to restore
@@ -156,14 +162,19 @@ export function GeofenceProvider({ children }) {
                 console.log("Logging out guest user due to local boundary exit.");
                 logout();
               } else {
-                // Wipe all data
-                await wipeAllCampusData(activeCampus.id);
-
-                // Set revoked state
-                const campusName = activeCampus.name;
-                setRevokedCampusName(campusName);
-                setActiveCampus(null);
-                setSessionRevoked(true);
+                // Registered Student: WIPE ONLY OFFLINE MAP, but keep app session!
+                try {
+                  await AsyncStorage.removeItem(`navx_offline_${activeCampus.id}`);
+                  console.log(`🗑️ Offline map database removed for campus ${activeCampus.id}`);
+                  
+                  const { Alert } = require("react-native");
+                  Alert.alert(
+                    "Exited Campus Boundary",
+                    "You have exited the campus. The offline map database has been deleted, but all student ERP dashboard features remain fully active."
+                  );
+                } catch (e) {
+                  console.error("Failed to remove offline map database:", e);
+                }
               }
 
               // Stop watcher

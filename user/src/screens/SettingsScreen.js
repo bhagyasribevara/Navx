@@ -187,6 +187,23 @@ export default function SettingsScreen({ navigation }) {
           </View>
         </View>
 
+        {/* Student Services */}
+        {user && !user.isGuest && (
+          <>
+            <Text style={s.secLabel}>Student Services</Text>
+            <View style={s.group}>
+              <RowAction 
+                icon="school" iconBg="#6366f1" label="Academics & Timetable" 
+                onPress={() => navigation.navigate("Academics")} 
+              />
+              <RowAction 
+                icon="card" iconBg="#10b981" label="Fee Receipts & Payments" last
+                onPress={() => navigation.navigate("Fees")} 
+              />
+            </View>
+          </>
+        )}
+
         {/* Account Security */}
         <Text style={s.secLabel}>Account Security</Text>
         <View style={s.group}>

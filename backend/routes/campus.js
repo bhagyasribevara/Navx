@@ -390,12 +390,129 @@ router.post('/:id/campus-qr', authenticateJWT, enforceCampusIsolation, async (re
   }
 });
 
-// GET retrieve saved campus QR image
-router.get('/:id/campus-qr', async (req, res) => {
+// --- Campus Admin Faculty Management Routes ---
+const Faculty = require('../models/Faculty');
+const Timetable = require('../models/Timetable');
+const bcrypt = require('bcryptjs');
+
+// GET all faculties for a campus
+router.get('/:id/faculties', authenticateJWT, enforceCampusIsolation, async (req, res) => {
   try {
-    const campus = await Campus.findById(req.params.id).select('campusQRImage name _id');
-    if (!campus) return res.status(404).json({ error: 'Campus not found' });
-    res.json({ image: campus.campusQRImage, campusName: campus.name });
+    const faculties = await Faculty.find({ campusId: req.params.id }).sort({ employeeId: 1 });
+    res.json({ success: true, faculties });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST create a faculty
+router.post('/:id/faculties', authenticateJWT, enforceCampusIsolation, async (req, res) => {
+  try {
+    const { name, employeeId, department, designation, email, phone, facultyRoom, officeHours, subjects, assignedSections, username, password } = req.body;
+    
+    // Hash password
+    const hashedPassword = bcrypt.hashSync(password, 10);
+
+    const faculty = new Faculty({
+      campusId: req.params.id,
+      name,
+      employeeId,
+      department,
+      designation,
+      email,
+      phone,
+      facultyRoom,
+      officeHours,
+      subjects: Array.isArray(subjects) ? subjects : [],
+      assignedSections: Array.isArray(assignedSections) ? assignedSections : [],
+      username,
+      password: hashedPassword,
+      status: 'active'
+    });
+
+    await faculty.save();
+    res.status(201).json({ success: true, faculty });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// PUT update a faculty
+router.put('/:id/faculties/:facultyId', authenticateJWT, enforceCampusIsolation, async (req, res) => {
+  try {
+    const updateData = { ...req.body };
+    
+    // If a new password is provided, hash it
+    if (updateData.password) {
+      updateData.password = bcrypt.hashSync(updateData.password, 10);
+    } else {
+      delete updateData.password;
+    }
+
+    const faculty = await Faculty.findByIdAndUpdate(req.params.facultyId, updateData, { new: true });
+    if (!faculty) return res.status(404).json({ error: 'Faculty not found' });
+    res.json({ success: true, faculty });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// DELETE a faculty
+router.delete('/:id/faculties/:facultyId', authenticateJWT, enforceCampusIsolation, async (req, res) => {
+  try {
+    await Faculty.findByIdAndDelete(req.params.facultyId);
+    res.json({ success: true, message: 'Faculty deleted' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST reset faculty password
+router.post('/:id/faculties/:facultyId/reset-password', authenticateJWT, enforceCampusIsolation, async (req, res) => {
+  try {
+    const { password } = req.body;
+    if (!password) return res.status(400).json({ error: 'Password is required' });
+
+    const hashedPassword = bcrypt.hashSync(password, 10);
+    const faculty = await Faculty.findByIdAndUpdate(req.params.facultyId, { password: hashedPassword }, { new: true });
+    if (!faculty) return res.status(404).json({ error: 'Faculty not found' });
+    res.json({ success: true, message: 'Password reset successful!' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Campus Admin Timetable Management Routes ---
+
+// GET timetable slots
+router.get('/:id/timetable', authenticateJWT, enforceCampusIsolation, async (req, res) => {
+  try {
+    const timetable = await Timetable.find({ campusId: req.params.id }).sort({ period: 1 });
+    res.json({ success: true, timetable });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST allocate a slot
+router.post('/:id/timetable', authenticateJWT, enforceCampusIsolation, async (req, res) => {
+  try {
+    const slot = new Timetable({
+      campusId: req.params.id,
+      ...req.body
+    });
+    await slot.save();
+    res.status(201).json({ success: true, slot });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// DELETE a timetable slot
+router.delete('/:id/timetable/:slotId', authenticateJWT, enforceCampusIsolation, async (req, res) => {
+  try {
+    await Timetable.findByIdAndDelete(req.params.slotId);
+    res.json({ success: true, message: 'Slot deleted' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

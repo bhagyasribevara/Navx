@@ -8,7 +8,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { ThemeContext } from "../context/ThemeContext";
 import { useGeofence } from "../context/GeofenceContext";
-import { getCampuses, cachedGet, downloadCampusOffline, getRoomsByCat, getCampaigns, SOCKET_URL, createMeetSession } from "../api";
+import api, { getCampuses, cachedGet, downloadCampusOffline, getRoomsByCat, getCampaigns, SOCKET_URL, createMeetSession } from "../api";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SHADOWS, RADIUS, QUICK_ACTIONS, ROOM_COLORS } from "../theme/designSystem";
 import WeatherWidget from "../components/WeatherWidget";
@@ -76,6 +76,44 @@ export default function HomeScreen({ navigation }) {
   const { user } = useAuth();
   const { activeCampusId, deactivateCampus } = useGeofence();
   const { enterMeetSession, showMeetModal, setShowMeetModal } = useLiveMeet() || {};
+
+  const [studentData, setStudentData] = useState(null);
+  const [loadingStudent, setLoadingStudent] = useState(false);
+
+  const fetchStudentDashboard = useCallback(async () => {
+    if (user && !user.isGuest) {
+      setLoadingStudent(true);
+      try {
+        const res = await api.get("/student/dashboard");
+        if (res.data.success) {
+          setStudentData(res.data);
+        }
+      } catch (e) {
+        console.log("Failed to fetch student dashboard:", e);
+      } finally {
+        setLoadingStudent(false);
+      }
+    }
+  }, [user]);
+
+  const handleNavigateToRoom = async (roomName) => {
+    if (!activeCampusId) {
+      alert("You must be on campus to use navigation features.");
+      return;
+    }
+    try {
+      const res = await api.get(`/rooms?campusId=${activeCampusId}`);
+      const rooms = res.data;
+      const targetRoom = rooms.find(r => r.name.toLowerCase() === roomName.toLowerCase());
+      if (targetRoom) {
+        navigation.navigate("Navigation", { room: targetRoom, campusId: activeCampusId });
+      } else {
+        alert(`Room ${roomName} not found on the campus map.`);
+      }
+    } catch (e) {
+      alert("Failed to initiate navigation.");
+    }
+  };
   const [campuses, setCampuses] = useState([]);
   const [recentRooms, setRecentRooms] = useState([]);
   const [campaigns, setCampaigns] = useState([]);
@@ -129,6 +167,7 @@ export default function HomeScreen({ navigation }) {
     try {
       // Force fresh campus data
       await fetchData(true);
+      await fetchStudentDashboard();
       // Force fresh campaigns if campus is active
       if (activeCampusId) {
         try {
@@ -146,7 +185,7 @@ export default function HomeScreen({ navigation }) {
     } finally {
       setRefreshing(false);
     }
-  }, [activeCampusId, fetchData]);
+  }, [activeCampusId, fetchData, fetchStudentDashboard]);
 
   useEffect(() => {
     Animated.timing(headerAnim, { toValue: 1, duration: 500, useNativeDriver: true }).start();
@@ -157,8 +196,9 @@ export default function HomeScreen({ navigation }) {
       ])
     ).start();
     fetchData(false)
+      .then(() => fetchStudentDashboard())
       .finally(() => setLoading(false));
-  }, []);
+  }, [fetchStudentDashboard]);
 
   useEffect(() => {
     if (activeCampusId) {
@@ -343,7 +383,8 @@ export default function HomeScreen({ navigation }) {
   // ── QR Gate: Block entire app until user scans a valid campus QR ──
   // Wait until campuses are loaded if we have an active ID but it's not in the list yet
   const campusLoaded = campuses.length > 0;
-  if (!activeCampusId || (campusLoaded && !campuses.find(c => c._id === activeCampusId))) {
+  const isGuestOrNoCampus = !activeCampusId || (campusLoaded && !campuses.find(c => c._id === activeCampusId));
+  if (isGuestOrNoCampus && user?.isGuest) {
     return (
       <ScrollView 
         style={s.container} 
@@ -587,6 +628,142 @@ export default function HomeScreen({ navigation }) {
             />
           </View>
         </Animated.View>
+
+        {/* Student ERP Dashboard Section */}
+        {user && !user.isGuest && studentData && (
+          <View style={{ paddingHorizontal: 20, marginTop: 18 }}>
+            
+            {/* Student Welcome / Profile Card */}
+            <LinearGradient
+              colors={['#4f46e5', '#312e81']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={{ padding: 18, borderRadius: 20, ...SHADOWS.md, marginBottom: 16 }}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                  <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ fontSize: 22 }}>🎓</Text>
+                  </View>
+                  <View>
+                    <Text style={{ color: '#fff', fontSize: 18, fontWeight: '800' }}>{studentData.student?.username || user?.username}</Text>
+                    <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, marginTop: 2 }}>
+                      Roll No: {studentData.student?.rollNumber} · {studentData.student?.department} Sem {studentData.student?.semester}
+                    </Text>
+                  </View>
+                </View>
+                <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.2)' }}>
+                  <Text style={{ color: '#fff', fontSize: 10, fontWeight: '800' }}>{studentData.student?.academicStatus || 'Good Standing'}</Text>
+                </View>
+              </View>
+
+              <View style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.15)', marginVertical: 14 }} />
+
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                <View>
+                  <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11, fontWeight: '600' }}>OVERALL ATTENDANCE</Text>
+                  <Text style={{ color: '#10b981', fontSize: 18, fontWeight: '800', marginTop: 4 }}>{studentData.student?.attendancePercent}%</Text>
+                </View>
+                <View>
+                  <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11, fontWeight: '600' }}>FEE STATUS</Text>
+                  <Text style={{ color: studentData.student?.feeStatus?.includes('Pending') ? '#ef4444' : '#10b981', fontSize: 18, fontWeight: '800', marginTop: 4 }}>
+                    {studentData.student?.feeStatus || 'Paid'}
+                  </Text>
+                </View>
+              </View>
+            </LinearGradient>
+
+            {/* Next Class Widget */}
+            {studentData.nextClass && (
+              <View style={{ backgroundColor: colors.card, padding: 16, borderRadius: 20, borderWidth: 1, borderColor: colors.border, ...SHADOWS.sm, marginBottom: 16 }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Text style={{ color: colors.text, fontSize: 14, fontWeight: '800' }}>Next Class</Text>
+                  <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, backgroundColor: colors.primary + '15' }}>
+                    <Text style={{ color: colors.primary, fontSize: 10, fontWeight: '700' }}>Period {studentData.nextClass.period}</Text>
+                  </View>
+                </View>
+                
+                <Text style={{ color: colors.text, fontSize: 18, fontWeight: '800', marginTop: 10 }}>{studentData.nextClass.subject}</Text>
+                <Text style={{ color: colors.textSec, fontSize: 12, marginTop: 4 }}>
+                  📍 Room {studentData.nextClass.roomName} · 🕰️ {studentData.nextClass.startTime} - {studentData.nextClass.endTime}
+                </Text>
+                <Text style={{ color: colors.textMuted, fontSize: 11, marginTop: 2 }}>Faculty: {studentData.nextClass.facultyName}</Text>
+
+                <TouchableOpacity
+                  style={{
+                    backgroundColor: colors.primary,
+                    borderRadius: 12,
+                    paddingVertical: 10,
+                    alignItems: 'center',
+                    marginTop: 14,
+                    flexDirection: 'row',
+                    justifyContent: 'center',
+                    gap: 6
+                  }}
+                  onPress={() => handleNavigateToRoom(studentData.nextClass.roomName)}
+                >
+                  <Ionicons name="navigate-outline" size={16} color="#fff" />
+                  <Text style={{ color: '#fff', fontSize: 13, fontWeight: '800' }}>Navigate →</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* Today's Timetable Widget */}
+            <View style={{ marginBottom: 16 }}>
+              <Text style={{ color: colors.text, fontSize: 16, fontWeight: '800', marginBottom: 10 }}>Today's Timetable</Text>
+              {studentData.todayTimetable && studentData.todayTimetable.length > 0 ? (
+                studentData.todayTimetable.map((slot, idx) => (
+                  <View
+                    key={slot._id || idx}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      backgroundColor: colors.card,
+                      padding: 12,
+                      borderRadius: 14,
+                      borderWidth: 1,
+                      borderColor: colors.border,
+                      marginBottom: 8
+                    }}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                      <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: colors.primary + '15', alignItems: 'center', justifyContent: 'center' }}>
+                        <Text style={{ color: colors.primary, fontSize: 12, fontWeight: '800' }}>P{slot.period}</Text>
+                      </View>
+                      <View>
+                        <Text style={{ color: colors.text, fontSize: 14, fontWeight: '700' }}>{slot.subject}</Text>
+                        <Text style={{ color: colors.textMuted, fontSize: 11, marginTop: 2 }}>{slot.startTime} · Room {slot.roomName}</Text>
+                      </View>
+                    </View>
+                    <TouchableOpacity
+                      style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: colors.primary + '15', alignItems: 'center', justifyContent: 'center' }}
+                      onPress={() => handleNavigateToRoom(slot.roomName)}
+                    >
+                      <Ionicons name="navigate" size={14} color={colors.primary} />
+                    </TouchableOpacity>
+                  </View>
+                ))
+              ) : (
+                <Text style={{ color: colors.textSec, fontSize: 13 }}>No classes scheduled today.</Text>
+              )}
+            </View>
+
+            {/* Announcements Section */}
+            {studentData.announcements && studentData.announcements.length > 0 && (
+              <View style={{ marginBottom: 16 }}>
+                <Text style={{ color: colors.text, fontSize: 16, fontWeight: '800', marginBottom: 10 }}>Announcements</Text>
+                {studentData.announcements.map((ann, idx) => (
+                  <View key={ann.id || idx} style={{ backgroundColor: colors.card, padding: 14, borderRadius: 14, borderWidth: 1, borderColor: colors.border, marginBottom: 8 }}>
+                    <Text style={{ color: colors.text, fontSize: 14, fontWeight: '700' }}>📢 {ann.title}</Text>
+                    <Text style={{ color: colors.textSec, fontSize: 12, marginTop: 4, lineHeight: 18 }}>{ann.message}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+
+          </View>
+        )}
 
         {/* Quick Actions */}
         <View style={s.section}>
