@@ -187,14 +187,23 @@ export default function WeatherWidget() {
     <>
       {/* Button */}
       <Animated.View style={{ transform: [{ scale: btnP }, { translateY: btnF }] }}>
-        <TouchableOpacity onPress={tap} activeOpacity={0.8} style={s.btn}>
-          <Animated.View style={[s.btnGlow, { opacity: btnG }]} />
+        <TouchableOpacity 
+          onPress={tap} 
+          activeOpacity={0.85} 
+          style={[
+            s.btn,
+            {
+              backgroundColor: colors.primary + "18",
+              borderColor: colors.primary + "35"
+            }
+          ]}
+        >
           {weather ? (
-            <Text style={{ fontSize: 13, fontWeight: 'bold', color: '#FFF', textAlign: 'center' }}>
+            <Text style={{ fontSize: 13, fontWeight: '800', color: colors.primary, textAlign: 'center' }}>
               {weather.temperature}°
             </Text>
           ) : (
-            <Ionicons name="partly-sunny" size={19} color="#FFF" />
+            <Ionicons name="partly-sunny" size={19} color={colors.primary} />
           )}
         </TouchableOpacity>
       </Animated.View>
@@ -327,7 +336,7 @@ export default function WeatherWidget() {
 }
 
 const s = StyleSheet.create({
-  btn: { width: 42, height: 42, borderRadius: 21, backgroundColor: '#7C3AED', alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#8B5CF6', shadowColor: '#7C3AED', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.45, shadowRadius: 10, elevation: 8 },
+  btn: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5 },
   btnGlow: { ...StyleSheet.absoluteFillObject, borderRadius: 21, borderWidth: 3, borderColor: '#A78BFA' },
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },
   fullScreen: { flex: 1 },

@@ -13,6 +13,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SHADOWS, RADIUS, QUICK_ACTIONS, ROOM_COLORS } from "../theme/designSystem";
 import WeatherWidget from "../components/WeatherWidget";
 import AnimatedPressable from "../components/AnimatedPressable";
+import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
 
 
@@ -183,15 +184,14 @@ export default function HomeScreen({ navigation }) {
   const [showNotifs, setShowNotifs] = useState(false);
   const { notifications, markNotifRead, hasUnread } = useLiveMeet() || { notifications: [], markNotifRead: () => {}, hasUnread: false };
 
-  const s = StyleSheet.create({
-    container: { flex: 1, backgroundColor: colors.bg },
-    header: {
-      paddingTop: 16,
-      paddingHorizontal: 20, paddingBottom: 24,
-      backgroundColor: "#eef2ff",
-      borderBottomLeftRadius: 28, borderBottomRightRadius: 28,
-    },
-    headerTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 18 },
+    const s = StyleSheet.create({
+      container: { flex: 1, backgroundColor: 'transparent' },
+      header: {
+        paddingTop: Platform.OS === 'ios' ? 8 : 22,
+        paddingHorizontal: 20, paddingBottom: 8,
+        backgroundColor: "transparent",
+      },
+    headerTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 14 },
     greetingText: { fontSize: 13, color: colors.textSec, fontWeight: "600" },
     appName: { fontSize: 28, fontWeight: "800", color: colors.text, letterSpacing: -0.5 },
     appAccent: { color: colors.primary },
@@ -210,30 +210,30 @@ export default function HomeScreen({ navigation }) {
     searchRow: {
       flexDirection: "row", alignItems: "center",
       backgroundColor: colors.card,
-      borderRadius: RADIUS.md, paddingHorizontal: 14,
-      borderWidth: 1.5, borderColor: colors.border,
-      ...SHADOWS.md,
+      borderRadius: 99, paddingHorizontal: 16,
+      borderWidth: 1, borderColor: "rgba(99, 102, 241, 0.12)",
+      ...SHADOWS.sm,
     },
-    searchInput: { flex: 1, paddingVertical: 14, fontSize: 15, color: colors.text, marginLeft: 10 },
+    searchInput: { flex: 1, paddingVertical: 12, fontSize: 15, color: colors.text, marginLeft: 8 },
     qrBtn: {
       width: 36, height: 36, borderRadius: RADIUS.sm,
       backgroundColor: colors.primary, alignItems: "center", justifyContent: "center",
     },
-    section: { paddingHorizontal: 20, marginTop: 22 },
+    section: { paddingHorizontal: 20, marginTop: 14 },
     secRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 14 },
-    secTitle: { fontSize: 17, fontWeight: "700", color: colors.text },
+    secTitle: { fontSize: 18, fontWeight: "800", color: colors.text, letterSpacing: -0.3 },
     seeAll: { fontSize: 13, fontWeight: "600", color: colors.primary },
     quickRow: { flexDirection: "row", justifyContent: "space-between" },
     quickCard: {
       width: (SW - 56) / 4, alignItems: "center",
       backgroundColor: colors.card, paddingVertical: 14, paddingHorizontal: 4,
-      borderRadius: RADIUS.md, borderWidth: 1, borderColor: colors.border,
+      borderRadius: 18, borderWidth: 1, borderColor: "rgba(99, 102, 241, 0.08)",
       ...SHADOWS.sm,
     },
     quickIcon: { width: 48, height: 48, borderRadius: 16, alignItems: "center", justifyContent: "center", marginBottom: 8 },
     quickLabel: { fontSize: 11, fontWeight: "700", color: colors.textSec, textAlign: "center" },
     banner: {
-      marginHorizontal: 20, marginTop: 22, borderRadius: RADIUS.lg, overflow: "hidden",
+      marginHorizontal: 20, marginTop: 22, borderRadius: 20, overflow: "hidden",
       ...SHADOWS.lg,
     },
     bannerInner: { padding: 20 },
@@ -247,8 +247,9 @@ export default function HomeScreen({ navigation }) {
     bannerSub: { fontSize: 13, color: "rgba(255,255,255,0.75)", marginBottom: 14 },
     bannerBtn: {
       flexDirection: "row", alignItems: "center",
-      backgroundColor: "#fff", paddingHorizontal: 14,
-      paddingVertical: 9, borderRadius: RADIUS.sm, alignSelf: "flex-start",
+      backgroundColor: "#fff", paddingHorizontal: 16,
+      paddingVertical: 9, borderRadius: 99, alignSelf: "flex-start",
+      ...SHADOWS.sm,
     },
     bannerBtnText: { fontSize: 13, fontWeight: "700", color: "#4f46e5", marginLeft: 6 },
     catChip: {
@@ -261,37 +262,38 @@ export default function HomeScreen({ navigation }) {
     catLabel: { fontSize: 13, fontWeight: "600", color: colors.textSec, marginLeft: 6 },
     recentCard: {
       flexDirection: "row", alignItems: "center",
-      backgroundColor: colors.card, borderRadius: RADIUS.md,
-      padding: 14, marginBottom: 10,
-      borderWidth: 1, borderColor: colors.border, ...SHADOWS.sm,
+      backgroundColor: colors.card, borderRadius: 16,
+      padding: 12, marginBottom: 10,
+      borderWidth: 1, borderColor: "rgba(99, 102, 241, 0.25)", ...SHADOWS.sm,
     },
-    recentIcon: { width: 44, height: 44, borderRadius: RADIUS.sm, alignItems: "center", justifyContent: "center", marginRight: 12 },
+    recentIcon: { width: 40, height: 40, borderRadius: 99, alignItems: "center", justifyContent: "center", marginRight: 12 },
     recentName: { fontSize: 15, fontWeight: "700", color: colors.text },
     recentMeta: { fontSize: 12, color: colors.textSec, marginTop: 2 },
     navBadge: {
-      width: 36, height: 36, borderRadius: 12,
+      width: 36, height: 36, borderRadius: 99,
       backgroundColor: colors.primary + "15", alignItems: "center", justifyContent: "center",
     },
     campusCard: {
-      backgroundColor: colors.card, borderRadius: RADIUS.lg,
+      backgroundColor: colors.card, borderRadius: 20,
       overflow: "hidden", marginBottom: 12,
-      borderWidth: 1, borderColor: colors.border, ...SHADOWS.md,
+      borderWidth: 1, borderColor: "rgba(99, 102, 241, 0.25)", ...SHADOWS.md,
     },
     campusBar: { height: 4 },
     campusBody: { padding: 16 },
     campusName: { fontSize: 17, fontWeight: "800", color: colors.text },
     campusDesc: { fontSize: 13, color: colors.textSec, marginTop: 4, lineHeight: 18 },
     campusAddr: { flexDirection: "row", alignItems: "center", marginTop: 8 },
-    campusActions: { flexDirection: "row", gap: 8, marginTop: 14 },
+    campusActions: { marginTop: 14 },
     mapBtn: {
-      flex: 1, flexDirection: "row", alignItems: "center",
-      backgroundColor: colors.primary, paddingVertical: 11,
-      borderRadius: RADIUS.sm, justifyContent: "center",
+      flexDirection: "row", alignItems: "center",
+      backgroundColor: colors.primary, paddingVertical: 12,
+      borderRadius: 99, justifyContent: "center",
+      ...SHADOWS.primary(),
     },
     arBtn: {
       flexDirection: "row", alignItems: "center",
       backgroundColor: colors.primary + "18", paddingHorizontal: 14,
-      paddingVertical: 11, borderRadius: RADIUS.sm,
+      paddingVertical: 11, borderRadius: 99,
       borderWidth: 1, borderColor: colors.primary + "35",
     },
     empty: { alignItems: "center", paddingVertical: 36 },
@@ -302,25 +304,27 @@ export default function HomeScreen({ navigation }) {
     emptyTitle: { fontSize: 16, fontWeight: "700", color: colors.text, marginBottom: 6 },
     emptyText: { fontSize: 13, color: colors.textSec, textAlign: "center", lineHeight: 20 },
     campaignCard: {
-      width: 280, backgroundColor: colors.card,
-      borderRadius: RADIUS.lg, marginRight: 16,
-      borderWidth: 1, borderColor: colors.border, ...SHADOWS.md, overflow: 'hidden'
+      width: 230, height: 240, backgroundColor: colors.card,
+      borderRadius: RADIUS.md, marginRight: 14,
+      borderWidth: 1, borderColor: "rgba(99, 102, 241, 0.25)", ...SHADOWS.sm, overflow: 'hidden'
     },
-    campaignImg: { width: '100%', height: 120, backgroundColor: colors.border },
-    campaignContent: { padding: 16 },
-    campaignTitle: { fontSize: 16, fontWeight: "800", color: colors.text, marginBottom: 4 },
-    campaignDesc: { fontSize: 13, color: colors.textSec, lineHeight: 18, marginBottom: 12 },
+    campaignImg: { width: '100%', height: 90 },
+    campaignImgPlaceholder: { width: '100%', height: 90, alignItems: 'center', justifyContent: 'center' },
+    campaignContent: { flex: 1, padding: 10, justifyContent: 'space-between' },
+    campaignInfo: { flex: 1 },
+    campaignTitle: { fontSize: 14, fontWeight: "800", color: colors.text, marginBottom: 2 },
+    campaignDesc: { fontSize: 12, color: colors.textSec, lineHeight: 16, marginBottom: 4 },
     campaignBadge: {
-      alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 4,
-      borderRadius: 4, backgroundColor: colors.primary + "15",
-      marginBottom: 8
+      alignSelf: 'flex-start', paddingHorizontal: 6, paddingVertical: 2,
+      borderRadius: 4,
+      marginBottom: 4
     },
-    campaignBadgeText: { fontSize: 10, fontWeight: "800", color: colors.primary, textTransform: 'uppercase' },
+    campaignBadgeText: { fontSize: 9, fontWeight: "800", color: colors.primary, textTransform: 'uppercase' },
     campaignNavBtn: {
       flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-      backgroundColor: colors.primary, paddingVertical: 10, borderRadius: RADIUS.sm
+      backgroundColor: colors.primary, paddingVertical: 7, borderRadius: RADIUS.xs,
     },
-    campaignNavText: { color: '#fff', fontSize: 13, fontWeight: "700", marginLeft: 6 }
+    campaignNavText: { color: '#fff', fontSize: 12, fontWeight: "700", marginLeft: 4 }
   });
 
   if (loading) {
@@ -527,7 +531,19 @@ export default function HomeScreen({ navigation }) {
   };
 
   return (
-    <>
+    <View style={{ flex: 1, backgroundColor: '#ffffff' }}>
+      <LinearGradient
+        colors={['rgba(139, 92, 246, 0.22)', 'rgba(99, 102, 241, 0.10)', 'rgba(255, 255, 255, 0)']}
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          height: 380,
+        }}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+      />
       <ScrollView
         style={s.container}
         showsVerticalScrollIndicator={false}
@@ -552,13 +568,13 @@ export default function HomeScreen({ navigation }) {
             </View>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
               <WeatherWidget />
-              <TouchableOpacity style={[s.avatar, { width: 42, height: 42 }]} onPress={() => setShowNotifs(true)}>
+              <AnimatedPressable style={[s.avatar, { width: 42, height: 42 }]} onPress={() => setShowNotifs(true)}>
                 <Ionicons name="notifications" size={20} color={colors.primary} />
                 {hasUnread && <View style={s.notifDot} />}
-              </TouchableOpacity>
-              <TouchableOpacity style={[s.avatar, { width: 42, height: 42 }]} onPress={() => navigation.navigate("Settings")}>
+              </AnimatedPressable>
+              <AnimatedPressable style={[s.avatar, { width: 42, height: 42 }]} onPress={() => navigation.navigate("Settings")}>
                 <Ionicons name="person" size={20} color={colors.primary} />
-              </TouchableOpacity>
+              </AnimatedPressable>
             </View>
           </View>
           <View style={s.searchRow}>
@@ -569,9 +585,6 @@ export default function HomeScreen({ navigation }) {
               placeholderTextColor={colors.textMuted}
               onFocus={() => navigation.navigate("Search")}
             />
-            <TouchableOpacity style={s.qrBtn} onPress={() => navigation.navigate("QRScan")}>
-              <Ionicons name="qr-code" size={18} color="#fff" />
-            </TouchableOpacity>
           </View>
         </Animated.View>
 
@@ -590,7 +603,7 @@ export default function HomeScreen({ navigation }) {
                 ],
               }}>
                 <AnimatedPressable 
-                  style={s.quickCard} 
+                  style={[s.quickCard, { borderColor: a.color + '22', shadowColor: a.color }]} 
                   onPress={() => a.screen === 'MeetModal' ? setShowMeetModal(true) : navigation.navigate(a.screen)}
                 >
                   <View style={[s.quickIcon, { backgroundColor: a.bg }]}>
@@ -615,20 +628,31 @@ export default function HomeScreen({ navigation }) {
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingRight: 20 }}>
               {campaigns.map(c => (
                 <AnimatedPressable key={c._id} style={s.campaignCard} onPress={() => navigation.navigate('CampaignDetail', { campaign: c })}>
-                  {c.image && <Image source={{ uri: c.image.startsWith('http') ? c.image : `${SOCKET_URL}${c.image}` }} style={s.campaignImg} resizeMode="cover" />}
+                  {c.image ? (
+                    <Image source={{ uri: c.image.startsWith('http') ? c.image : `${SOCKET_URL}${c.image}` }} style={s.campaignImg} resizeMode="cover" />
+                  ) : (
+                    <LinearGradient
+                      colors={[colors.primary + '35', colors.primary + '10']}
+                      style={s.campaignImgPlaceholder}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                    >
+                      <Ionicons name="megaphone-outline" size={32} color={colors.primary} />
+                    </LinearGradient>
+                  )}
                   <View style={s.campaignContent}>
-                    {c.category && (
-                      <View style={s.campaignBadge}>
-                        <Text style={s.campaignBadgeText}>{c.category}</Text>
+                    <View style={s.campaignInfo}>
+                      <View style={[s.campaignBadge, { backgroundColor: c.category ? (colors.primary + "15") : "transparent" }]}>
+                        <Text style={s.campaignBadgeText}>{c.category || "UPDATE"}</Text>
                       </View>
-                    )}
-                    <Text style={s.campaignTitle} numberOfLines={1}>{c.title}</Text>
-                    <Text style={s.campaignDesc} numberOfLines={2}>{c.description}</Text>
+                      <Text style={s.campaignTitle} numberOfLines={1}>{c.title}</Text>
+                      <Text style={s.campaignDesc} numberOfLines={2}>{c.description}</Text>
+                    </View>
                     <AnimatedPressable 
                       style={s.campaignNavBtn}
                       onPress={() => navigation.navigate('CampaignDetail', { campaign: c })}
                     >
-                      <Ionicons name="navigate" size={16} color="#fff" />
+                      <Ionicons name="navigate" size={15} color="#fff" />
                       <Text style={s.campaignNavText}>Navigate Here</Text>
                     </AnimatedPressable>
                   </View>
@@ -640,11 +664,14 @@ export default function HomeScreen({ navigation }) {
 
         {/* Banner */}
         <AnimatedPressable style={s.banner} onPress={() => navigation.navigate("Map", { campusId: activeCampusId })}>
-          <View style={[s.bannerInner, { backgroundColor: colors.secondary || "#8b5cf6" }]}>
-            <View style={[s.bannerInner, { padding: 0 }]}>
-              <View style={{ flexDirection: "row", position: "absolute", right: 20, top: -10, opacity: 0.15 }}>
-                <Ionicons name="map" size={100} color="#fff" />
-              </View>
+          <LinearGradient
+            colors={[colors.secondary || '#d946ef', colors.primary || '#8b5cf6']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={s.bannerInner}
+          >
+            <View style={{ position: "absolute", right: 20, top: 10, opacity: 0.15 }}>
+              <Ionicons name="map" size={90} color="#fff" />
             </View>
             <View style={s.bannerBadge}>
               <Ionicons name="flash" size={10} color="#fff" />
@@ -656,7 +683,7 @@ export default function HomeScreen({ navigation }) {
               <Ionicons name="map" size={16} color={colors.secondary || "#8b5cf6"} />
               <Text style={s.bannerBtnText}>Open Map</Text>
             </AnimatedPressable>
-          </View>
+          </LinearGradient>
         </AnimatedPressable>
 
         {/* Categories */}
@@ -746,10 +773,6 @@ export default function HomeScreen({ navigation }) {
                     <AnimatedPressable style={s.mapBtn} onPress={() => navigation.navigate("Map", { campusId: campus._id })}>
                       <Ionicons name="map" size={16} color="#fff" />
                       <Text style={{ color: "#fff", fontWeight: "700", fontSize: 13, marginLeft: 6 }}>Explore Map</Text>
-                    </AnimatedPressable>
-                    <AnimatedPressable style={s.arBtn} onPress={() => navigation.navigate("Search", { campusId: campus._id })}>
-                      <Ionicons name="search" size={16} color={colors.primary} />
-                      <Text style={{ color: colors.primary, fontWeight: "700", fontSize: 13, marginLeft: 6 }}>Search</Text>
                     </AnimatedPressable>
                   </View>
                 </View>
@@ -905,6 +928,6 @@ export default function HomeScreen({ navigation }) {
           </View>
         </View>
       )}
-    </>
+    </View>
   );
 }
