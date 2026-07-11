@@ -4,7 +4,7 @@ import { Platform } from "react-native";
 import { buildGraph, astar, dijkstra, findNearestNode as localFindNearestNode, generateDirections } from './utils/pathfinding';
 
 let Constants = null;
-try { Constants = require("expo-constants").default; } catch (e) {}
+try { Constants = require("expo-constants").default; } catch (e) { }
 
 let devHost = Platform.OS === "android" ? "10.0.2.2" : "localhost";
 if (Constants?.expoConfig?.hostUri) {
@@ -34,7 +34,7 @@ export async function fetchAppConfig() {
     const config = res.data;
     await AsyncStorage.setItem("navx_app_config", JSON.stringify(config));
     cachedConfig = config;
-    
+
     // Initialize Firebase dynamically if API key is provided
     if (config.EXPO_PUBLIC_FIREBASE_API_KEY) {
       try {
@@ -74,9 +74,9 @@ AsyncStorage.getItem("navx_app_config").then(stored => {
   if (stored) {
     try {
       cachedConfig = JSON.parse(stored);
-    } catch (e) {}
+    } catch (e) { }
   }
-}).catch(() => {});
+}).catch(() => { });
 
 export function getCachedConfigValue(key, fallback) {
   if (process.env && process.env[key]) {
@@ -101,8 +101,8 @@ export async function cachedGet(key, fetcher) {
       cachedData = data;
       if (Date.now() - timestamp < CACHE_DURATION) return data;
     }
-  } catch {}
-  
+  } catch { }
+
   try {
     const data = await fetcher();
     try {
@@ -110,7 +110,7 @@ export async function cachedGet(key, fetcher) {
         key,
         JSON.stringify({ data, timestamp: Date.now() }),
       );
-    } catch {}
+    } catch { }
     return data;
   } catch (err) {
     if (cachedData) return cachedData; // Fallback to stale cache if offline
@@ -133,41 +133,41 @@ export const downloadCampusOffline = async (campusId) => {
 const runOfflinePathfinding = async (campusId, from, to, isToRoom = false) => {
   const offlineData = await AsyncStorage.getItem(`navx_offline_${campusId}`);
   if (!offlineData) throw new Error("Offline map not available");
-  
+
   const mapData = JSON.parse(offlineData);
   const graph = buildGraph(mapData.nodes, mapData.paths);
-  
+
   let startNodeId = from.nodeId;
   if (!startNodeId && from.position) {
-     const nearest = localFindNearestNode(graph, from.position.x, from.position.y, from.floorId);
-     if (nearest) startNodeId = nearest.id;
+    const nearest = localFindNearestNode(graph, from.position.x, from.position.y, from.floorId);
+    if (nearest) startNodeId = nearest.id;
   }
-  
+
   let endNodeId = to.nodeId;
   if (isToRoom && to.roomId) {
-     const room = mapData.rooms?.find(r => r._id === to.roomId);
-     if (room && room.nodes && room.nodes.length > 0) {
-        endNodeId = room.nodes[0];
-     } else if (room) {
-        const nearest = localFindNearestNode(graph, room.x, room.y, room.floorId);
-        if (nearest) endNodeId = nearest.id;
-     }
+    const room = mapData.rooms?.find(r => r._id === to.roomId);
+    if (room && room.nodes && room.nodes.length > 0) {
+      endNodeId = room.nodes[0];
+    } else if (room) {
+      const nearest = localFindNearestNode(graph, room.x, room.y, room.floorId);
+      if (nearest) endNodeId = nearest.id;
+    }
   } else if (!endNodeId && to.position) {
-     const nearest = localFindNearestNode(graph, to.position.x, to.position.y, to.floorId);
-     if (nearest) endNodeId = nearest.id;
+    const nearest = localFindNearestNode(graph, to.position.x, to.position.y, to.floorId);
+    if (nearest) endNodeId = nearest.id;
   }
 
   if (!startNodeId || !endNodeId) throw new Error("Start or End node not found offline");
 
   let result = astar(graph, startNodeId, endNodeId);
-  
+
   if (!result.found) {
     console.log('[Offline Navigation] A* route failed, falling back to Dijkstra...');
     result = dijkstra(graph, startNodeId, endNodeId);
   }
 
   const directions = generateDirections(result.path);
-  
+
   return { ...result, directions, offline: true };
 };
 
@@ -250,7 +250,7 @@ export const verifyCampusGeofence = (campusId, lat, lng) =>
 export const getBeaconsForFloor = (floorId) =>
   api.get(`/beacons/floor/${floorId}`).then((r) => r.data);
 export const logAnalytics = (data) =>
-  api.post("/analytics", data).catch(() => {});
+  api.post("/analytics", data).catch(() => { });
 
 // AI Chatbot
 export const chatWithAI = (message, sessionId, campusId, context) =>

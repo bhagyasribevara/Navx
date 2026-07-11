@@ -209,115 +209,115 @@ export default function WeatherWidget() {
               imageStyle={{ opacity: isNight ? 0.25 : 0.7 }}
               resizeMode="cover"
             >
-            <LinearGradient
-              colors={theme.gradientColors}
-              start={theme.gradientStart || { x: 0.5, y: 0 }}
-              end={theme.gradientEnd || { x: 0.5, y: 1 }}
-              style={s.fullScreen}
-            >
-              {/* Animated weather effects layer */}
-              {weather && <WeatherEffects type={weather.weatherType} theme={theme} isNight={isNight} />}
+              <LinearGradient
+                colors={theme.gradientColors}
+                start={theme.gradientStart || { x: 0.5, y: 0 }}
+                end={theme.gradientEnd || { x: 0.5, y: 1 }}
+                style={s.fullScreen}
+              >
+                {/* Animated weather effects layer */}
+                {weather && <WeatherEffects type={weather.weatherType} theme={theme} isNight={isNight} />}
 
-              {/* Close button */}
-              <TouchableOpacity style={[s.closeBtn, { backgroundColor: theme.closeBtnBg }]} onPress={close}>
-                <Ionicons name="close" size={22} color={theme.textSecondary} />
-              </TouchableOpacity>
+                {/* Close button */}
+                <TouchableOpacity style={[s.closeBtn, { backgroundColor: theme.closeBtnBg }]} onPress={close}>
+                  <Ionicons name="close" size={22} color={theme.textSecondary} />
+                </TouchableOpacity>
 
-              {loading && !weather ? <ActivityIndicator size="large" color="#FFF" style={{ flex: 1 }} /> : error ? (
-                <View style={s.errW}>
-                  <View style={s.errIc}><Ionicons name={error === 'LOCATION_DENIED' ? 'location-outline' : 'cloud-offline-outline'} size={40} color="rgba(255,255,255,0.8)" /></View>
-                  <Text style={s.errT}>{error === 'LOCATION_DENIED' ? 'Location Access Required' : 'Weather Unavailable'}</Text>
-                  <Text style={s.errD}>{error === 'LOCATION_DENIED' ? 'Enable location permissions to see live weather.' : 'Check your connection and try again.'}</Text>
-                  <TouchableOpacity style={s.retryB} onPress={() => { clearWeatherCache(); load(); }}>
-                    <Ionicons name="refresh" size={16} color="#7C3AED" /><Text style={s.retryT}>Try Again</Text>
-                  </TouchableOpacity>
-                </View>
-              ) : weather ? (
+                {loading && !weather ? <ActivityIndicator size="large" color="#FFF" style={{ flex: 1 }} /> : error ? (
+                  <View style={s.errW}>
+                    <View style={s.errIc}><Ionicons name={error === 'LOCATION_DENIED' ? 'location-outline' : 'cloud-offline-outline'} size={40} color="rgba(255,255,255,0.8)" /></View>
+                    <Text style={s.errT}>{error === 'LOCATION_DENIED' ? 'Location Access Required' : 'Weather Unavailable'}</Text>
+                    <Text style={s.errD}>{error === 'LOCATION_DENIED' ? 'Enable location permissions to see live weather.' : 'Check your connection and try again.'}</Text>
+                    <TouchableOpacity style={s.retryB} onPress={() => { clearWeatherCache(); load(); }}>
+                      <Ionicons name="refresh" size={16} color="#7C3AED" /><Text style={s.retryT}>Try Again</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : weather ? (
                   <Animated.View style={{ flex: 1, opacity: cFade }}>
-                      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 24, paddingTop: Platform.OS === 'ios' ? 60 : 48, paddingBottom: 40 }}>
-                        {/* Header */}
-                        <Animated.View style={[s.hdr, mkAnim(hdrA)]}>
-                          <View style={[s.liveBdg, { backgroundColor: theme.liveBadgeBg }]}>
-                            <View style={[s.liveDot, { backgroundColor: theme.liveDotColor }]} />
-                            <Text style={[s.liveTxt, { color: theme.textPrimary }]}>Live Weather</Text>
-                          </View>
-                          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                            <Text style={[s.updTxt, { color: theme.textPrimary }]}>Updated just now</Text>
-                            <Ionicons name="refresh" size={14} color={theme.textPrimary} style={{ marginLeft: 4 }} />
-                          </View>
-                        </Animated.View>
+                    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 24, paddingTop: Platform.OS === 'ios' ? 60 : 48, paddingBottom: 40 }}>
+                      {/* Header */}
+                      <Animated.View style={[s.hdr, mkAnim(hdrA)]}>
+                        <View style={[s.liveBdg, { backgroundColor: theme.liveBadgeBg }]}>
+                          <View style={[s.liveDot, { backgroundColor: theme.liveDotColor }]} />
+                          <Text style={[s.liveTxt, { color: theme.textPrimary }]}>Live Weather</Text>
+                        </View>
+                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                          <Text style={[s.updTxt, { color: theme.textPrimary }]}>Updated just now</Text>
+                          <Ionicons name="refresh" size={14} color={theme.textPrimary} style={{ marginLeft: 4 }} />
+                        </View>
+                      </Animated.View>
 
-                        {/* Location */}
-                        <Animated.View style={[s.locRow, mkAnim(locA)]}>
-                          <Text style={[s.locTxt, { color: theme.textPrimary }]}>{weather.location}{weather.country ? `, ${weather.country}` : ''}</Text>
-                          <Ionicons name="location-outline" size={18} color={theme.textPrimary} style={{ marginLeft: 6 }} />
-                        </Animated.View>
+                      {/* Location */}
+                      <Animated.View style={[s.locRow, mkAnim(locA)]}>
+                        <Text style={[s.locTxt, { color: theme.textPrimary }]}>{weather.location}{weather.country ? `, ${weather.country}` : ''}</Text>
+                        <Ionicons name="location-outline" size={18} color={theme.textPrimary} style={{ marginLeft: 6 }} />
+                      </Animated.View>
 
-                    {/* Main Info Row (Temp + Condition vs Icon) */}
-                    <Animated.View style={[s.mainRow, mkAnim(tmpA)]}>
-                      <View style={{ flex: 1, paddingRight: 10 }}>
-                        <Text style={[s.temp, { color: theme.textPrimary }]}>{weather.temperature}°</Text>
-                        <Text style={[s.condN, { color: theme.accentColor || '#8B5CF6' }]}>{weather.condition}</Text>
-                        <Text style={[s.condD, { color: theme.textSecondary }]}>{weather.description}</Text>
+                      {/* Main Info Row (Temp + Condition vs Icon) */}
+                      <Animated.View style={[s.mainRow, mkAnim(tmpA)]}>
+                        <View style={{ flex: 1, paddingRight: 10 }}>
+                          <Text style={[s.temp, { color: theme.textPrimary }]}>{weather.temperature}°</Text>
+                          <Text style={[s.condN, { color: theme.accentColor || '#8B5CF6' }]}>{weather.condition}</Text>
+                          <Text style={[s.condD, { color: theme.textSecondary }]}>{weather.description}</Text>
+                        </View>
+                        <View style={s.iconW}>
+                          <Image source={{ uri: getWeatherIconUrl(weather.icon) }} style={s.wIcon} />
+                        </View>
+                      </Animated.View>
+
+                      <View style={[s.div, { backgroundColor: theme.dividerColor, marginTop: 10 }]} />
+
+                      {/* Stats Row 1 */}
+                      <View style={s.sRow}>
+                        <StatCard icon="thermometer-outline" label="Feels Like" value={weather.feelsLike} unit="°" theme={theme} delay={300} />
+                        <StatCard icon="water-outline" label="Humidity" value={weather.humidity} unit="%" theme={theme} delay={380} />
+                        <StatCard icon="speedometer-outline" label="Wind Speed" value={weather.windSpeed} unit=" km/h" theme={theme} delay={460} />
                       </View>
-                      <View style={s.iconW}>
-                        <Image source={{ uri: getWeatherIconUrl(weather.icon) }} style={s.wIcon} />
+                      {/* Stats Row 2 */}
+                      <View style={s.sRow}>
+                        <StatCard icon="sunny-outline" label="UV Index" value={`${uv.value} ${uv.label}`} unit="" theme={theme} delay={540} />
+                        <StatCard icon="eye-outline" label="Visibility" value={weather.visibility} unit=" km" theme={theme} delay={620} />
+                        <StatCard icon="analytics-outline" label="Pressure" value={weather.pressure} unit=" hPa" theme={theme} delay={700} />
                       </View>
-                    </Animated.View>
 
-                    <View style={[s.div, { backgroundColor: theme.dividerColor, marginTop: 10 }]} />
+                      {/* Sunrise / Sunset Card (Gradient) */}
+                      <LinearGradient
+                        colors={theme.cardGradient || ['#7C3AED', '#4F46E5']}
+                        start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                        style={s.sunCard}
+                      >
+                        <View style={s.sunIt}>
+                          <Ionicons name="sunny" size={24} color="#FFF" style={{ marginBottom: 6 }} />
+                          <Text style={[s.sunLbl, { color: 'rgba(255,255,255,0.8)' }]}>Sunrise</Text>
+                          <Text style={[s.sunTm, { color: '#FFF' }]}>{weather.sunrise}</Text>
+                        </View>
+                        <View style={s.sunCenter}>
+                          <Ionicons name="partly-sunny" size={22} color="rgba(255,255,255,0.6)" />
+                        </View>
+                        <View style={s.sunIt}>
+                          <Ionicons name="moon" size={24} color="#FFF" style={{ marginBottom: 6 }} />
+                          <Text style={[s.sunLbl, { color: 'rgba(255,255,255,0.8)' }]}>Sunset</Text>
+                          <Text style={[s.sunTm, { color: '#FFF' }]}>{weather.sunset}</Text>
+                        </View>
+                      </LinearGradient>
 
-                    {/* Stats Row 1 */}
-                    <View style={s.sRow}>
-                      <StatCard icon="thermometer-outline" label="Feels Like" value={weather.feelsLike} unit="°" theme={theme} delay={300} />
-                      <StatCard icon="water-outline" label="Humidity" value={weather.humidity} unit="%" theme={theme} delay={380} />
-                      <StatCard icon="speedometer-outline" label="Wind Speed" value={weather.windSpeed} unit=" km/h" theme={theme} delay={460} />
-                    </View>
-                    {/* Stats Row 2 */}
-                    <View style={s.sRow}>
-                      <StatCard icon="sunny-outline" label="UV Index" value={`${uv.value} ${uv.label}`} unit="" theme={theme} delay={540} />
-                      <StatCard icon="eye-outline" label="Visibility" value={weather.visibility} unit=" km" theme={theme} delay={620} />
-                      <StatCard icon="analytics-outline" label="Pressure" value={weather.pressure} unit=" hPa" theme={theme} delay={700} />
-                    </View>
-
-                        {/* Sunrise / Sunset Card (Gradient) */}
-                        <LinearGradient
-                          colors={theme.cardGradient || ['#7C3AED', '#4F46E5']}
-                          start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-                          style={s.sunCard}
-                        >
-                          <View style={s.sunIt}>
-                            <Ionicons name="sunny" size={24} color="#FFF" style={{ marginBottom: 6 }} />
-                            <Text style={[s.sunLbl, { color: 'rgba(255,255,255,0.8)' }]}>Sunrise</Text>
-                            <Text style={[s.sunTm, { color: '#FFF' }]}>{weather.sunrise}</Text>
+                      <Text style={[s.locTxt, { color: theme.textPrimary, marginTop: 12, marginBottom: 12 }]}>5-Day Forecast</Text>
+                      {typeof forecast === 'string' ? (
+                        <Text style={{ color: 'red', fontSize: 16 }}>{forecast}</Text>
+                      ) : forecast && Array.isArray(forecast) ? forecast.map((day, i) => (
+                        <View key={i} style={[s.forecastCard, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}>
+                          <Text style={[s.forecastDay, { color: theme.textPrimary }]}>{day.dayName}</Text>
+                          <Image source={{ uri: getWeatherIconUrl(day.icon) }} style={s.forecastIcon} />
+                          <View style={s.forecastTemps}>
+                            <Text style={[s.forecastTempMax, { color: theme.textPrimary }]}>{day.tempMax}°</Text>
+                            <Text style={[s.forecastTempMin, { color: theme.textMuted }]}>{day.tempMin}°</Text>
                           </View>
-                          <View style={s.sunCenter}>
-                            <Ionicons name="partly-sunny" size={22} color="rgba(255,255,255,0.6)" />
-                          </View>
-                          <View style={s.sunIt}>
-                            <Ionicons name="moon" size={24} color="#FFF" style={{ marginBottom: 6 }} />
-                            <Text style={[s.sunLbl, { color: 'rgba(255,255,255,0.8)' }]}>Sunset</Text>
-                            <Text style={[s.sunTm, { color: '#FFF' }]}>{weather.sunset}</Text>
-                          </View>
-                        </LinearGradient>
-
-                        <Text style={[s.locTxt, { color: theme.textPrimary, marginTop: 12, marginBottom: 12 }]}>5-Day Forecast</Text>
-                        {typeof forecast === 'string' ? (
-                          <Text style={{ color: 'red', fontSize: 16 }}>{forecast}</Text>
-                        ) : forecast && Array.isArray(forecast) ? forecast.map((day, i) => (
-                          <View key={i} style={[s.forecastCard, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}>
-                            <Text style={[s.forecastDay, { color: theme.textPrimary }]}>{day.dayName}</Text>
-                            <Image source={{ uri: getWeatherIconUrl(day.icon) }} style={s.forecastIcon} />
-                            <View style={s.forecastTemps}>
-                              <Text style={[s.forecastTempMax, { color: theme.textPrimary }]}>{day.tempMax}°</Text>
-                              <Text style={[s.forecastTempMin, { color: theme.textMuted }]}>{day.tempMin}°</Text>
-                            </View>
-                          </View>
-                        )) : null}
-                      </ScrollView>
+                        </View>
+                      )) : null}
+                    </ScrollView>
                   </Animated.View>
-              ) : null}
-            </LinearGradient>
+                ) : null}
+              </LinearGradient>
             </ImageBackground>
           </Animated.View>
         </Animated.View>
