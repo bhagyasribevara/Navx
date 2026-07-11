@@ -53,7 +53,7 @@ export default function FacultyDashboard({ faculty, onLogout, token }) {
   const [activeStudentId, setActiveStudentId] = useState(null);
 
   // Marks Category
-  const [marksType, setMarksType] = useState('Internal');
+  const [marksType, setMarksType] = useState('Mid 1');
   const [obtainedMarks, setObtainedMarks] = useState({});
   const [totalMarks, setTotalMarks] = useState(25);
   const [marksComments, setMarksComments] = useState({});
@@ -65,7 +65,7 @@ export default function FacultyDashboard({ faculty, onLogout, token }) {
   // Analytics
   const [analyticsData, setAnalyticsData] = useState({ passPercentage: 0, averageMarks: 0, weakStudents: [], strongStudents: [] });
   const [loadingAnalytics, setLoadingAnalytics] = useState(false);
-  const [analyticsMarksType, setAnalyticsMarksType] = useState('Internal');
+  const [analyticsMarksType, setAnalyticsMarksType] = useState('Mid 1');
 
   // AI Excel states
   const [excelColumns, setExcelColumns] = useState([
@@ -78,6 +78,14 @@ export default function FacultyDashboard({ faculty, onLogout, token }) {
   const [generatedSheet, setGeneratedSheet] = useState(null);
   const [generatingSheet, setGeneratingSheet] = useState(false);
   const [sheetRefinement, setSheetRefinement] = useState('');
+
+  // Leave & Substitution states
+  const [substitutions, setSubstitutions] = useState([]);
+  const [allFaculties, setAllFaculties] = useState([]);
+  const [showLeaveModal, setShowLeaveModal] = useState(false);
+  const [selectedSlotForLeave, setSelectedSlotForLeave] = useState(null);
+  const [leaveDate, setLeaveDate] = useState(new Date().toISOString().split('T')[0]);
+  const [substituteFacultyId, setSubstituteFacultyId] = useState('');
 
   // AI Copilot
   const [aiAction, setAiAction] = useState('CREATE_PPT');
@@ -157,6 +165,10 @@ export default function FacultyDashboard({ faculty, onLogout, token }) {
   useEffect(() => {
     if (activeTab === 'attendance' || activeTab === 'marks') fetchStudents();
     if (activeTab === 'analytics') fetchAnalytics();
+    if (activeTab === 'schedule') {
+      fetchSubstitutions();
+      fetchAllFaculties();
+    }
 
     // Auto-setup defaults for columns based on tab selection
     if (activeTab === 'attendance') {
@@ -278,6 +290,120 @@ export default function FacultyDashboard({ faculty, onLogout, token }) {
       }
     } catch (err) {
       toast.error('Failed to import generated sheet.');
+    }
+  };
+
+  const handleDownloadTimetable = () => {
+    if (!fullTimetable || fullTimetable.length === 0) {
+      toast.warn('No timetable data scheduled to download.');
+      return;
+    }
+
+    const csvRows = [];
+    
+    // Header
+    const headers = ['Day', ...PERIODS.map(p => `Period ${p} (${PERIOD_TIMINGS[p].start} - ${PERIOD_TIMINGS[p].end})`)];
+    csvRows.push(headers.map(h => `"${h}"`).join(','));
+
+    // Rows for each day
+    DAYS.forEach(day => {
+      const rowCells = [day];
+      PERIODS.forEach(p => {
+        const slot = fullTimetable.find(s => s.dayOfWeek === day && s.period === p);
+        if (slot) {
+          rowCells.push(`${slot.subject} (Room: ${slot.roomName}, Sec: ${slot.section})`);
+        } else {
+          rowCells.push('Off Period');
+        }
+      });
+      csvRows.push(rowCells.map(c => `"${c}"`).join(','));
+    });
+
+    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `${faculty.name}_Teaching_Schedule.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success('Timetable downloaded successfully!');
+  };
+
+  const fetchSubstitutions = async () => {
+    try {
+      const headers = { Authorization: `Bearer ${token}` };
+      const { data } = await axios.get(`${API_BASE}/faculty/substitutions`, { headers });
+      if (data.success) {
+        setSubstitutions(data.substitutions || []);
+      }
+    } catch (err) {
+      console.error('Failed to load substitutions.');
+    }
+  };
+
+  const fetchAllFaculties = async () => {
+    try {
+      const headers = { Authorization: `Bearer ${token}` };
+      const { data } = await axios.get(`${API_BASE}/faculty/list`, { headers });
+      if (data.success) {
+        setAllFaculties(data.faculties || []);
+      }
+    } catch (err) {
+      console.error('Failed to load faculties list.');
+    }
+  };
+
+  const handleApplyLeave = async () => {
+    if (!selectedSlotForLeave) return;
+    if (!substituteFacultyId) {
+      toast.warn('Please select a substitute faculty.');
+      return;
+    }
+
+    const subFacObj = allFaculties.find(f => f._id === substituteFacultyId);
+    if (!subFacObj) return;
+
+    try {
+      const headers = { Authorization: `Bearer ${token}` };
+      const { data } = await axios.post(`${API_BASE}/faculty/leave`, {
+        timetableId: selectedSlotForLeave._id,
+        date: leaveDate,
+        substituteFacultyId: subFacObj._id,
+        substituteFacultyName: subFacObj.name
+      }, { headers });
+
+      if (data.success) {
+        toast.success(data.message);
+        setShowLeaveModal(false);
+        setSelectedSlotForLeave(null);
+        setSubstituteFacultyId('');
+        fetchSubstitutions(); // refresh grid colors
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to apply leave.');
+    }
+  };
+
+  const handleRemoveLeave = async () => {
+    if (!selectedSlotForLeave) return;
+    if (!window.confirm('Are you sure you want to cancel and remove this leave substitution?')) return;
+    try {
+      const headers = { Authorization: `Bearer ${token}` };
+      const { data } = await axios.post(`${API_BASE}/faculty/leave/cancel`, {
+        timetableId: selectedSlotForLeave._id,
+        date: leaveDate
+      }, { headers });
+
+      if (data.success) {
+        toast.success(data.message);
+        setShowLeaveModal(false);
+        setSelectedSlotForLeave(null);
+        setSubstituteFacultyId('');
+        fetchSubstitutions(); // refresh grid colors
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to remove leave.');
     }
   };
 
@@ -695,7 +821,12 @@ export default function FacultyDashboard({ faculty, onLogout, token }) {
 
               <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr', gap: 24 }}>
                 <div className="card">
-                  <h3 className="card-title" style={{ marginBottom: 16 }}>Teaching Calendar Grid</h3>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                    <h3 className="card-title" style={{ margin: 0 }}>Teaching Calendar Grid</h3>
+                    <button className="btn btn-secondary btn-sm" onClick={handleDownloadTimetable} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', fontSize: 12, border: 'none', cursor: 'pointer' }}>
+                      <FiDownload /> Download Timetable
+                    </button>
+                  </div>
                   <div style={{ overflowX: 'auto' }}>
                     <table className="venues-table" style={{ width: '100%', textAlign: 'center', borderCollapse: 'collapse' }}>
                       <thead>
@@ -713,21 +844,38 @@ export default function FacultyDashboard({ faculty, onLogout, token }) {
                         {DAYS.map(day => (
                           <tr key={day}>
                             <td style={{ textAlign: 'left', padding: '12px 16px' }}><strong>{day}</strong></td>
-                            {PERIODS.map(p => {
+                             {PERIODS.map(p => {
                               const slot = fullTimetable.find(s => s.dayOfWeek === day && s.period === p);
+                              const subEntry = slot ? substitutions.find(s => s.timetableId === slot._id) : null;
                               return (
                                 <td key={p} style={{ padding: 6, minWidth: '120px' }}>
                                   {slot ? (
-                                    <div style={{ 
-                                      background: slot.subject.toLowerCase().includes('lab') ? 'rgba(16, 185, 129, 0.08)' : 'rgba(99, 102, 241, 0.08)', 
-                                      border: slot.subject.toLowerCase().includes('lab') ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(99, 102, 241, 0.3)', 
-                                      padding: 8, 
-                                      borderRadius: 8, 
-                                      fontSize: 11 
-                                    }}>
-                                      <div style={{ fontWeight: 700, color: '#fff' }}>{slot.subject}</div>
+                                    <div 
+                                      onClick={() => {
+                                        setSelectedSlotForLeave(slot);
+                                        setSubstituteFacultyId('');
+                                        setShowLeaveModal(true);
+                                      }}
+                                      title="Click to apply substitution leave"
+                                      style={{ 
+                                        background: subEntry ? 'rgba(239, 68, 68, 0.08)' : (slot.subject.toLowerCase().includes('lab') ? 'rgba(16, 185, 129, 0.08)' : 'rgba(99, 102, 241, 0.08)'), 
+                                        border: subEntry ? '1px solid rgba(239, 68, 68, 0.4)' : (slot.subject.toLowerCase().includes('lab') ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(99, 102, 241, 0.3)'), 
+                                        padding: 8, 
+                                        borderRadius: 8, 
+                                        fontSize: 11,
+                                        cursor: 'pointer',
+                                        transition: 'all 0.2s ease',
+                                        textAlign: 'center'
+                                      }}
+                                    >
+                                      <div style={{ fontWeight: 700, color: subEntry ? '#ef4444' : '#fff' }}>{slot.subject}</div>
                                       <div style={{ color: 'var(--text-secondary)', marginTop: 2, fontSize: 10 }}>Room {slot.roomName}</div>
                                       <div style={{ fontSize: 9, color: 'var(--text-muted)', marginTop: 2 }}>Sec {slot.section} (Sem {slot.semester})</div>
+                                      {subEntry ? (
+                                        <div style={{ fontSize: 9, color: '#ef4444', fontWeight: 600, marginTop: 4 }}>[Sub: {subEntry.substituteFacultyName}]</div>
+                                      ) : (
+                                        <div style={{ fontSize: 8, color: 'var(--text-muted)', marginTop: 4 }}>Click to apply leave</div>
+                                      )}
                                     </div>
                                   ) : (
                                     <span style={{ color: 'rgba(255,255,255,0.05)', fontSize: 13 }}>Off Period</span>
@@ -765,10 +913,129 @@ export default function FacultyDashboard({ faculty, onLogout, token }) {
                       Lab sessions are highlighted in green. If you have schedule clashes or need room changes, contact the Campus Administrator.
                     </p>
                   </div>
-                </div>
-              </div>
+              {/* Leave Modal Overlay */}
+              {showLeaveModal && selectedSlotForLeave && (() => {
+                const existingSubForDate = substitutions.find(s => s.timetableId === selectedSlotForLeave._id && s.date === leaveDate);
+                return (
+                  <div style={{
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    background: 'rgba(0,0,0,0.75)',
+                    display: 'flex',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    zIndex: 9999,
+                    backdropFilter: 'blur(4px)'
+                  }}>
+                    <div className="card" style={{ width: '400px', padding: 24, display: 'flex', flexDirection: 'column', gap: 16, border: '1px solid var(--border-color)', background: 'var(--bg-card)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <h3 className="card-title" style={{ margin: 0 }}>Apply Substitution Leave</h3>
+                        <button onClick={() => { setShowLeaveModal(false); setSelectedSlotForLeave(null); }} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 16 }}><FiX /></button>
+                      </div>
+                      
+                      <div style={{ padding: 12, background: 'rgba(255,255,255,0.02)', borderRadius: 8, fontSize: 12, border: '1px solid var(--border-color)', color: 'var(--text-secondary)' }}>
+                        <div><strong>Slot:</strong> <span style={{ color: '#fff' }}>{selectedSlotForLeave.subject}</span></div>
+                        <div style={{ marginTop: 4 }}><strong>Timing:</strong> <span style={{ color: '#fff' }}>{selectedSlotForLeave.startTime} - {selectedSlotForLeave.endTime} ({selectedSlotForLeave.dayOfWeek})</span></div>
+                        <div style={{ marginTop: 4 }}><strong>Class:</strong> <span style={{ color: '#fff' }}>Sec {selectedSlotForLeave.section} (Sem {selectedSlotForLeave.semester})</span></div>
+                      </div>
+
+                      {existingSubForDate && (
+                        <div style={{ padding: '8px 12px', background: 'rgba(239, 68, 68, 0.08)', borderRadius: 6, border: '1px solid rgba(239, 68, 68, 0.3)', fontSize: 11, color: '#ef4444' }}>
+                          Currently Substituted by <strong>{existingSubForDate.substituteFacultyName}</strong> on this date.
+                        </div>
+                      )}
+
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Date of Leave</label>
+                        <input 
+                          type="date" 
+                          value={leaveDate} 
+                          onChange={e => setLeaveDate(e.target.value)} 
+                          className="input" 
+                          style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: '#fff', padding: '8px 12px', borderRadius: 6 }} 
+                        />
+                      </div>
+
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Select Substitute Faculty</label>
+                        <select 
+                          value={substituteFacultyId} 
+                          onChange={e => setSubstituteFacultyId(e.target.value)} 
+                          className="input" 
+                          style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: '#fff', padding: '8px 12px', borderRadius: 6 }}
+                        >
+                          <option value="">-- Choose Substitute Faculty --</option>
+                          {allFaculties.filter(f => f._id !== faculty._id).map(f => (
+                            <option key={f._id} value={f._id}>{f.name} ({f.department})</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 12 }}>
+                        <button 
+                          className="btn btn-secondary" 
+                          onClick={() => { setShowLeaveModal(false); setSelectedSlotForLeave(null); }} 
+                          style={{ 
+                            padding: '10px 16px', 
+                            fontSize: 13, 
+                            borderRadius: 8, 
+                            border: '1px solid rgba(255,255,255,0.08)',
+                            background: 'rgba(255,255,255,0.02)',
+                            color: 'var(--text-secondary)',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s'
+                          }}
+                        >
+                          Cancel
+                        </button>
+                        {existingSubForDate && (
+                          <button 
+                            className="btn btn-danger" 
+                            onClick={handleRemoveLeave} 
+                            style={{ 
+                              padding: '10px 16px', 
+                              fontSize: 13, 
+                              borderRadius: 8, 
+                              background: 'rgba(239, 68, 68, 0.1)',
+                              border: '1px solid rgba(239, 68, 68, 0.2)',
+                              color: '#ef4444', 
+                              cursor: 'pointer',
+                              transition: 'all 0.2s'
+                            }}
+                          >
+                            Remove Leave
+                          </button>
+                        )}
+                        <button 
+                          className="btn btn-primary" 
+                          onClick={handleApplyLeave} 
+                          style={{ 
+                            padding: '10px 16px', 
+                            fontSize: 13, 
+                            borderRadius: 8, 
+                            background: 'var(--gradient-primary)',
+                            border: 'none',
+                            color: '#fff', 
+                            cursor: 'pointer',
+                            fontWeight: 600,
+                            boxShadow: '0 4px 12px rgba(99, 102, 241, 0.2)',
+                            transition: 'all 0.2s'
+                          }}
+                        >
+                          {existingSubForDate ? 'Change Substitute' : 'Apply Leave'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
-          )}
+          </div>
+        </div>
+      )}
 
           {/* TAB 3: ATTENDANCE (Split-Screen Roster Grid) */}
           {activeTab === 'attendance' && (
@@ -947,7 +1214,7 @@ export default function FacultyDashboard({ faculty, onLogout, token }) {
                 <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
                   <div className="form-group" style={{ flex: 1, minWidth: 150 }}><label>Subject</label><select value={selectedSubject} onChange={e => setSelectedSubject(e.target.value)} className="input" style={{ width: '100%' }}>{faculty.subjects?.map(s => <option key={s} value={s}>{s}</option>)}</select></div>
                   <div className="form-group" style={{ flex: 1, minWidth: 120 }}><label>Section</label><select value={selectedSec} onChange={e => setSelectedSec(e.target.value)} className="input" style={{ width: '100%' }}>{faculty.assignedSections?.map(s => <option key={s} value={s}>{s}</option>)}</select></div>
-                  <div className="form-group" style={{ flex: 1, minWidth: 150 }}><label>Marks Category</label><select value={marksType} onChange={e => setMarksType(e.target.value)} className="input" style={{ width: '100%' }}><option value="Internal">Internal Exam (Midterm)</option><option value="Assignment">Assignment Sheets</option><option value="Semester">End Sem Exam</option></select></div>
+                  <div className="form-group" style={{ flex: 1, minWidth: 150 }}><label>Marks Category</label><select value={marksType} onChange={e => setMarksType(e.target.value)} className="input" style={{ width: '100%' }}><option value="Mid 1">Mid 1</option><option value="Mid 2">Mid 2</option><option value="OBE">OBE</option><option value="Assignment">Assignment</option><option value="Internal Exam">Internal Exam</option></select></div>
                   <div className="form-group" style={{ flex: 1, minWidth: 100 }}><label>Max Marks</label><input type="number" value={totalMarks} onChange={e => setTotalMarks(Number(e.target.value))} className="input" style={{ width: '100%' }} /></div>
                 </div>
               </div>
@@ -1008,9 +1275,12 @@ export default function FacultyDashboard({ faculty, onLogout, token }) {
                   <div style={{ flex: 1.5, minWidth: 150 }}>
                     <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 8 }}>Exam Category</label>
                     <select value={analyticsMarksType} onChange={e => setAnalyticsMarksType(e.target.value)} className="input" style={{ width: '100%' }}>
-                      <option value="Internal">Internal Exam (Midterm)</option>
-                      <option value="Assignment">Assignment Sheets</option>
-                      <option value="Semester">End Sem Exam</option>
+                       <option value="Mid 1">Mid 1</option>
+                       <option value="Mid 2">Mid 2</option>
+                       <option value="OBE">OBE</option>
+                       <option value="Assignment">Assignment</option>
+                       <option value="Internal Exam">Internal Exam</option>
+                       <option value="Semester">End Sem Exam</option>
                     </select>
                   </div>
                 </div>

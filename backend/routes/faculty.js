@@ -7,6 +7,7 @@ const Timetable = require('../models/Timetable');
 const AppUser = require('../models/AppUser');
 const Attendance = require('../models/Attendance');
 const Mark = require('../models/Mark');
+const TimetableSubstitution = require('../models/TimetableSubstitution');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'navx_fallback_secret_key_2025';
 
@@ -481,6 +482,91 @@ CRITICAL: Return ONLY a valid JSON block starting with { and ending with }. Do N
     }
 
     res.json({ success: true, sheetData });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/faculty/list (Get list of all faculty in this campus to select as substitute)
+router.get('/list', authenticateFaculty, async (req, res) => {
+  try {
+    const list = await Faculty.find({ campusId: req.faculty.campusId, status: 'active' }, 'name department designation');
+    res.json({ success: true, faculties: list });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/faculty/substitutions (Get all leave substitutions in this campus)
+router.get('/substitutions', authenticateFaculty, async (req, res) => {
+  try {
+    const subs = await TimetableSubstitution.find({ campusId: req.faculty.campusId });
+    res.json({ success: true, substitutions: subs });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/faculty/leave (Apply for slot-specific leave and assign substitute)
+router.post('/leave', authenticateFaculty, async (req, res) => {
+  try {
+    const { timetableId, date, substituteFacultyId, substituteFacultyName } = req.body;
+    if (!timetableId || !date || !substituteFacultyName) {
+      return res.status(400).json({ error: 'Timetable slot ID, date of leave, and substitute faculty are required.' });
+    }
+
+    const slot = await Timetable.findById(timetableId);
+    if (!slot) return res.status(404).json({ error: 'Timetable slot not found.' });
+
+    // Create or update substitution entry
+    const sub = await TimetableSubstitution.findOneAndUpdate(
+      { timetableId, date },
+      {
+        campusId: slot.campusId,
+        timetableId,
+        date,
+        originalFacultyId: req.faculty._id,
+        originalFacultyName: req.faculty.name,
+        substituteFacultyId: substituteFacultyId || null,
+        substituteFacultyName: substituteFacultyName,
+        status: 'Substituted'
+      },
+      { new: true, upsert: true }
+    );
+
+    // Note: leaveStatus is dynamically calculated in reports based on substitutions date and current period.
+
+    res.json({ success: true, message: 'Leave substitution applied successfully!', substitution: sub });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/faculty/leave (Cancel/Remove a leave substitution)
+router.delete('/leave', authenticateFaculty, async (req, res) => {
+  try {
+    const { timetableId, date } = req.body;
+    if (!timetableId || !date) {
+      return res.status(400).json({ error: 'Timetable slot ID and date are required.' });
+    }
+
+    await TimetableSubstitution.findOneAndDelete({ timetableId, date, originalFacultyId: req.faculty._id });
+    res.json({ success: true, message: 'Leave removed successfully!' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/faculty/leave/cancel (Cancel/Remove a leave substitution via POST to bypass proxy blocks)
+router.post('/leave/cancel', authenticateFaculty, async (req, res) => {
+  try {
+    const { timetableId, date } = req.body;
+    if (!timetableId || !date) {
+      return res.status(400).json({ error: 'Timetable slot ID and date are required.' });
+    }
+
+    await TimetableSubstitution.findOneAndDelete({ timetableId, date, originalFacultyId: req.faculty._id });
+    res.json({ success: true, message: 'Leave removed successfully!' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

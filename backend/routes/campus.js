@@ -399,7 +399,40 @@ const bcrypt = require('bcryptjs');
 router.get('/:id/faculties', authenticateJWT, enforceCampusIsolation, async (req, res) => {
   try {
     const faculties = await Faculty.find({ campusId: req.params.id }).sort({ employeeId: 1 });
-    res.json({ success: true, faculties });
+    
+    // Dynamically calculate leave status based on today's substitutions and current period
+    const todayStr = new Date().toISOString().split('T')[0];
+    const TimetableSubstitution = require('../models/TimetableSubstitution');
+    const todaySubs = await TimetableSubstitution.find({ campusId: req.params.id, date: todayStr }).populate('timetableId');
+    
+    const getCurrentPeriodNum = () => {
+      const now = new Date();
+      const t = now.getHours() * 60 + now.getMinutes();
+      if (t >= 540 && t < 600) return 1;
+      if (t >= 600 && t < 660) return 2;
+      if (t >= 660 && t < 720) return 3;
+      if (t >= 720 && t < 780) return 4;
+      if (t >= 840 && t < 900) return 5;
+      if (t >= 900 && t < 960) return 6;
+      if (t >= 960 && t < 1020) return 7;
+      return null;
+    };
+    
+    const currentPeriod = getCurrentPeriodNum();
+    
+    const processedFaculties = faculties.map(f => {
+      const hasActiveSubNow = todaySubs.some(s => 
+        s.originalFacultyId.toString() === f._id.toString() && 
+        s.timetableId && 
+        s.timetableId.period === currentPeriod
+      );
+      
+      const fObj = f.toObject();
+      fObj.leaveStatus = hasActiveSubNow ? 'On Leave' : 'Present';
+      return fObj;
+    });
+
+    res.json({ success: true, faculties: processedFaculties });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -10,6 +10,7 @@ const StudyMaterial = require('../models/StudyMaterial');
 const AcademicCalendar = require('../models/AcademicCalendar');
 const Faculty = require('../models/Faculty');
 const Announcement = require('../models/Announcement');
+const TimetableSubstitution = require('../models/TimetableSubstitution');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'navx_fallback_secret_key_2025';
 
@@ -285,12 +286,28 @@ router.get('/dashboard', authenticateStudent, async (req, res) => {
       dayOfWeek: queryDay
     }).sort({ period: 1 });
 
+    // Look up today's substitutions to override faculty details dynamically
+    const todayStr = new Date().toISOString().split('T')[0];
+    const todaySubs = await TimetableSubstitution.find({ campusId, date: todayStr });
+
+    const processedTimetable = timetable.map(entry => {
+      const sub = todaySubs.find(s => s.timetableId.toString() === entry._id.toString());
+      if (sub) {
+        const obj = entry.toObject();
+        obj.isSubstituted = true;
+        obj.originalFacultyName = entry.facultyName;
+        obj.facultyName = `${sub.substituteFacultyName} (Substitute)`;
+        return obj;
+      }
+      return entry;
+    });
+
     // Find next class based on period or time
     const currentHour = new Date().getHours();
     let nextClass = null;
     let upcomingClasses = [];
 
-    for (const entry of timetable) {
+    for (const entry of processedTimetable) {
       const match = entry.startTime.match(/^(\d+):/);
       if (match) {
         let startHour = parseInt(match[1]);
@@ -308,8 +325,8 @@ router.get('/dashboard', authenticateStudent, async (req, res) => {
     }
 
     // Fallback to first class if none are upcoming in the day
-    if (!nextClass && timetable.length > 0) {
-      nextClass = timetable[0];
+    if (!nextClass && processedTimetable.length > 0) {
+      nextClass = processedTimetable[0];
     }
 
     // Get pending fees status
@@ -334,7 +351,7 @@ router.get('/dashboard', authenticateStudent, async (req, res) => {
         attendancePercent
       },
       nextClass,
-      todayTimetable: timetable,
+      todayTimetable: processedTimetable,
       announcements: announcements.map(a => ({
         id: a._id,
         title: a.announcementData?.title || 'Announcement',
