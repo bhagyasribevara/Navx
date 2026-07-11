@@ -67,7 +67,7 @@ export default function QRScanScreen({ navigation }) {
         // Handle case-insensitive split
         const prefixLength = "navx://campus/".length;
         const campusId = trimmedData.substring(prefixLength).trim();
-        
+
         console.log("Scanning campus QR:", campusId);
 
         // ── Geofence verification ──────────────────────────────
@@ -122,7 +122,7 @@ export default function QRScanScreen({ navigation }) {
         // Encode the data to prevent Express routing errors on URLs with slashes
         const qrData = await scanQRCode(encodeURIComponent(trimmedData));
         console.log("Standard QR API response:", qrData);
-        
+
         setResult(qrData);
         setIsCampusQR(false);
         setGeofenceDenied(null);
@@ -314,7 +314,7 @@ export default function QRScanScreen({ navigation }) {
                     if (isCampusQR) {
                       try {
                         await activateCampus(result);
-                      } catch (e) {}
+                      } catch (e) { }
                       navigation.navigate("MainTabs", { screen: "Home", params: { campusId: result._id } });
                     } else {
                       try {
@@ -324,21 +324,21 @@ export default function QRScanScreen({ navigation }) {
                           floorId: result.floorId?._id,
                           timestamp: Date.now()
                         }));
-                      } catch (e) {}
+                      } catch (e) { }
 
                       const campusId = result.campusId || result.floorId?.campusId;
                       // Activate the campus first so GeofenceContext knows we're inside
                       try {
                         await activateCampus({ _id: campusId });
-                      } catch (e) {}
+                      } catch (e) { }
 
-                      navigation.navigate("MainTabs", { 
-                        screen: "Map", 
-                        params: { 
-                          campusId, 
+                      navigation.navigate("MainTabs", {
+                        screen: "Map",
+                        params: {
+                          campusId,
                           floorId: result.floorId?._id,
-                          blockId: result.blockId?._id 
-                        } 
+                          blockId: result.blockId?._id
+                        }
                       });
                     }
                   }}
