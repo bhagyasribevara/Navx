@@ -61,6 +61,16 @@ export default function SuperAdminDashboard({ admin, onLogout }) {
   const [editUsername, setEditUsername] = useState('');
   const [editPassword, setEditPassword] = useState('');
 
+  // Live Telemetry states
+  const [telemetryData, setTelemetryData] = useState(null);
+  const [loadingTelemetry, setLoadingTelemetry] = useState(false);
+
+  // Subscription Editing states
+  const [editingCampusPlanId, setEditingCampusPlanId] = useState(null);
+  const [editPlanName, setEditPlanName] = useState('');
+  const [editPlanPrice, setEditPlanPrice] = useState(0);
+  const [editPlanStatus, setEditPlanStatus] = useState('Active');
+
   useEffect(() => {
     fetchAdmins();
     fetchCampuses();
@@ -97,6 +107,59 @@ export default function SuperAdminDashboard({ admin, onLogout }) {
       toast.error('Failed to fetch admins');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchTelemetry = async () => {
+    setLoadingTelemetry(true);
+    try {
+      const { getTelemetry } = await import('../api');
+      const { data } = await getTelemetry();
+      if (data.success) {
+        setTelemetryData(data);
+      }
+    } catch (err) {
+      console.error('Failed to load telemetry stats', err);
+    } finally {
+      setLoadingTelemetry(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'telemetry') {
+      fetchTelemetry();
+    }
+  }, [activeTab]);
+
+  const handleSaveSubscription = async (campusId) => {
+    try {
+      const { updateCampusSubscription } = await import('../api');
+      const res = await updateCampusSubscription(campusId, {
+        plan: editPlanName,
+        price: Number(editPlanPrice),
+        status: editPlanStatus
+      });
+      if (res.data.success) {
+        toast.success('Subscription plan updated!');
+        setEditingCampusPlanId(null);
+        fetchTelemetry(); // reload new MRR
+      }
+    } catch (err) {
+      toast.error('Failed to update subscription.');
+    }
+  };
+
+  const handleDeleteSubscription = async (campusId) => {
+    if (!window.confirm('Are you sure you want to delete this venue workspace entirely? This action cannot be undone.')) return;
+    try {
+      const { deleteCampus } = await import('../api');
+      await deleteCampus(campusId);
+      toast.success('Venue workspace deleted successfully!');
+      fetchTelemetry(); // reload new MRR
+      fetchCampuses(); // reload spaces list
+      fetchAdmins(); // reload workspace admins list
+    } catch (err) {
+      toast.error('Failed to delete venue workspace.');
     }
   };
 
@@ -620,159 +683,195 @@ export default function SuperAdminDashboard({ admin, onLogout }) {
             </>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-              <div className="dashboard-header">
+              <div className="dashboard-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
                   <h1 className="page-title">Platform Telemetry & Metrics</h1>
                   <p className="page-subtitle">Track cloud storage consumption, active subscription packages, API response latencies, and Gemini AI tokens usage.</p>
                 </div>
+                <button className="btn btn-secondary btn-sm" onClick={fetchTelemetry} disabled={loadingTelemetry} style={{ height: 36, display: 'flex', alignItems: 'center', gap: 6, border: 'none', cursor: 'pointer' }}>
+                  <FiRefreshCw className={loadingTelemetry ? 'animate-spin' : ''} /> {loadingTelemetry ? 'Refreshing...' : 'Refresh Stats'}
+                </button>
               </div>
 
-              {/* Stat cards */}
-              <div className="card-grid" style={{ marginBottom: 12 }}>
-                <div className="stat-card">
-                  <div>
-                    <div className="stat-value">₹1,24,500/mo</div>
-                    <div className="stat-label">Monthly Recurring Revenue</div>
+              {loadingTelemetry || !telemetryData ? (
+                <p>Loading live platform diagnostics...</p>
+              ) : (
+                <>
+                  {/* Stat cards */}
+                  <div className="card-grid" style={{ marginBottom: 12 }}>
+                    <div className="stat-card">
+                      <div>
+                        <div className="stat-value">{telemetryData.mrr}</div>
+                        <div className="stat-label">Monthly Recurring Revenue</div>
+                      </div>
+                    </div>
+                    <div className="stat-card">
+                      <div>
+                        <div className="stat-value">{telemetryData.storageGb}</div>
+                        <div className="stat-label">Cloud Storage Used (100 GB Cap)</div>
+                      </div>
+                    </div>
+                    <div className="stat-card">
+                      <div>
+                        <div className="stat-value">{telemetryData.avgLatency}</div>
+                        <div className="stat-label">Avg API Response Latency</div>
+                      </div>
+                    </div>
+                    <div className="stat-card">
+                      <div>
+                        <div className="stat-value">{(telemetryData.tokensConsumed / 1000000).toFixed(2)}M</div>
+                        <div className="stat-label">Gemini Tokens Consumed</div>
+                      </div>
+                    </div>
                   </div>
-                </div>
-                <div className="stat-card">
-                  <div>
-                    <div className="stat-value">43.2 GB</div>
-                    <div className="stat-label">Cloud Storage Used (100 GB Cap)</div>
-                  </div>
-                </div>
-                <div className="stat-card">
-                  <div>
-                    <div className="stat-value">48 ms</div>
-                    <div className="stat-label">Avg API Response Latency</div>
-                  </div>
-                </div>
-                <div className="stat-card">
-                  <div>
-                    <div className="stat-value">1.48M</div>
-                    <div className="stat-label">Gemini Tokens Consumed</div>
-                  </div>
-                </div>
-              </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 24 }}>
-                {/* Subscriptions */}
-                <div className="card">
-                  <h3 className="card-title">Campus Subscription Packages</h3>
-                  <div style={{ overflowX: 'auto', marginTop: 16 }}>
-                    <table className="venues-table" style={{ width: '100%', textAlign: 'left' }}>
-                      <thead>
-                        <tr>
-                          <th>Campus</th>
-                          <th>Subscription Plan</th>
-                          <th>Pricing</th>
-                          <th>Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {existingCampuses.map((c, idx) => {
-                          const plans = ['Premium ERP Suite', 'Standard Map Navigation', 'Basic Maps Package'];
-                          const costs = ['₹25,000/mo', '₹15,000/mo', '₹8,000/mo'];
-                          const status = ['Active', 'Active', 'Trial'];
-                          const planIdx = idx % plans.length;
-
-                          return (
-                            <tr key={c._id}>
-                              <td><strong>{c.name}</strong></td>
-                              <td>{plans[planIdx]}</td>
-                              <td>{costs[planIdx]}</td>
-                              <td>
-                                <span className="badge" style={{
-                                  background: status[planIdx] === 'Active' ? '#10b98120' : '#f59e0b20',
-                                  color: status[planIdx] === 'Active' ? '#10b981' : '#f59e0b',
-                                  border: status[planIdx] === 'Active' ? '1px solid #10b98140' : '1px solid #f59e0b40'
-                                }}>
-                                  {status[planIdx]}
-                                </span>
-                              </td>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 24 }}>
+                    {/* Subscriptions */}
+                    <div className="card">
+                      <h3 className="card-title">Campus Subscription Packages</h3>
+                      <div style={{ overflowX: 'auto', marginTop: 16 }}>
+                        <table className="venues-table" style={{ width: '100%', textAlign: 'left' }}>
+                          <thead>
+                            <tr>
+                              <th>Campus</th>
+                              <th>Subscription Plan</th>
+                              <th>Pricing</th>
+                              <th>Status</th>
+                              <th style={{ textAlign: 'right' }}>Actions</th>
                             </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
+                          </thead>
+                          <tbody>
+                            {telemetryData.campusPlans?.map((cPlan, idx) => {
+                              const isEditing = editingCampusPlanId === cPlan._id;
+                              return (
+                                <tr key={cPlan._id || idx}>
+                                  <td><strong>{cPlan.name}</strong></td>
+                                  <td>
+                                    {isEditing ? (
+                                      <select value={editPlanName} onChange={e => setEditPlanName(e.target.value)} className="input" style={{ padding: '4px 8px', fontSize: 12, background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: '#fff', borderRadius: 6 }}>
+                                        <option value="Premium ERP Suite">Premium ERP Suite</option>
+                                        <option value="Standard Map Navigation">Standard Map Navigation</option>
+                                        <option value="Basic Maps Package">Basic Maps Package</option>
+                                      </select>
+                                    ) : (
+                                      cPlan.plan
+                                    )}
+                                  </td>
+                                  <td>
+                                    {isEditing ? (
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                        <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>₹</span>
+                                        <input type="number" value={editPlanPrice} onChange={e => setEditPlanPrice(e.target.value)} className="input" style={{ width: '80px', padding: '4px 8px', fontSize: 12, background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: '#fff', borderRadius: 6 }} />
+                                      </div>
+                                    ) : (
+                                      `₹${Number(cPlan.pricing).toLocaleString()}/mo`
+                                    )}
+                                  </td>
+                                  <td>
+                                    {isEditing ? (
+                                      <select value={editPlanStatus} onChange={e => setEditPlanStatus(e.target.value)} className="input" style={{ padding: '4px 8px', fontSize: 12, background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: '#fff', borderRadius: 6 }}>
+                                        <option value="Active">Active</option>
+                                        <option value="Trial">Trial</option>
+                                        <option value="Expired">Expired</option>
+                                      </select>
+                                    ) : (
+                                      <span className="badge" style={{
+                                        background: cPlan.status === 'Active' ? '#10b98120' : cPlan.status === 'Trial' ? '#f59e0b20' : '#ef444420',
+                                        color: cPlan.status === 'Active' ? '#10b981' : cPlan.status === 'Trial' ? '#f59e0b' : '#ef4444',
+                                        border: cPlan.status === 'Active' ? '1px solid #10b98140' : cPlan.status === 'Trial' ? '1px solid #f59e0b40' : '1px solid #ef444440'
+                                      }}>
+                                        {cPlan.status}
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td style={{ textAlign: 'right' }}>
+                                    {isEditing ? (
+                                      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                                        <button className="btn btn-secondary btn-sm" onClick={() => setEditingCampusPlanId(null)} style={{ padding: '4px 8px', fontSize: 11, border: 'none', cursor: 'pointer' }}>Cancel</button>
+                                        <button className="btn btn-primary btn-sm" onClick={() => handleSaveSubscription(cPlan._id)} style={{ padding: '4px 8px', fontSize: 11, background: '#10b981', border: 'none', color: '#fff', cursor: 'pointer' }}>Save</button>
+                                      </div>
+                                    ) : (
+                                      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                                        <button className="btn btn-secondary btn-sm" onClick={() => {
+                                          setEditingCampusPlanId(cPlan._id);
+                                          setEditPlanName(cPlan.plan);
+                                          setEditPlanPrice(cPlan.pricing);
+                                          setEditPlanStatus(cPlan.status);
+                                        }} style={{ padding: '4px 8px', fontSize: 11, border: 'none', cursor: 'pointer' }}>Edit</button>
+                                        <button className="btn btn-danger btn-sm" onClick={() => handleDeleteSubscription(cPlan._id)} style={{ padding: '4px 8px', fontSize: 11, background: '#ef4444', border: 'none', color: '#fff', cursor: 'pointer' }}>Delete</button>
+                                      </div>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
 
-                {/* Cloud storage details */}
-                <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                  <h3 className="card-title">Cloud Storage Distribution</h3>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginTop: 8 }}>
-                    <div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: '#fff', marginBottom: 4 }}>
-                        <span>Map Offline DB layers (.json format)</span>
-                        <span style={{ fontWeight: 600 }}>18.4 GB</span>
-                      </div>
-                      <div style={{ width: '100%', height: '8px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px' }}>
-                        <div style={{ width: '18.4%', height: '100%', background: '#6366f1', borderRadius: '4px' }} />
-                      </div>
-                    </div>
-                    <div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: '#fff', marginBottom: 4 }}>
-                        <span>Uploaded Documents (PDFs, Notes)</span>
-                        <span style={{ fontWeight: 600 }}>15.2 GB</span>
-                      </div>
-                      <div style={{ width: '100%', height: '8px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px' }}>
-                        <div style={{ width: '15.2%', height: '100%', background: '#a855f7', borderRadius: '4px' }} />
-                      </div>
-                    </div>
-                    <div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: '#fff', marginBottom: 4 }}>
-                        <span>User Assets & Photo uploads</span>
-                        <span style={{ fontWeight: 600 }}>9.6 GB</span>
-                      </div>
-                      <div style={{ width: '100%', height: '8px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px' }}>
-                        <div style={{ width: '9.6%', height: '100%', background: '#ec4899', borderRadius: '4px' }} />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* API latency telemetry */}
-                <div className="card">
-                  <h3 className="card-title">API Response Telemetry (Endpoints)</h3>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 16 }}>
-                    {[
-                      { route: 'GET /api/navigation/pathfinding', ms: 18, color: '#10b981' },
-                      { route: 'POST /api/ai/chat (Gemini Pipeline)', ms: 168, color: '#a855f7' },
-                      { route: 'GET /api/campus/code/:code', ms: 32, color: '#6366f1' },
-                      { route: 'GET /api/rooms', ms: 14, color: '#10b981' },
-                      { route: 'POST /api/student/fees/pay', ms: 45, color: '#f59e0b' }
-                    ].map((api, idx) => (
-                      <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: '#fff' }}>
-                          <span style={{ fontFamily: 'monospace' }}>{api.route}</span>
-                          <span style={{ color: api.color, fontWeight: 600 }}>{api.ms} ms</span>
+                    {/* Cloud storage details */}
+                    <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                      <h3 className="card-title">Cloud Storage Distribution</h3>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginTop: 8 }}>
+                        <div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: '#fff', marginBottom: 4 }}>
+                            <span>Database Roster Data (.json / MongoDB)</span>
+                            <span style={{ fontWeight: 600 }}>{telemetryData.storageGb}</span>
+                          </div>
+                          <div style={{ width: '100%', height: '8px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px' }}>
+                            <div style={{ width: '43%', height: '100%', background: '#6366f1', borderRadius: '4px' }} />
+                          </div>
                         </div>
-                        <div style={{ width: '100%', height: '8px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', overflow: 'hidden' }}>
-                          <div style={{ width: `${(api.ms / 200) * 100}%`, height: '100%', background: api.color, borderRadius: '4px' }} />
+                        <div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: '#fff', marginBottom: 4 }}>
+                            <span>Offline Map Nodes & Graph Layers</span>
+                            <span style={{ fontWeight: 600 }}>4.8 GB</span>
+                          </div>
+                          <div style={{ width: '100%', height: '8px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px' }}>
+                            <div style={{ width: '12%', height: '100%', background: '#a855f7', borderRadius: '4px' }} />
+                          </div>
                         </div>
                       </div>
-                    ))}
-                  </div>
-                </div>
+                    </div>
 
-                {/* AI usage details */}
-                <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                  <h3 className="card-title">AI Token Usage Statistics</h3>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: 8 }}>
-                    <span style={{ color: 'var(--text-secondary)' }}>Input Tokens</span>
-                    <strong style={{ color: '#fff' }}>1,200,420 tokens</strong>
+                    {/* API latency telemetry */}
+                    <div className="card">
+                      <h3 className="card-title">API Response Telemetry (Endpoints)</h3>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 16 }}>
+                        {telemetryData.latencies?.map((api, idx) => (
+                          <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: '#fff' }}>
+                              <span style={{ fontFamily: 'monospace' }}>{api.route}</span>
+                              <span style={{ color: api.color, fontWeight: 600 }}>{api.ms} ms</span>
+                            </div>
+                            <div style={{ width: '100%', height: '8px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', overflow: 'hidden' }}>
+                              <div style={{ width: `${(api.ms / 200) * 100}%`, height: '100%', background: api.color, borderRadius: '4px' }} />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* AI usage details */}
+                    <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                      <h3 className="card-title">AI Token Usage Statistics</h3>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: 8 }}>
+                        <span style={{ color: 'var(--text-secondary)' }}>Input Tokens</span>
+                        <strong style={{ color: '#fff' }}>{telemetryData.inputTokens?.toLocaleString()} tokens</strong>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: 8 }}>
+                        <span style={{ color: 'var(--text-secondary)' }}>Output Tokens</span>
+                        <strong style={{ color: '#fff' }}>{telemetryData.outputTokens?.toLocaleString()} tokens</strong>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: 8 }}>
+                        <span style={{ color: 'var(--text-secondary)' }}>Gemini API Execution Cost</span>
+                        <strong style={{ color: '#10b981' }}>{telemetryData.costUsd}</strong>
+                      </div>
+                    </div>
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: 8 }}>
-                    <span style={{ color: 'var(--text-secondary)' }}>Output Tokens</span>
-                    <strong style={{ color: '#fff' }}>288,700 tokens</strong>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: 8 }}>
-                    <span style={{ color: 'var(--text-secondary)' }}>Gemini API Execution Cost</span>
-                    <strong style={{ color: '#10b981' }}>$3.41 USD</strong>
-                  </div>
-                </div>
-              </div>
+                </>
+              )}
             </div>
           )}
         </div>

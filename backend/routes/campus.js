@@ -408,7 +408,7 @@ router.get('/:id/faculties', authenticateJWT, enforceCampusIsolation, async (req
 // POST create a faculty
 router.post('/:id/faculties', authenticateJWT, enforceCampusIsolation, async (req, res) => {
   try {
-    const { name, employeeId, department, designation, email, phone, facultyRoom, officeHours, subjects, assignedSections, username, password } = req.body;
+    const { name, employeeId, department, designation, email, phone, facultyRoom, officeHours, subjects, assignedSections, username, password, maxWeeklyHours, assignedSubjectsSections } = req.body;
     
     // Hash password
     const hashedPassword = bcrypt.hashSync(password, 10);
@@ -427,7 +427,9 @@ router.post('/:id/faculties', authenticateJWT, enforceCampusIsolation, async (re
       assignedSections: Array.isArray(assignedSections) ? assignedSections : [],
       username,
       password: hashedPassword,
-      status: 'active'
+      status: 'active',
+      maxWeeklyHours: maxWeeklyHours !== undefined ? Number(maxWeeklyHours) : 16,
+      assignedSubjectsSections: Array.isArray(assignedSubjectsSections) ? assignedSubjectsSections : []
     });
 
     await faculty.save();
@@ -515,6 +517,48 @@ router.delete('/:id/timetable/:slotId', authenticateJWT, enforceCampusIsolation,
     res.json({ success: true, message: 'Slot deleted' });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Section Timings Routes ---
+const SectionTiming = require('../models/SectionTiming');
+
+// GET section timings
+router.get('/:id/section-timings', authenticateJWT, enforceCampusIsolation, async (req, res) => {
+  try {
+    const { department, semester, section } = req.query;
+    if (!department || !semester || !section) {
+      return res.status(400).json({ error: 'Missing query constraints parameters.' });
+    }
+    const timingRecord = await SectionTiming.findOne({
+      campusId: req.params.id,
+      department,
+      semester,
+      section
+    });
+    res.json({ success: true, timings: timingRecord ? timingRecord.timings : null });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST save section timings
+router.post('/:id/section-timings', authenticateJWT, enforceCampusIsolation, async (req, res) => {
+  try {
+    const { department, semester, section, timings } = req.body;
+    if (!department || !semester || !section || !Array.isArray(timings)) {
+      return res.status(400).json({ error: 'Missing timing payload constraints.' });
+    }
+
+    const timingRecord = await SectionTiming.findOneAndUpdate(
+      { campusId: req.params.id, department, semester, section },
+      { timings },
+      { upsert: true, new: true }
+    );
+
+    res.status(200).json({ success: true, timings: timingRecord.timings });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
   }
 });
 

@@ -39,6 +39,9 @@ const campusSchema = new mongoose.Schema({
   operatingHours: { type: String, default: '' },
   campusQRImage: { type: String, default: '' }, // base64 dataURL of campus entry QR
   isActive: { type: Boolean, default: true },
+  subscriptionPlan: { type: String, default: 'Standard Map Navigation' },
+  subscriptionPrice: { type: Number, default: 15000 },
+  subscriptionStatus: { type: String, default: 'Active' },
   emergencyState: {
     isActive: { type: Boolean, default: false },
     message: { type: String, default: '' },

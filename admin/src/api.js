@@ -116,6 +116,8 @@ export const deleteCampusAdmin = (superAdminId, adminId) => api.delete(`/admin/a
 export const updateCampusAdmin = (superAdminId, adminId, data) => api.put(`/admin/admins/${superAdminId}/${adminId}`, data);
 export const toggleAdminStatus = (adminId, status) => api.post(`/admin/admins/${adminId}/status`, { status });
 export const revokeAdminSessions = (adminId) => api.post(`/admin/admins/${adminId}/revoke`);
+export const getTelemetry = () => api.get('/admin/telemetry');
+export const updateCampusSubscription = (campusId, data) => api.put(`/admin/campus/${campusId}/subscription`, data);
 export const regenerateCampusUrl = (campusId, campusCode) => api.post(`/campus/${campusId}/regenerate-url`, { campusCode });
 export const getCampusByCode = (campusCode) => api.get(`/campus/code/${campusCode}`);
 

@@ -21,7 +21,13 @@ const facultySchema = new mongoose.Schema({
   status: { type: String, enum: ['active', 'disabled'], default: 'active' },
   leaveStatus: { type: String, enum: ['Present', 'On Leave'], default: 'Present' },
   photo: { type: String, default: '' },
-  officeHours: { type: String, default: '9:00 AM - 5:00 PM' }
+  officeHours: { type: String, default: '9:00 AM - 5:00 PM' },
+  maxWeeklyHours: { type: Number, default: 16 },
+  assignedSubjectsSections: [{
+    subject: { type: String, required: true },
+    section: { type: String, required: true },
+    semester: { type: String, required: true }
+  }]
 }, { timestamps: true });
 
 facultySchema.index({ campusId: 1 });

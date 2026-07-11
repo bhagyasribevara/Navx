@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { toast } from 'react-toastify';
 import { useOutletContext } from 'react-router-dom';
-import { FiPlus, FiEdit2, FiTrash2, FiKey, FiUsers, FiSearch } from 'react-icons/fi';
+import { FiPlus, FiEdit2, FiTrash2, FiKey, FiUsers, FiSearch, FiX } from 'react-icons/fi';
 
 const DEPARTMENTS = ['CSE', 'CSE-AIML', 'CSE-DS', 'IT', 'ECE', 'EEE', 'Mechanical', 'Civil', 'MBA', 'MCA'];
 
@@ -27,8 +27,12 @@ export default function FacultyManager({ admin }) {
     assignedSections: '',
     username: '',
     password: '',
-    status: 'active'
+    status: 'active',
+    maxWeeklyHours: 16
   });
+
+  const [subjectsSections, setSubjectsSections] = useState([]);
+  const [newSubSec, setNewSubSec] = useState({ subject: '', semester: '6', section: 'A' });
 
   const API_BASE = import.meta.env.VITE_API_BASE_URL || "/api";
   const token = localStorage.getItem("navx_token");
@@ -37,9 +41,7 @@ export default function FacultyManager({ admin }) {
   const loadFaculties = async () => {
     setLoading(true);
     try {
-      // Find all faculties for this campus
       const campusId = campus._id;
-      // Define a custom API fetch for faculties on this campus
       const res = await axios.get(`${API_BASE}/campus/${campusId}/faculties`, { headers });
       setFaculties(res.data.faculties || []);
     } catch (e) {
@@ -55,6 +57,29 @@ export default function FacultyManager({ admin }) {
     }
   }, [campus]);
 
+  const handleAddSubSec = () => {
+    if (!newSubSec.subject.trim()) {
+      toast.error('Enter a valid subject title');
+      return;
+    }
+    // Avoid duplicates
+    const duplicate = subjectsSections.some(
+      item => item.subject.toLowerCase() === newSubSec.subject.trim().toLowerCase() &&
+              item.semester === newSubSec.semester &&
+              item.section === newSubSec.section
+    );
+    if (duplicate) {
+      toast.error('This subject mapping already exists');
+      return;
+    }
+    setSubjectsSections(prev => [...prev, { ...newSubSec, subject: newSubSec.subject.trim() }]);
+    setNewSubSec(prev => ({ ...prev, subject: '' }));
+  };
+
+  const handleRemoveSubSec = (index) => {
+    setSubjectsSections(prev => prev.filter((_, idx) => idx !== index));
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.name || !form.employeeId || !form.email || !form.username || (!editing && !form.password)) {
@@ -62,11 +87,15 @@ export default function FacultyManager({ admin }) {
       return;
     }
 
+    const subList = subjectsSections.map(s => s.subject);
+    const secList = [...new Set(subjectsSections.map(s => s.section))];
+
     const payload = {
       ...form,
       campusId: campus._id,
-      subjects: form.subjects.split(',').map(s => s.trim()).filter(Boolean),
-      assignedSections: form.assignedSections.split(',').map(s => s.trim()).filter(Boolean)
+      subjects: subList,
+      assignedSections: secList,
+      assignedSubjectsSections: subjectsSections
     };
 
     try {
@@ -99,8 +128,11 @@ export default function FacultyManager({ admin }) {
       assignedSections: '',
       username: '',
       password: '',
-      status: 'active'
+      status: 'active',
+      maxWeeklyHours: 16
     });
+    setSubjectsSections([]);
+    setNewSubSec({ subject: '', semester: '6', section: 'A' });
   };
 
   const handleEdit = (f) => {
@@ -116,9 +148,11 @@ export default function FacultyManager({ admin }) {
       subjects: f.subjects?.join(', ') || '',
       assignedSections: f.assignedSections?.join(', ') || '',
       username: f.username,
-      password: '', // blank by default for edit
-      status: f.status
+      password: '', 
+      status: f.status,
+      maxWeeklyHours: f.maxWeeklyHours || 16
     });
+    setSubjectsSections(f.assignedSubjectsSections || []);
     setShowModal(true);
   };
 
@@ -155,7 +189,7 @@ export default function FacultyManager({ admin }) {
       <div className="page-header">
         <div>
           <h1 className="page-title">Faculty Management</h1>
-          <p className="page-subtitle">Add, edit, and configure teaching staff, class timetables, and cabins for {campus?.name}</p>
+          <p className="page-subtitle">Add, edit, and configure teaching staff, workload hours, and sections mapping for {campus?.name}</p>
         </div>
         <button className="btn btn-primary" onClick={() => { setEditing(null); resetForm(); setShowModal(true); }}>
           <FiPlus /> Add Faculty
@@ -191,9 +225,9 @@ export default function FacultyManager({ admin }) {
                   <th>Employee ID</th>
                   <th>Name</th>
                   <th>Department</th>
-                  <th>Faculty Cabin</th>
-                  <th>Office Hours</th>
-                  <th>Assigned Sections</th>
+                  <th>Cabin</th>
+                  <th>Workload Cap</th>
+                  <th>Subjects & Sections</th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -204,13 +238,21 @@ export default function FacultyManager({ admin }) {
                     <td>
                       <div>
                         <div style={{ color: '#fff', fontWeight: 600 }}>{f.name}</div>
-                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{f.designation}</div>
+                        <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{f.designation}</div>
                       </div>
                     </td>
                     <td><span className="badge" style={{ background: '#6366f120', color: '#6366f1' }}>{f.department}</span></td>
                     <td>{f.facultyRoom}</td>
-                    <td style={{ fontSize: 12 }}>{f.officeHours}</td>
-                    <td style={{ fontSize: 12 }}>{f.assignedSections?.join(', ') || 'None'}</td>
+                    <td style={{ fontSize: 12 }}><strong>{f.maxWeeklyHours || 16} hrs</strong> / week</td>
+                    <td style={{ fontSize: 12, maxWidth: '280px' }}>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                        {f.assignedSubjectsSections?.map((item, idx) => (
+                          <span key={idx} style={{ padding: '2px 6px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 4, fontSize: 10, color: 'var(--text-secondary)' }}>
+                            {item.subject} (Sem {item.semester}-{item.section})
+                          </span>
+                        )) || 'None'}
+                      </div>
+                    </td>
                     <td>
                       <div style={{ display: 'flex', gap: 8 }}>
                         <button className="btn btn-secondary btn-sm" onClick={() => handleEdit(f)} title="Edit"><FiEdit2 size={12} /></button>
@@ -272,12 +314,16 @@ export default function FacultyManager({ admin }) {
                   <input type="text" value={form.officeHours} onChange={e => setForm(prev => ({ ...prev, officeHours: e.target.value }))} placeholder="e.g. 10:00 AM - 1:00 PM" className="input" />
                 </div>
                 <div className="form-group">
-                  <label>Assigned Subjects (comma-separated)</label>
-                  <input type="text" value={form.subjects} onChange={e => setForm(prev => ({ ...prev, subjects: e.target.value }))} placeholder="e.g. DBMS, OS" className="input" />
-                </div>
-                <div className="form-group">
-                  <label>Assigned Sections (comma-separated)</label>
-                  <input type="text" value={form.assignedSections} onChange={e => setForm(prev => ({ ...prev, assignedSections: e.target.value }))} placeholder="e.g. A, B" className="input" />
+                  <label>Max Weekly Hours Cap *</label>
+                  <input 
+                    type="number" 
+                    value={form.maxWeeklyHours} 
+                    onChange={e => setForm(prev => ({ ...prev, maxWeeklyHours: Number(e.target.value) }))} 
+                    className="input" 
+                    min="1" 
+                    max="40" 
+                    required 
+                  />
                 </div>
                 <div className="form-group">
                   <label>Username *</label>
@@ -289,11 +335,92 @@ export default function FacultyManager({ admin }) {
                     <input type="password" value={form.password} onChange={e => setForm(prev => ({ ...prev, password: e.target.value }))} className="input" required />
                   </div>
                 )}
+
+                {/* Sub-Form for Curricular constraints mapping */}
+                <div className="form-group" style={{ gridColumn: 'span 2', marginTop: 12, borderTop: '1px dashed var(--border-color)', paddingTop: 16 }}>
+                  <label style={{ fontWeight: 700, color: '#fff', fontSize: 14 }}>Intelligent Curricular Load Mapping</label>
+                  <p style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2, marginBottom: 12 }}>Allocate subjects, sections, and semesters to enforce workload capacities.</p>
+                  
+                  <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
+                    <div style={{ flex: 2 }}>
+                      <label style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Subject Title</label>
+                      <input 
+                        type="text" 
+                        value={newSubSec.subject} 
+                        onChange={e => setNewSubSec(prev => ({ ...prev, subject: e.target.value }))} 
+                        placeholder="e.g. Python" 
+                        className="input" 
+                        style={{ width: '100%', padding: '10px 12px' }}
+                      />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <label style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Sem</label>
+                      <select 
+                        value={newSubSec.semester} 
+                        onChange={e => setNewSubSec(prev => ({ ...prev, semester: e.target.value }))} 
+                        className="input"
+                        style={{ width: '100%', padding: '10px 12px' }}
+                      >
+                        {['1', '2', '3', '4', '5', '6', '7', '8'].map(s => <option key={s} value={s}>Sem {s}</option>)}
+                      </select>
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <label style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Sec</label>
+                      <select 
+                        value={newSubSec.section} 
+                        onChange={e => setNewSubSec(prev => ({ ...prev, section: e.target.value }))} 
+                        className="input"
+                        style={{ width: '100%', padding: '10px 12px' }}
+                      >
+                        {['A', 'B', 'C'].map(s => <option key={s} value={s}>Sec {s}</option>)}
+                      </select>
+                    </div>
+                    <button 
+                      type="button" 
+                      onClick={handleAddSubSec} 
+                      className="btn btn-secondary" 
+                      style={{ padding: '10px 16px', height: '42px', display: 'flex', alignItems: 'center' }}
+                    >
+                      Add Slot
+                    </button>
+                  </div>
+
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
+                    {subjectsSections.map((item, idx) => (
+                      <div 
+                        key={idx} 
+                        style={{ 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          gap: 8, 
+                          background: 'rgba(99, 102, 241, 0.08)', 
+                          border: '1px solid rgba(99, 102, 241, 0.2)', 
+                          padding: '6px 12px', 
+                          borderRadius: 8,
+                          fontSize: 12,
+                          color: '#fff' 
+                        }}
+                      >
+                        <strong>{item.subject}</strong> (Sem {item.semester}-{item.section})
+                        <button 
+                          type="button" 
+                          onClick={() => handleRemoveSubSec(idx)} 
+                          style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center' }}
+                        >
+                          <FiX size={13} />
+                        </button>
+                      </div>
+                    ))}
+                    {subjectsSections.length === 0 && (
+                      <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>No curriculum maps registered for this profile yet.</span>
+                    )}
+                  </div>
+                </div>
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 12 }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 24, borderTop: '1px solid var(--border-color)', paddingTop: 16 }}>
                 <button type="button" className="btn btn-secondary" onClick={() => setShowModal(false)}>Cancel</button>
-                <button type="submit" className="btn btn-primary">{editing ? 'Save Changes' : 'Create'}</button>
+                <button type="submit" className="btn btn-primary">{editing ? 'Save Changes' : 'Create Profile'}</button>
               </div>
             </form>
           </div>
