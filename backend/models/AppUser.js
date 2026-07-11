@@ -9,12 +9,23 @@ const AppUserSchema = new mongoose.Schema({
   },
   mobileNumber: {
     type: String,
-    required: true, // Mandatory for OTP
-    unique: true
+    required: false,
+    unique: true,
+    sparse: true
   },
   password: {
     type: String,
     required: true
+  },
+  collegeEmail: {
+    type: String,
+    required: false,
+    unique: true,
+    sparse: true
+  },
+  collegeId: {
+    type: String,
+    required: false
   },
   otpCode: {
     type: String,

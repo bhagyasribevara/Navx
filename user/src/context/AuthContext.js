@@ -38,9 +38,9 @@ export function AuthProvider({ children }) {
     }
   };
 
-  const login = async (identifier, password) => {
+  const login = async (data) => {
     try {
-      const res = await api.post('/app-auth/login', { identifier, password });
+      const res = await api.post('/app-auth/login', data);
       if (res.data.success) {
         setUser(res.data.user);
         setToken(res.data.token);
@@ -66,9 +66,9 @@ export function AuthProvider({ children }) {
     }
   };
 
-  const register = async (username, mobileNumber, password) => {
+  const register = async (data) => {
     try {
-      const res = await api.post('/app-auth/register', { username, mobileNumber, password });
+      const res = await api.post('/app-auth/register', data);
       if (res.data.success) {
         setUser(res.data.user);
         setToken(res.data.token);

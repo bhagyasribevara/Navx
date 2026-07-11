@@ -186,13 +186,15 @@ export default function QRScanScreen({ navigation }) {
         barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
       />
 
-      {/* Dark overlay with hole */}
+      {/* Dark overlay with transparent hole */}
       <View style={s.overlay}>
-        {/* Top section */}
-        <View style={{ flex: 1, backgroundColor: "rgba(7,11,20,0.75)" }} />
+        {/* Top section - smaller flex pushes frame up */}
+        <View style={{ flex: 1, width: '100%', backgroundColor: "rgba(7,11,20,0.75)" }} />
+        
         {/* Middle row */}
-        <View style={{ flexDirection: "row" }}>
-          <View style={{ flex: 1, height: FRAME, backgroundColor: "rgba(7,11,20,0.75)" }} />
+        <View style={{ flexDirection: "row", width: '100%', height: FRAME }}>
+          <View style={{ flex: 1, backgroundColor: "rgba(7,11,20,0.75)" }} />
+          
           {/* Scan frame */}
           <Animated.View style={[s.scanFrame, { transform: [{ scale: frameAnim }] }]}>
             {/* Corners */}
@@ -219,10 +221,12 @@ export default function QRScanScreen({ navigation }) {
               </Animated.View>
             )}
           </Animated.View>
-          <View style={{ flex: 1, height: FRAME, backgroundColor: "rgba(7,11,20,0.75)" }} />
+          
+          <View style={{ flex: 1, backgroundColor: "rgba(7,11,20,0.75)" }} />
         </View>
-        {/* Bottom section */}
-        <View style={{ flex: 1, backgroundColor: "rgba(7,11,20,0.75)" }} />
+        
+        {/* Bottom section - larger flex to clear the absolute bottom panel */}
+        <View style={{ flex: 1.5, width: '100%', backgroundColor: "rgba(7,11,20,0.75)" }} />
       </View>
 
       {/* Top bar */}

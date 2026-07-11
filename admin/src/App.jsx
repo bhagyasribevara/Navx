@@ -2,7 +2,7 @@ import React from 'react';
 import { Routes, Route, NavLink, useLocation, useNavigate, useParams, Outlet } from 'react-router-dom';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
-import { FiMap, FiGrid, FiLayers, FiNavigation, FiBarChart2, FiSettings, FiHome, FiAlertCircle, FiMenu, FiX, FiUsers, FiCalendar, FiFileText, FiCpu } from 'react-icons/fi';
+import { FiMap, FiGrid, FiLayers, FiNavigation, FiBarChart2, FiSettings, FiHome, FiAlertCircle, FiMenu, FiX, FiUsers, FiCalendar, FiFileText, FiCpu, FiLogOut } from 'react-icons/fi';
 import NavXAIChat from './components/NavXAIChat';
 import NavXAdminCopilot from './components/NavXAdminCopilot';
 import { AdminPageProvider } from './components/AdminPageContext';
@@ -151,7 +151,7 @@ function App() {
           element={
             <div className="app-layout">
               {!isEditorPage && <Sidebar admin={admin} onLogout={handleLogout} />}
-              <div className={`main-content ${isEditorPage ? 'editor-mode' : ''}`} style={isEditorPage ? { marginLeft: 0 } : {}}>
+              <div className={`main-content ${isEditorPage ? 'editor-mode' : ''}`}>
                 {!isEditorPage && <TopBar />}
                 <Dashboard admin={admin} />
               </div>
@@ -163,7 +163,7 @@ function App() {
           element={
             <div className="app-layout">
               {!isEditorPage && <Sidebar admin={admin} onLogout={handleLogout} />}
-              <div className={`main-content ${isEditorPage ? 'editor-mode' : ''}`} style={isEditorPage ? { marginLeft: 0 } : {}}>
+              <div className={`main-content ${isEditorPage ? 'editor-mode' : ''}`}>
                 {!isEditorPage && <TopBar />}
                 <CampusManager admin={admin} />
               </div>
@@ -176,7 +176,7 @@ function App() {
           element={
             <div className="app-layout">
               {!isEditorPage && <Sidebar admin={admin} onLogout={handleLogout} />}
-              <div className={`main-content ${isEditorPage ? 'editor-mode' : ''}`} style={isEditorPage ? { marginLeft: 0 } : {}}>
+              <div className={`main-content ${isEditorPage ? 'editor-mode' : ''}`}>
                 {!isEditorPage && <TopBar />}
                 <PositioningSetup />
               </div>
@@ -188,7 +188,7 @@ function App() {
           element={
             <div className="app-layout">
               {!isEditorPage && <Sidebar admin={admin} onLogout={handleLogout} />}
-              <div className={`main-content ${isEditorPage ? 'editor-mode' : ''}`} style={isEditorPage ? { marginLeft: 0 } : {}}>
+              <div className={`main-content ${isEditorPage ? 'editor-mode' : ''}`}>
                 {!isEditorPage && <TopBar />}
                 <CampaignManager admin={admin} />
               </div>
@@ -200,7 +200,7 @@ function App() {
           element={
             <div className="app-layout">
               {!isEditorPage && <Sidebar admin={admin} onLogout={handleLogout} />}
-              <div className={`main-content ${isEditorPage ? 'editor-mode' : ''}`} style={isEditorPage ? { marginLeft: 0 } : {}}>
+              <div className={`main-content ${isEditorPage ? 'editor-mode' : ''}`}>
                 {!isEditorPage && <TopBar />}
                 <AnalyticsDashboard admin={admin} />
               </div>
@@ -212,7 +212,7 @@ function App() {
           element={
             <div className="app-layout">
               {!isEditorPage && <Sidebar admin={admin} onLogout={handleLogout} />}
-              <div className={`main-content ${isEditorPage ? 'editor-mode' : ''}`} style={isEditorPage ? { marginLeft: 0 } : {}}>
+              <div className={`main-content ${isEditorPage ? 'editor-mode' : ''}`}>
                 {!isEditorPage && <TopBar />}
                 <EmergencyDashboard admin={admin} />
               </div>
@@ -350,7 +350,7 @@ function CampusWorkspaceWrapper({ admin, setAdmin, onLogout }) {
   return (
     <div className="app-layout">
       {!isEditorPage && <Sidebar admin={admin} onLogout={onLogout} campusCode={campusCode} />}
-      <div className={`main-content ${isEditorPage ? 'editor-mode' : ''}`} style={isEditorPage ? { marginLeft: 0 } : {}}>
+      <div className={`main-content ${isEditorPage ? 'editor-mode' : ''}`}>
         {!isEditorPage && <TopBar />}
         <Outlet context={{ campus }} />
       </div>
@@ -361,66 +361,104 @@ function CampusWorkspaceWrapper({ admin, setAdmin, onLogout }) {
 function Sidebar({ admin, onLogout, campusCode }) {
   const prefix = campusCode ? `/campus/${campusCode}` : '';
   const venuesPath = campusCode ? `${prefix}/venues` : '/campus';
-  const [isOpen, setIsOpen] = React.useState(false);
+  const [collapsed, setCollapsed] = React.useState(false);
 
   return (
-    <header className={`top-navbar ${isOpen ? 'mobile-open' : ''}`}>
-      <div className="navbar-wrapper admin-navbar-wrapper">
-        <div className="navbar-header-row">
-          <div className="navbar-left">
-            <img src="/navx-icon.png" alt="NavX Logo" className="navbar-logo" style={{ objectFit: 'cover' }} />
-            <div>
-              <div className="navbar-title">NavX</div>
-              <div className="navbar-subtitle">{campusCode ? `Workspace: ${campusCode}` : 'Admin Console'}</div>
+    <aside className={`campus-sidebar ${collapsed ? 'collapsed' : ''}`}>
+      {/* Sidebar Header */}
+      <div className="sidebar-header">
+        <div className="sidebar-brand">
+          <img src="/navx-icon.png" alt="NavX Logo" className="sidebar-logo" style={{ objectFit: 'cover' }} />
+          {!collapsed && (
+            <div className="sidebar-brand-text">
+              <div className="sidebar-title">NavX</div>
+              <div className="sidebar-subtitle">{campusCode ? `${campusCode}` : 'Admin'}</div>
             </div>
-          </div>
-          <button className="mobile-nav-toggle" onClick={() => setIsOpen(!isOpen)} aria-label="Toggle menu">
-            {isOpen ? <FiX /> : <FiMenu />}
-          </button>
-        </div>
-        <nav className="navbar-center" onClick={() => setIsOpen(false)}>
-          <NavLink to={campusCode ? prefix : "/"} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} end>
-            <FiHome /> Dashboard
-          </NavLink>
-          <NavLink to={venuesPath} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} end>
-            <FiGrid /> Venues & Maps
-          </NavLink>
-          <NavLink to={`${prefix}/campaigns`} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-            <FiLayers /> Campaigns
-          </NavLink>
-          {campusCode && (
-            <>
-              <NavLink to={`${prefix}/faculty`} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-                <FiUsers /> Faculty
-              </NavLink>
-              <NavLink to={`${prefix}/timetable`} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-                <FiCalendar /> Timetable
-              </NavLink>
-              <NavLink to={`${prefix}/reports`} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-                <FiFileText /> Reports
-              </NavLink>
-              <NavLink to={`${prefix}/ai-assistant`} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-                <FiCpu /> AI Assistant
-              </NavLink>
-            </>
           )}
-          <NavLink to={`${prefix}/emergency`} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-            <FiAlertCircle /> Emergency Alert
-          </NavLink>
-          <NavLink to={`${prefix}/analytics`} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-            <FiBarChart2 /> Analytics
-          </NavLink>
-        </nav>
-        <div className="navbar-right">
-          <div className="user-badge">
-            <span className="user-role">{admin?.role === 'SuperAdmin' ? 'Super Admin' : (admin?.username || 'Admin')}</span>
-          </div>
-          <button className="btn-logout" onClick={() => { setIsOpen(false); onLogout(); }}>
-            Logout
-          </button>
         </div>
+        <button
+          className="sidebar-toggle"
+          onClick={() => setCollapsed(!collapsed)}
+          aria-label="Toggle sidebar"
+          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        >
+          {collapsed ? <FiMenu /> : <FiX />}
+        </button>
       </div>
-    </header>
+
+      {/* Navigation */}
+      <nav className="sidebar-nav">
+        {campusCode && !collapsed && (
+          <div className="sidebar-section-label">Workspace</div>
+        )}
+        <NavLink to={campusCode ? prefix : "/"} className={({ isActive }) => `sidebar-nav-link ${isActive ? 'active' : ''}`} end>
+          <FiHome className="sidebar-icon" />
+          {!collapsed && <span>Dashboard</span>}
+        </NavLink>
+        <NavLink to={venuesPath} className={({ isActive }) => `sidebar-nav-link ${isActive ? 'active' : ''}`} end>
+          <FiGrid className="sidebar-icon" />
+          {!collapsed && <span>Venues &amp; Maps</span>}
+        </NavLink>
+        <NavLink to={`${prefix}/campaigns`} className={({ isActive }) => `sidebar-nav-link ${isActive ? 'active' : ''}`}>
+          <FiLayers className="sidebar-icon" />
+          {!collapsed && <span>Campaigns</span>}
+        </NavLink>
+        {campusCode && (
+          <>
+            {!collapsed && <div className="sidebar-section-label" style={{ marginTop: 16 }}>Management</div>}
+            <NavLink to={`${prefix}/faculty`} className={({ isActive }) => `sidebar-nav-link ${isActive ? 'active' : ''}`}>
+              <FiUsers className="sidebar-icon" />
+              {!collapsed && <span>Faculty</span>}
+            </NavLink>
+            <NavLink to={`${prefix}/timetable`} className={({ isActive }) => `sidebar-nav-link ${isActive ? 'active' : ''}`}>
+              <FiCalendar className="sidebar-icon" />
+              {!collapsed && <span>Timetable</span>}
+            </NavLink>
+            <NavLink to={`${prefix}/reports`} className={({ isActive }) => `sidebar-nav-link ${isActive ? 'active' : ''}`}>
+              <FiFileText className="sidebar-icon" />
+              {!collapsed && <span>Reports</span>}
+            </NavLink>
+            {!collapsed && <div className="sidebar-section-label" style={{ marginTop: 16 }}>Tools</div>}
+            <NavLink to={`${prefix}/ai-assistant`} className={({ isActive }) => `sidebar-nav-link ${isActive ? 'active' : ''}`}>
+              <FiCpu className="sidebar-icon" />
+              {!collapsed && <span>AI Assistant</span>}
+            </NavLink>
+          </>
+        )}
+        {!collapsed && <div className="sidebar-section-label" style={{ marginTop: 16 }}>Monitoring</div>}
+        <NavLink to={`${prefix}/emergency`} className={({ isActive }) => `sidebar-nav-link ${isActive ? 'active' : ''}`}>
+          <FiAlertCircle className="sidebar-icon" />
+          {!collapsed && <span>Emergency Alert</span>}
+        </NavLink>
+        <NavLink to={`${prefix}/analytics`} className={({ isActive }) => `sidebar-nav-link ${isActive ? 'active' : ''}`}>
+          <FiBarChart2 className="sidebar-icon" />
+          {!collapsed && <span>Analytics</span>}
+        </NavLink>
+      </nav>
+
+      {/* Sidebar Footer */}
+      <div className="sidebar-footer">
+        <div className="sidebar-user">
+          <div className="sidebar-avatar">
+            {(admin?.username || 'A')[0].toUpperCase()}
+          </div>
+          {!collapsed && (
+            <div className="sidebar-user-info">
+              <div className="sidebar-username">{admin?.username || 'Admin'}</div>
+              <div className="sidebar-user-role">{admin?.role === 'SuperAdmin' ? 'Super Admin' : 'Campus Admin'}</div>
+            </div>
+          )}
+        </div>
+        <button
+          className="sidebar-logout-btn"
+          onClick={onLogout}
+          title="Logout"
+        >
+          <FiLogOut />
+          {!collapsed && <span>Logout</span>}
+        </button>
+      </div>
+    </aside>
   );
 }
 

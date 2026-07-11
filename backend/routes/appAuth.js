@@ -9,22 +9,27 @@ const JWT_SECRET = process.env.JWT_SECRET || 'navx_fallback_secret_key_2025';
 // ─── POST /api/app-auth/register ───────────────────────────────────────────
 router.post('/register', async (req, res) => {
   try {
-    const { username, mobileNumber, password } = req.body;
+    const { username, mobileNumber, password, collegeEmail, collegeId, isStudent } = req.body;
 
-    if (!username || !password || !mobileNumber) {
-      return res.status(400).json({ error: 'Username, mobile number, and password are required' });
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Username and password are required' });
+    }
+    if (isStudent && !collegeEmail) {
+      return res.status(400).json({ error: 'College Email is required for students' });
+    }
+    if (!isStudent && !mobileNumber) {
+      return res.status(400).json({ error: 'Mobile number is required for regular users' });
     }
 
     // Check if user already exists
-    const existingUser = await AppUser.findOne({ 
-      $or: [
-        { username: username },
-        { mobileNumber: mobileNumber }
-      ] 
-    });
+    const existingConditions = [{ username }];
+    if (mobileNumber) existingConditions.push({ mobileNumber });
+    if (collegeEmail) existingConditions.push({ collegeEmail });
+
+    const existingUser = await AppUser.findOne({ $or: existingConditions });
 
     if (existingUser) {
-      return res.status(400).json({ error: 'Username or Mobile Number already exists' });
+      return res.status(400).json({ error: 'Username, Mobile Number, or College Email already exists' });
     }
 
     // Hash password
@@ -34,8 +39,11 @@ router.post('/register', async (req, res) => {
     // Create user
     const newUser = new AppUser({
       username,
-      mobileNumber,
-      password: hashedPassword
+      mobileNumber: mobileNumber || undefined,
+      password: hashedPassword,
+      collegeEmail,
+      collegeId,
+      role: isStudent ? 'student' : 'guest'
     });
 
     await newUser.save();
@@ -56,19 +64,29 @@ router.post('/register', async (req, res) => {
 // ─── POST /api/app-auth/login ──────────────────────────────────────────────
 router.post('/login', async (req, res) => {
   try {
-    const { identifier, password } = req.body; // identifier can be username or mobile
+    const { identifier, password, isStudent, collegeEmail, collegeId } = req.body;
 
-    if (!identifier || !password) {
-      return res.status(400).json({ error: 'Please provide credentials' });
+    if (!password) {
+      return res.status(400).json({ error: 'Please provide a password' });
     }
 
-    // Find user
-    const user = await AppUser.findOne({
-      $or: [
-        { username: identifier },
-        { mobileNumber: identifier }
-      ]
-    });
+    let user;
+    if (isStudent) {
+      if (!collegeEmail || !collegeId) {
+        return res.status(400).json({ error: 'College Email and College ID are required for student login' });
+      }
+      user = await AppUser.findOne({ collegeEmail, collegeId });
+    } else {
+      if (!identifier) {
+        return res.status(400).json({ error: 'Please provide credentials' });
+      }
+      user = await AppUser.findOne({
+        $or: [
+          { username: identifier },
+          { mobileNumber: identifier }
+        ]
+      });
+    }
 
     if (!user) {
       return res.status(401).json({ error: 'Invalid credentials' });
@@ -117,11 +135,18 @@ router.get('/me', async (req, res) => {
 // ─── POST /api/app-auth/request-otp ──────────────────────────────────────────
 router.post('/request-otp', async (req, res) => {
   try {
-    const { mobileNumber } = req.body;
-    if (!mobileNumber) return res.status(400).json({ error: 'Mobile number is required' });
-
-    const user = await AppUser.findOne({ mobileNumber });
-    if (!user) return res.status(404).json({ error: 'User not found with this mobile number' });
+    const { isStudent, mobileNumber, collegeEmail } = req.body;
+    
+    let user;
+    if (isStudent) {
+      if (!collegeEmail) return res.status(400).json({ error: 'College Email is required' });
+      user = await AppUser.findOne({ collegeEmail });
+      if (!user) return res.status(404).json({ error: 'User not found with this college email' });
+    } else {
+      if (!mobileNumber) return res.status(400).json({ error: 'Mobile number is required' });
+      user = await AppUser.findOne({ mobileNumber });
+      if (!user) return res.status(404).json({ error: 'User not found with this mobile number' });
+    }
 
     // Generate a 6-digit OTP
     const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
@@ -131,14 +156,18 @@ router.post('/request-otp', async (req, res) => {
     user.otpExpires = otpExpires;
     await user.save();
 
-    // Simulating sending SMS by printing to backend logs
+    // Simulating sending SMS/Email by printing to backend logs
     console.log(`\n========================================`);
-    console.log(`[NavX SMS MOCK] To: ${mobileNumber}`);
+    if (isStudent) {
+      console.log(`[NavX EMAIL MOCK] To: ${collegeEmail} (Outlook)`);
+    } else {
+      console.log(`[NavX SMS MOCK] To: ${mobileNumber}`);
+    }
     console.log(`Your NavX password reset OTP is: ${otpCode}`);
     console.log(`========================================\n`);
 
     // Returning devOtp in the response for frontend dev Alert
-    res.json({ success: true, message: 'OTP simulated successfully', devOtp: otpCode });
+    res.json({ success: true, message: `OTP sent successfully to ${isStudent ? 'your email' : 'your mobile'}`, devOtp: otpCode });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -147,12 +176,21 @@ router.post('/request-otp', async (req, res) => {
 // ─── POST /api/app-auth/verify-otp ───────────────────────────────────────────
 router.post('/verify-otp', async (req, res) => {
   try {
-    const { mobileNumber, otpCode, newPassword } = req.body;
-    if (!mobileNumber || !otpCode || !newPassword) {
-      return res.status(400).json({ error: 'Missing required fields' });
+    const { isStudent, mobileNumber, collegeEmail, otpCode, newPassword } = req.body;
+    
+    if (!otpCode || !newPassword) {
+      return res.status(400).json({ error: 'OTP and new password are required' });
     }
 
-    const user = await AppUser.findOne({ mobileNumber });
+    let user;
+    if (isStudent) {
+      if (!collegeEmail) return res.status(400).json({ error: 'College Email is required' });
+      user = await AppUser.findOne({ collegeEmail });
+    } else {
+      if (!mobileNumber) return res.status(400).json({ error: 'Mobile number is required' });
+      user = await AppUser.findOne({ mobileNumber });
+    }
+
     if (!user) return res.status(404).json({ error: 'User not found' });
 
     if (user.otpCode !== otpCode) {

@@ -44,7 +44,7 @@
       }
     },
     "plugins": [
-      "expo-barcode-scanner"
+      "expo-status-bar"
     ]
   }
 }

@@ -335,6 +335,9 @@ export default function WeatherWidget() {
   );
 }
 
+const SHADOWS_MD = { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 8, elevation: 5 };
+const SHADOWS_LG = { shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 10 };
+
 const s = StyleSheet.create({
   btn: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5 },
   btnGlow: { ...StyleSheet.absoluteFillObject, borderRadius: 21, borderWidth: 3, borderColor: '#A78BFA' },
@@ -381,5 +384,3 @@ const s = StyleSheet.create({
   retryT: { fontSize: 15, fontWeight: '700', color: '#FFF' },
 });
 
-const SHADOWS_MD = { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 8, elevation: 5 };
-const SHADOWS_LG = { shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 10 };
