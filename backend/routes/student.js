@@ -11,6 +11,7 @@ const AcademicCalendar = require('../models/AcademicCalendar');
 const Faculty = require('../models/Faculty');
 const Announcement = require('../models/Announcement');
 const TimetableSubstitution = require('../models/TimetableSubstitution');
+const Room = require('../models/Room');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'navx_fallback_secret_key_2025';
 
@@ -88,13 +89,23 @@ const autoSeedStudentData = async (student) => {
   }
 
   // Create Timetable for Monday - Friday
+  const dbRooms = await Room.find({ campusId });
+  const classrooms = dbRooms.filter(r => ['classroom', 'auditorium'].includes(r.type));
+  const labs = dbRooms.filter(r => r.type === 'lab');
+
+  const classroomName = classrooms.length > 0 ? classrooms[0].name : 'CS Lecture Hall 1';
+  const classroomId = classrooms.length > 0 ? classrooms[0]._id : null;
+
+  const labName = labs.length > 0 ? labs[0].name : 'Robotics Lab';
+  const labId = labs.length > 0 ? labs[0]._id : null;
+
   const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
   const subjectsList = [
-    { name: 'DBMS', room: 'C-302', faculty: faculty },
-    { name: 'OS', room: 'C-302', faculty: faculty },
-    { name: 'Computer Networks', room: 'C-304', faculty: faculty2 },
-    { name: 'AI & ML', room: 'Lab-3', faculty: faculty2 },
-    { name: 'Theory of Computation', room: 'C-302', faculty: faculty }
+    { name: 'DBMS', room: classroomName, roomId: classroomId, faculty: faculty },
+    { name: 'OS', room: classroomName, roomId: classroomId, faculty: faculty },
+    { name: 'Computer Networks', room: classroomName, roomId: classroomId, faculty: faculty2 },
+    { name: 'AI & ML', room: labName, roomId: labId, faculty: faculty2 },
+    { name: 'Theory of Computation', room: classroomName, roomId: classroomId, faculty: faculty }
   ];
 
   for (const day of days) {
@@ -112,6 +123,7 @@ const autoSeedStudentData = async (student) => {
         period: p,
         subject: sub.name,
         roomName: sub.room,
+        roomId: sub.roomId,
         facultyId: sub.faculty._id,
         facultyName: sub.faculty.name,
         startTime: `${startHours.toString().padStart(2, '0')}:00 AM`,
@@ -436,6 +448,7 @@ router.get('/academics', authenticateStudent, async (req, res) => {
 
     res.json({
       success: true,
+      campusId,
       timetable: groupedTimetable,
       attendance,
       internalMarks,

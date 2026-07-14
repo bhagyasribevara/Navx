@@ -9,7 +9,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'navx_fallback_secret_key_2025';
 // ─── POST /api/app-auth/register ───────────────────────────────────────────
 router.post('/register', async (req, res) => {
   try {
-    const { username, mobileNumber, password, collegeEmail, collegeId, isStudent } = req.body;
+    const { username, mobileNumber, password, collegeEmail, collegeId, isStudent, department, semester, section } = req.body;
 
     if (!username || !password) {
       return res.status(400).json({ error: 'Username and password are required' });
@@ -43,7 +43,10 @@ router.post('/register', async (req, res) => {
       password: hashedPassword,
       collegeEmail,
       collegeId,
-      role: isStudent ? 'student' : 'guest'
+      role: isStudent ? 'student' : 'guest',
+      department: isStudent ? (department || 'CSE') : undefined,
+      semester: isStudent ? (semester || '3') : undefined,
+      section: isStudent ? (section || 'A') : undefined
     });
 
     await newUser.save();
