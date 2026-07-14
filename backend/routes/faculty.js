@@ -575,4 +575,37 @@ router.post('/leave/cancel', authenticateFaculty, async (req, res, next) => {
   }
 });
 
+// PUT /api/faculty/timetable/:slotId/venue (Faculty updates venue for own slots)
+const Room = require('../models/Room');
+
+router.put('/timetable/:slotId/venue', authenticateFaculty, async (req, res, next) => {
+  try {
+    const { roomName, roomId } = req.body;
+    if (!roomName) {
+      return res.status(400).json({ error: 'Room name is required' });
+    }
+
+    // Verify the slot belongs to this faculty
+    const slot = await Timetable.findById(req.params.slotId);
+    if (!slot) return res.status(404).json({ error: 'Timetable slot not found' });
+    if (slot.facultyId.toString() !== req.faculty._id.toString()) {
+      return res.status(403).json({ error: 'You can only update venues for your own classes' });
+    }
+
+    // Validate room exists if roomId provided
+    if (roomId) {
+      const room = await Room.findById(roomId);
+      if (!room) return res.status(404).json({ error: 'Room not found' });
+    }
+
+    slot.roomName = roomName;
+    slot.roomId = roomId || null;
+    await slot.save();
+
+    res.json({ success: true, message: 'Venue updated successfully', slot });
+  } catch (err) {
+    next(err);
+  }
+});
+
 module.exports = router;

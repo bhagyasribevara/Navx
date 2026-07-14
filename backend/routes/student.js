@@ -12,8 +12,32 @@ const Faculty = require('../models/Faculty');
 const Announcement = require('../models/Announcement');
 const TimetableSubstitution = require('../models/TimetableSubstitution');
 const Room = require('../models/Room');
+const Campus = require('../models/Campus');
+
+// Helper to get campusId with fallback
+const getStudentCampusId = async (student) => {
+  if (student.activeCampusId) return student.activeCampusId;
+  if (student.campusId) return student.campusId;
+  const campus = await Campus.findOne();
+  return campus ? campus._id : null;
+};
 
 const { JWT_SECRET } = require('../utils/auth');
+
+// Helper to normalize semester format: "3rd" -> "3", "3" -> "3", "6th" -> "6"
+const normalizeSemester = (sem) => {
+  if (!sem) return sem;
+  return sem.toString().replace(/(st|nd|rd|th)$/i, '');
+};
+
+// Get all possible semester format variants for DB queries
+const getSemesterVariants = (sem) => {
+  if (!sem) return [];
+  const num = normalizeSemester(sem);
+  const suffixes = { '1': 'st', '2': 'nd', '3': 'rd' };
+  const suffix = suffixes[num] || 'th';
+  return [num, `${num}${suffix}`];
+};
 
 // Middleware to authenticate student AppUser
 const authenticateStudent = async (req, res, next) => {
@@ -37,12 +61,13 @@ const authenticateStudent = async (req, res, next) => {
 
 // Helper to auto-seed mock data for a student if none exists
 const autoSeedStudentData = async (student) => {
-  const campusId = student.activeCampusId || student.campusId;
+  const campusId = await getStudentCampusId(student);
   if (!campusId) return;
 
-  // Check if timetable exists for this student's department/semester/section
-  const count = await Timetable.countDocuments({ campusId, department: student.department, semester: student.semester });
-  if (count > 0) return; // already seeded
+  // Check if timetable exists for this student's department/semester (try all format variants)
+  const semVariants = getSemesterVariants(student.semester);
+  const count = await Timetable.countDocuments({ campusId, department: student.department, semester: { $in: semVariants } });
+  if (count > 0) return; // real or previously-seeded timetable already exists
 
   // Create mock Faculty
   let faculty = await Faculty.findOne({ campusId, employeeId: 'EMP1001' });
@@ -273,7 +298,7 @@ router.get('/dashboard', authenticateStudent, async (req, res, next) => {
     // Auto seed if empty
     await autoSeedStudentData(student);
 
-    const campusId = student.activeCampusId || student.campusId;
+    const campusId = await getStudentCampusId(student);
 
     // Get live attendance % from DB
     const attendanceLogs = await Attendance.find({ studentId: student._id });
@@ -290,10 +315,11 @@ router.get('/dashboard', authenticateStudent, async (req, res, next) => {
     // Fallback to Monday if it is Sunday/Saturday for demo purposes
     const queryDay = (currentDay === 'Sunday' || currentDay === 'Saturday') ? 'Monday' : currentDay;
 
+    const semVariants = getSemesterVariants(student.semester);
     const timetable = await Timetable.find({
       campusId,
       department: student.department,
-      semester: student.semester,
+      semester: { $in: semVariants },
       section: student.section,
       dayOfWeek: queryDay
     }).sort({ period: 1 });
@@ -380,13 +406,14 @@ router.get('/dashboard', authenticateStudent, async (req, res, next) => {
 router.get('/academics', authenticateStudent, async (req, res, next) => {
   try {
     const student = req.student;
-    const campusId = student.activeCampusId || student.campusId;
+    const campusId = await getStudentCampusId(student);
 
     // Get timetable (all days)
+    const semVariants = getSemesterVariants(student.semester);
     const timetable = await Timetable.find({
       campusId,
       department: student.department,
-      semester: student.semester,
+      semester: { $in: semVariants },
       section: student.section
     }).sort({ period: 1 });
 

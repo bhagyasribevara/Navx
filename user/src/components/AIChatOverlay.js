@@ -178,7 +178,7 @@ export default function AIChatOverlay() {
     closeChat();
     if (action === 'navigate' && destination) {
       if (!activeCampusId) {
-        navigation.navigate('Map');
+        navigation.navigate('MainTabs', { screen: 'Map' });
         return;
       }
       try {
@@ -187,7 +187,7 @@ export default function AIChatOverlay() {
         const matchedBlock = blocks.find(b => b.name.toLowerCase().trim() === destination.toLowerCase().trim());
         
         if (matchedBlock) {
-          navigation.navigate('Map', { blockId: matchedBlock._id, campusId: activeCampusId });
+          navigation.navigate('MainTabs', { screen: 'Map', params: { blockId: matchedBlock._id, campusId: activeCampusId } });
           return;
         }
 
@@ -221,16 +221,16 @@ export default function AIChatOverlay() {
 
           if (allSameBlock) {
             // It's a block! Open the map screen and automatically focus on this block
-            navigation.navigate('Map', { blockId: firstBlockId, campusId: activeCampusId });
+            navigation.navigate('MainTabs', { screen: 'Map', params: { blockId: firstBlockId, campusId: activeCampusId } });
             return;
           }
         }
 
         // Fallback to Map screen to display the Campus Directory instead of the Search screen
-        navigation.navigate('Map', { campusId: activeCampusId });
+        navigation.navigate('MainTabs', { screen: 'Map', params: { campusId: activeCampusId } });
       } catch (err) {
         console.error('Failed to handle navigate action:', err);
-        navigation.navigate('Map', { campusId: activeCampusId });
+        navigation.navigate('MainTabs', { screen: 'Map', params: { campusId: activeCampusId } });
       }
     } else if (action === 'emergency') {
       navigation.navigate('Search', { initialQuery: 'exit', autoSearch: true });
@@ -243,7 +243,7 @@ export default function AIChatOverlay() {
     
     if (text.includes('restroom') || text.includes('washroom')) {
       closeChat();
-      navigation.navigate('Map', { showRestrooms: true, campusId: activeCampusId });
+      navigation.navigate('MainTabs', { screen: 'Map', params: { showRestrooms: true, campusId: activeCampusId } });
     } else if (text.includes('nearby facilities') || text.includes('show facilities') || text.includes('show nearby')) {
       closeChat();
       navigation.navigate('Search');
@@ -270,7 +270,7 @@ export default function AIChatOverlay() {
     
     if (queryText.includes('restroom') || queryText.includes('washroom')) {
       closeChat();
-      navigation.navigate('Map', { showRestrooms: true, campusId: activeCampusId });
+      navigation.navigate('MainTabs', { screen: 'Map', params: { showRestrooms: true, campusId: activeCampusId } });
       return;
     } else if (queryText.includes('nearby facilities') || queryText.includes('show facilities') || queryText.includes('show nearby')) {
       closeChat();

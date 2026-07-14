@@ -6,7 +6,7 @@ const Timetable = require('../models/Timetable');
 const Campus = require('../models/Campus');
 
 // --- Timetable Data Configuration ---
-const semester = "3rd";
+const semester = "3";
 const department = "CSE";
 
 const subjectsMap = {

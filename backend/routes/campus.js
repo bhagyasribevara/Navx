@@ -553,6 +553,23 @@ router.delete('/:id/timetable/:slotId', authenticateJWT, enforceCampusIsolation,
   }
 });
 
+// PUT update a timetable slot (venue, subject, faculty, etc.)
+router.put('/:id/timetable/:slotId', authenticateJWT, enforceCampusIsolation, async (req, res, next) => {
+  try {
+    const allowedFields = ['subject', 'roomName', 'roomId', 'facultyId', 'facultyName', 'startTime', 'endTime'];
+    const updates = {};
+    allowedFields.forEach(f => {
+      if (req.body[f] !== undefined) updates[f] = req.body[f];
+    });
+
+    const slot = await Timetable.findByIdAndUpdate(req.params.slotId, updates, { new: true });
+    if (!slot) return res.status(404).json({ error: 'Timetable slot not found' });
+    res.json({ success: true, slot });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // --- Section Timings Routes ---
 const SectionTiming = require('../models/SectionTiming');
 
