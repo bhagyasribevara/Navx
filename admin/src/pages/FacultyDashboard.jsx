@@ -119,7 +119,7 @@ export default function FacultyDashboard({ faculty, onLogout, token }) {
     try {
       const headers = { Authorization: `Bearer ${token}` };
       const { data } = await axios.get(
-        `${API_BASE}/faculty/students?department=${selectedDept}&section=${selectedSec}`,
+        `${API_BASE}/faculty/students?department=${selectedDept}&semester=${selectedSem}&section=${selectedSec}`,
         { headers }
       );
       if (data.success) {
@@ -188,7 +188,7 @@ export default function FacultyDashboard({ faculty, onLogout, token }) {
       ]);
       setGeneratedSheet(null);
     }
-  }, [activeTab, selectedDept, selectedSec, selectedSubject, analyticsMarksType]);
+  }, [activeTab, selectedDept, selectedSec, selectedSem, selectedSubject, analyticsMarksType]);
 
   const handleGenerateExcel = async (type) => {
     setGeneratingSheet(true);
@@ -1065,6 +1065,12 @@ export default function FacultyDashboard({ faculty, onLogout, token }) {
                       {faculty.assignedSections?.map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
                   </div>
+                  <div style={{ flex: 1, minWidth: 100 }}>
+                    <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 8 }}>Semester</label>
+                    <select value={selectedSem} onChange={e => setSelectedSem(e.target.value)} className="input" style={{ width: '100%' }}>
+                      {['1', '2', '3', '4', '5', '6', '7', '8'].map(sem => <option key={sem} value={sem}>Sem {sem}</option>)}
+                    </select>
+                  </div>
                   <div style={{ flex: 1.5, minWidth: 150 }}>
                     <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 8 }}>Date</label>
                     <input type="date" value={attendanceDate} onChange={e => setAttendanceDate(e.target.value)} className="input" style={{ width: '100%' }} />
@@ -1214,6 +1220,7 @@ export default function FacultyDashboard({ faculty, onLogout, token }) {
                 <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
                   <div className="form-group" style={{ flex: 1, minWidth: 150 }}><label>Subject</label><select value={selectedSubject} onChange={e => setSelectedSubject(e.target.value)} className="input" style={{ width: '100%' }}>{faculty.subjects?.map(s => <option key={s} value={s}>{s}</option>)}</select></div>
                   <div className="form-group" style={{ flex: 1, minWidth: 120 }}><label>Section</label><select value={selectedSec} onChange={e => setSelectedSec(e.target.value)} className="input" style={{ width: '100%' }}>{faculty.assignedSections?.map(s => <option key={s} value={s}>{s}</option>)}</select></div>
+                  <div className="form-group" style={{ flex: 1, minWidth: 100 }}><label>Semester</label><select value={selectedSem} onChange={e => setSelectedSem(e.target.value)} className="input" style={{ width: '100%' }}>{['1', '2', '3', '4', '5', '6', '7', '8'].map(sem => <option key={sem} value={sem}>Sem {sem}</option>)}</select></div>
                   <div className="form-group" style={{ flex: 1, minWidth: 150 }}><label>Marks Category</label><select value={marksType} onChange={e => setMarksType(e.target.value)} className="input" style={{ width: '100%' }}><option value="Mid 1">Mid 1</option><option value="Mid 2">Mid 2</option><option value="OBE">OBE</option><option value="Assignment">Assignment</option><option value="Internal Exam">Internal Exam</option></select></div>
                   <div className="form-group" style={{ flex: 1, minWidth: 100 }}><label>Max Marks</label><input type="number" value={totalMarks} onChange={e => setTotalMarks(Number(e.target.value))} className="input" style={{ width: '100%' }} /></div>
                 </div>

@@ -139,17 +139,22 @@ router.get('/dashboard', authenticateFaculty, async (req, res, next) => {
 // GET /api/faculty/students
 router.get('/students', authenticateFaculty, async (req, res, next) => {
   try {
-    const { department, section } = req.query;
+    const { department, semester, section } = req.query;
     if (!department || !section) {
       return res.status(400).json({ error: 'Department and section are required' });
     }
 
-    // Load students in department and section
-    const students = await AppUser.find({
+    const query = {
       role: 'student',
       department,
       section
-    }).select('-password').sort({ username: 1 });
+    };
+    if (semester) {
+      query.semester = semester;
+    }
+
+    // Load students in department, semester, and section
+    const students = await AppUser.find(query).select('-password').sort({ username: 1 });
 
     res.json({ success: true, students });
   } catch (err) {

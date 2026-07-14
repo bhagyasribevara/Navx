@@ -45,10 +45,12 @@ export default function AcademicsScreen({ navigation }) {
 
   const handleNavigateToRoom = async (roomName) => {
     try {
-      const res = await api.get(`/rooms`);
+      const campusId = academicsData?.campusId;
+      const url = campusId ? `/rooms?campusId=${campusId}` : `/rooms`;
+      const res = await api.get(url);
       const targetRoom = res.data.find(r => r.name.toLowerCase() === roomName.toLowerCase());
       if (targetRoom) {
-        navigation.navigate("Navigation", { room: targetRoom, campusId: targetRoom.campusId });
+        navigation.navigate("Navigation", { room: targetRoom, campusId: targetRoom.campusId || campusId });
       } else {
         alert(`Room ${roomName} not found.`);
       }
@@ -127,13 +129,23 @@ export default function AcademicsScreen({ navigation }) {
               timetable[selectedDay].map((slot, idx) => (
                 <View key={slot._id || idx} style={[styles.classCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
+                    <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center', flex: 1, marginRight: 8 }}>
                       <View style={[styles.periodBadge, { backgroundColor: colors.primary + '15' }]}>
                         <Text style={{ color: colors.primary, fontWeight: '800' }}>P{slot.period}</Text>
                       </View>
-                      <View>
+                      <View style={{ flex: 1 }}>
                         <Text style={[styles.classSubject, { color: colors.text }]}>{slot.subject}</Text>
-                        <Text style={{ color: colors.textMuted, fontSize: 12, marginTop: 2 }}>{slot.startTime} - {slot.endTime}</Text>
+                        <Text style={{ color: colors.textSec, fontSize: 12, marginTop: 3, fontWeight: '500' }}>
+                          📍 Room: {slot.roomName}
+                        </Text>
+                        <Text style={{ color: colors.textMuted, fontSize: 11, marginTop: 2 }}>
+                          🕰️ {slot.startTime} - {slot.endTime}
+                        </Text>
+                        {slot.facultyName ? (
+                          <Text style={{ color: colors.textMuted, fontSize: 11, marginTop: 2 }}>
+                            👨‍🏫 Teacher: {slot.facultyName}
+                          </Text>
+                        ) : null}
                       </View>
                     </View>
                     <TouchableOpacity 
@@ -141,7 +153,7 @@ export default function AcademicsScreen({ navigation }) {
                       onPress={() => handleNavigateToRoom(slot.roomName)}
                     >
                       <Ionicons name="navigate" size={14} color="#fff" />
-                      <Text style={styles.navBtnText}>Room {slot.roomName}</Text>
+                      <Text style={styles.navBtnText}>Navigate</Text>
                     </TouchableOpacity>
                   </View>
                 </View>

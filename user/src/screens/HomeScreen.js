@@ -727,20 +727,36 @@ export default function HomeScreen({ navigation }) {
                       marginBottom: 8
                     }}
                   >
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1, marginRight: 8 }}>
                       <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: colors.primary + '15', alignItems: 'center', justifyContent: 'center' }}>
                         <Text style={{ color: colors.primary, fontSize: 12, fontWeight: '800' }}>P{slot.period}</Text>
                       </View>
-                      <View>
+                      <View style={{ flex: 1 }}>
                         <Text style={{ color: colors.text, fontSize: 14, fontWeight: '700' }}>{slot.subject}</Text>
-                        <Text style={{ color: colors.textMuted, fontSize: 11, marginTop: 2 }}>{slot.startTime} · Room {slot.roomName}</Text>
+                        <Text style={{ color: colors.textSec, fontSize: 11, marginTop: 2 }}>
+                          📍 Room {slot.roomName} · 🕰️ {slot.startTime}
+                        </Text>
+                        {slot.facultyName ? (
+                          <Text style={{ color: colors.textMuted, fontSize: 11, marginTop: 1 }}>
+                            👨‍🏫 Teacher: {slot.facultyName}
+                          </Text>
+                        ) : null}
                       </View>
                     </View>
                     <TouchableOpacity
-                      style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: colors.primary + '15', alignItems: 'center', justifyContent: 'center' }}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 4,
+                        backgroundColor: colors.primary,
+                        paddingHorizontal: 12,
+                        paddingVertical: 8,
+                        borderRadius: 10
+                      }}
                       onPress={() => handleNavigateToRoom(slot.roomName)}
                     >
-                      <Ionicons name="navigate" size={14} color={colors.primary} />
+                      <Ionicons name="navigate" size={12} color="#fff" />
+                      <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>Navigate</Text>
                     </TouchableOpacity>
                   </View>
                 ))

@@ -10,7 +10,7 @@ const { registerSchema, loginSchema, otpRequestSchema, otpVerifySchema, profileU
 // ─── POST /api/app-auth/register ───────────────────────────────────────────
 router.post('/register', validateBody(registerSchema), async (req, res, next) => {
   try {
-    const { username, mobileNumber, password, collegeEmail, collegeId, isStudent } = req.body;
+    const { username, mobileNumber, password, collegeEmail, collegeId, isStudent, department, semester, section } = req.body;
 
     if (!username || !password) {
       return res.status(400).json({ error: 'Username and password are required' });
@@ -64,7 +64,14 @@ router.post('/register', validateBody(registerSchema), async (req, res, next) =>
       password: hashedPassword,
       collegeEmail,
       collegeId,
+<<<<<<< HEAD
       role: isStudent ? 'student' : 'regular'
+=======
+      role: isStudent ? 'student' : 'guest',
+      department: isStudent ? (department || 'CSE') : undefined,
+      semester: isStudent ? (semester || '3') : undefined,
+      section: isStudent ? (section || 'A') : undefined
+>>>>>>> 706fec20d8afdbe97726f5aa38da1ec46ce1670f
     });
 
     await newUser.save();
