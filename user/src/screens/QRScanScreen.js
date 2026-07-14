@@ -34,17 +34,22 @@ export default function QRScanScreen({ navigation }) {
   const successAnim = useRef(new Animated.Value(0)).current;
   const frameAnim = useRef(new Animated.Value(1)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
+  const loopAnimRef = useRef(null);
 
   useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 400, useNativeDriver: true }).start();
     animateScanLine();
+    return () => {
+      if (loopAnimRef.current) loopAnimRef.current.stop();
+    };
   }, []);
 
   const animateScanLine = () => {
     scanLineAnim.setValue(0);
-    Animated.loop(
+    loopAnimRef.current = Animated.loop(
       Animated.timing(scanLineAnim, { toValue: 1, duration: 2200, useNativeDriver: false })
-    ).start();
+    );
+    loopAnimRef.current.start();
   };
 
   const handleScan = async ({ data }) => {
@@ -180,7 +185,7 @@ export default function QRScanScreen({ navigation }) {
   return (
     <Animated.View style={[s.container, { opacity: fadeAnim }]}>
       <CameraView
-        style={StyleSheet.absoluteFill}
+        style={[StyleSheet.absoluteFill, { flex: 1 }]}
         facing="back"
         onBarcodeScanned={scanned ? undefined : handleScan}
         barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
@@ -225,8 +230,8 @@ export default function QRScanScreen({ navigation }) {
           <View style={{ flex: 1, backgroundColor: "rgba(7,11,20,0.75)" }} />
         </View>
         
-        {/* Bottom section - larger flex to clear the absolute bottom panel */}
-        <View style={{ flex: 1.5, width: '100%', backgroundColor: "rgba(7,11,20,0.75)" }} />
+        {/* Bottom section - equal flex to center the frame */}
+        <View style={{ flex: 1, width: '100%', backgroundColor: "rgba(7,11,20,0.75)" }} />
       </View>
 
       {/* Top bar */}

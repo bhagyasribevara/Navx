@@ -646,7 +646,7 @@ export default function HomeScreen({ navigation }) {
                     <Text style={{ fontSize: 22 }}>🎓</Text>
                   </View>
                   <View>
-                    <Text style={{ color: '#fff', fontSize: 18, fontWeight: '800' }}>{studentData.student?.username || user?.username}</Text>
+                    <Text style={{ color: '#fff', fontSize: 18, fontWeight: '800' }}>{studentData.student?.fullName || studentData.student?.username || user?.fullName || user?.username}</Text>
                     <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, marginTop: 2 }}>
                       Roll No: {studentData.student?.rollNumber} · {studentData.student?.department} Sem {studentData.student?.semester}
                     </Text>

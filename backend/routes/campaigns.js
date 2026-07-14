@@ -14,7 +14,7 @@ const emit = (req, campusId, event, payload) => {
 };
 
 // ─── GET top-level campaigns for a campus (parentId = null) ───────────────────
-router.get('/campus/:campusId', optionalAuthenticateJWT, enforceCampusIsolation, async (req, res) => {
+router.get('/campus/:campusId', optionalAuthenticateJWT, enforceCampusIsolation, async (req, res, next) => {
   try {
     const filter = { campusId: req.params.campusId, parentId: null };
     if (req.query.active === 'true') filter.isActive = true;
@@ -37,35 +37,35 @@ router.get('/campus/:campusId', optionalAuthenticateJWT, enforceCampusIsolation,
 
     res.json(result);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // ─── GET sub-campaigns of a parent ───────────────────────────────────────────
-router.get('/:id/sub', optionalAuthenticateJWT, enforceCampusIsolation, async (req, res) => {
+router.get('/:id/sub', optionalAuthenticateJWT, enforceCampusIsolation, async (req, res, next) => {
   try {
     const filter = { parentId: req.params.id };
     if (req.query.active === 'true') filter.isActive = true;
     const subs = await populate(Campaign.find(filter).sort({ createdAt: 1 }));
     res.json(subs);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // ─── GET single campaign ───────────────────────────────────────────────────────
-router.get('/:id', optionalAuthenticateJWT, enforceCampusIsolation, async (req, res) => {
+router.get('/:id', optionalAuthenticateJWT, enforceCampusIsolation, async (req, res, next) => {
   try {
     const campaign = await populate(Campaign.findById(req.params.id));
     if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
     res.json(campaign);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // ─── POST create campaign or sub-campaign ─────────────────────────────────────
-router.post('/', authenticateJWT, enforceCampusIsolation, async (req, res) => {
+router.post('/', authenticateJWT, enforceCampusIsolation, async (req, res, next) => {
   try {
     const campaign = new Campaign(req.body);
     await campaign.save();
@@ -82,7 +82,7 @@ router.post('/', authenticateJWT, enforceCampusIsolation, async (req, res) => {
 });
 
 // ─── PUT update campaign ───────────────────────────────────────────────────────
-router.put('/:id', authenticateJWT, enforceCampusIsolation, async (req, res) => {
+router.put('/:id', authenticateJWT, enforceCampusIsolation, async (req, res, next) => {
   try {
     const campaign = await Campaign.findByIdAndUpdate(req.params.id, req.body, { new: true });
     if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
@@ -99,7 +99,7 @@ router.put('/:id', authenticateJWT, enforceCampusIsolation, async (req, res) => 
 });
 
 // ─── DELETE campaign (and all its sub-campaigns) ──────────────────────────────
-router.delete('/:id', authenticateJWT, enforceCampusIsolation, async (req, res) => {
+router.delete('/:id', authenticateJWT, enforceCampusIsolation, async (req, res, next) => {
   try {
     const campaign = await Campaign.findById(req.params.id);
     if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
@@ -114,7 +114,7 @@ router.delete('/:id', authenticateJWT, enforceCampusIsolation, async (req, res) 
     });
     res.json({ message: 'Campaign and sub-campaigns deleted' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 

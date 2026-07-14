@@ -4,7 +4,7 @@ const mongoose = require('mongoose');
 const { authenticateJWT } = require('../utils/auth');
 
 // POST log event (public endpoint from mobile app)
-router.post('/', async (req, res) => {
+router.post('/', async (req, res, next) => {
   try {
     const event = new Analytics(req.body);
     await event.save();
@@ -13,7 +13,7 @@ router.post('/', async (req, res) => {
 });
 
 // GET analytics summary (Admin only)
-router.get('/summary/:campusId', authenticateJWT, async (req, res) => {
+router.get('/summary/:campusId', authenticateJWT, async (req, res, next) => {
   try {
     const { campusId } = req.params;
     if (req.admin.role !== 'SuperAdmin' && campusId !== req.admin.campusId.toString()) {
@@ -40,11 +40,11 @@ router.get('/summary/:campusId', authenticateJWT, async (req, res) => {
     ]);
     
     res.json({ navCount, searchCount, qrCount, topSearches, topRoutes, period: `${days} days` });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { next(err); }
 });
 
 // GET heatmap data (Admin only)
-router.get('/heatmap/:campusId', authenticateJWT, async (req, res) => {
+router.get('/heatmap/:campusId', authenticateJWT, async (req, res, next) => {
   try {
     const { campusId } = req.params;
     if (req.admin.role !== 'SuperAdmin' && campusId !== req.admin.campusId.toString()) {
@@ -73,7 +73,7 @@ router.get('/heatmap/:campusId', authenticateJWT, async (req, res) => {
       const [x, y] = k.split(',').map(Number);
       return { x, y, intensity: v };
     }));
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { next(err); }
 });
 
 module.exports = router;

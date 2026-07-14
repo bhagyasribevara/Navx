@@ -4,7 +4,7 @@ const NavNode = require('../models/NavNode');
 const { authenticateJWT, optionalAuthenticateJWT, enforceCampusIsolation } = require('../utils/auth');
 
 // GET all paths (filter by floorId, campusId)
-router.get('/', optionalAuthenticateJWT, enforceCampusIsolation, async (req, res) => {
+router.get('/', optionalAuthenticateJWT, enforceCampusIsolation, async (req, res, next) => {
   try {
     const filter = { isActive: true };
     if (req.query.floorId) {
@@ -14,12 +14,12 @@ router.get('/', optionalAuthenticateJWT, enforceCampusIsolation, async (req, res
     const paths = await NavPath.find(filter);
     res.json(paths);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // POST create path (auto-calculate distance)
-router.post('/', authenticateJWT, enforceCampusIsolation, async (req, res) => {
+router.post('/', authenticateJWT, enforceCampusIsolation, async (req, res, next) => {
   try {
     const nodeA = await NavNode.findById(req.body.nodeA);
     const nodeB = await NavNode.findById(req.body.nodeB);
@@ -44,7 +44,7 @@ router.post('/', authenticateJWT, enforceCampusIsolation, async (req, res) => {
 });
 
 // POST bulk create paths
-router.post('/bulk', authenticateJWT, enforceCampusIsolation, async (req, res) => {
+router.post('/bulk', authenticateJWT, enforceCampusIsolation, async (req, res, next) => {
   try {
     const pathsArray = req.body.paths;
     if (req.admin.role !== 'SuperAdmin' && req.admin.campusId) {
@@ -59,7 +59,7 @@ router.post('/bulk', authenticateJWT, enforceCampusIsolation, async (req, res) =
 });
 
 // PUT update path
-router.put('/:id', authenticateJWT, enforceCampusIsolation, async (req, res) => {
+router.put('/:id', authenticateJWT, enforceCampusIsolation, async (req, res, next) => {
   try {
     const path = await NavPath.findByIdAndUpdate(req.params.id, req.body, { new: true });
     if (!path) return res.status(404).json({ error: 'Path not found' });
@@ -70,12 +70,12 @@ router.put('/:id', authenticateJWT, enforceCampusIsolation, async (req, res) => 
 });
 
 // DELETE path
-router.delete('/:id', authenticateJWT, enforceCampusIsolation, async (req, res) => {
+router.delete('/:id', authenticateJWT, enforceCampusIsolation, async (req, res, next) => {
   try {
     await NavPath.findByIdAndUpdate(req.params.id, { isActive: false });
     res.json({ message: 'Path deleted' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 

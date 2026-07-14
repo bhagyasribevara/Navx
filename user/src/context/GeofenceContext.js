@@ -89,8 +89,8 @@ export function GeofenceProvider({ children }) {
             parsed.location.lat,
             parsed.location.lng
           );
-          // Add a 20m buffer for GPS inaccuracy during app restore
-          if (dist > parsed.radius + 20) {
+          // Add a 200m buffer for GPS inaccuracy during app restore
+          if (dist > parsed.radius + 200) {
             console.log(`🚫 User is off-campus: ${Math.round(dist)}m outside ${parsed.radius}m radius.`);
             if (user?.isGuest) {
               await wipeAllCampusData(parsed.id);

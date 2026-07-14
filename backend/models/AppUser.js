@@ -7,6 +7,14 @@ const AppUserSchema = new mongoose.Schema({
     unique: true,
     trim: true
   },
+  fullName: {
+    type: String,
+    trim: true
+  },
+  profileImage: {
+    type: String,
+    default: null
+  },
   mobileNumber: {
     type: String,
     required: false,
@@ -59,7 +67,7 @@ const AppUserSchema = new mongoose.Schema({
   },
   role: { 
     type: String, 
-    enum: ['student', 'guest'], 
+    enum: ['student', 'guest', 'regular'], 
     default: 'student' 
   },
   department: { 

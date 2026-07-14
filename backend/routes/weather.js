@@ -3,7 +3,7 @@ const axios = require('axios');
 const router = express.Router();
 
 // ─── Configuration ──────────────────────────────────────────────────────
-const OPENWEATHER_API_KEY = process.env.OPENWEATHER_API_KEY || '1230eedb69a8f149493da7dda9ecdbe2';
+const OPENWEATHER_API_KEY = process.env.OPENWEATHER_API_KEY || '';
 const OPENWEATHER_BASE = 'https://api.openweathermap.org/data/2.5/weather';
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
@@ -64,7 +64,7 @@ function mapWeatherCondition(weatherId, temp) {
 }
 
 // ─── GET /api/weather?lat={lat}&lon={lon} ───────────────────────────────
-router.get('/', async (req, res) => {
+router.get('/', async (req, res, next) => {
   try {
     const { lat, lon } = req.query;
 
@@ -173,7 +173,7 @@ router.get('/', async (req, res) => {
 });
 
 // ─── GET /api/weather/forecast?lat={lat}&lon={lon} ────────────────────────
-router.get('/forecast', async (req, res) => {
+router.get('/forecast', async (req, res, next) => {
   try {
     const { lat, lon } = req.query;
     if (!lat || !lon) return res.status(400).json({ error: 'Missing parameters' });

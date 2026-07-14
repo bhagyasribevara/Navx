@@ -20,6 +20,7 @@ import NavigationScreen from "./src/screens/NavigationScreen";
 import ARScreen from "./src/screens/ARScreen";
 import QRScanScreen from "./src/screens/QRScanScreen";
 import SettingsScreen from "./src/screens/SettingsScreen";
+import ProfileScreen from "./src/screens/ProfileScreen";
 import AcademicsScreen from "./src/screens/AcademicsScreen";
 import FeesScreen from "./src/screens/FeesScreen";
 
@@ -221,6 +222,7 @@ function AppNavigator() {
           ) : (
             <>
               <Stack.Screen name="MainTabs" component={MainTabs} />
+              <Stack.Screen name="Profile" component={ProfileScreen} options={{ animation: "slide_from_right" }} />
               <Stack.Screen name="Academics" component={AcademicsScreen} />
               <Stack.Screen name="Fees" component={FeesScreen} />
               <Stack.Screen

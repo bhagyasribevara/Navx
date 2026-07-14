@@ -3,7 +3,7 @@ const NavNode = require('../models/NavNode');
 const { authenticateJWT, optionalAuthenticateJWT, enforceCampusIsolation } = require('../utils/auth');
 
 // GET all nodes (filter by floorId, campusId)
-router.get('/', optionalAuthenticateJWT, enforceCampusIsolation, async (req, res) => {
+router.get('/', optionalAuthenticateJWT, enforceCampusIsolation, async (req, res, next) => {
   try {
     const filter = { isActive: true };
     if (req.query.floorId && req.query.floorId !== 'null' && req.query.blockId) {
@@ -21,23 +21,23 @@ router.get('/', optionalAuthenticateJWT, enforceCampusIsolation, async (req, res
     const nodes = await NavNode.find(filter);
     res.json(nodes);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // GET single node
-router.get('/:id', optionalAuthenticateJWT, enforceCampusIsolation, async (req, res) => {
+router.get('/:id', optionalAuthenticateJWT, enforceCampusIsolation, async (req, res, next) => {
   try {
     const node = await NavNode.findById(req.params.id);
     if (!node) return res.status(404).json({ error: 'Node not found' });
     res.json(node);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // POST create node
-router.post('/', authenticateJWT, enforceCampusIsolation, async (req, res) => {
+router.post('/', authenticateJWT, enforceCampusIsolation, async (req, res, next) => {
   try {
     const node = new NavNode(req.body);
     await node.save();
@@ -48,7 +48,7 @@ router.post('/', authenticateJWT, enforceCampusIsolation, async (req, res) => {
 });
 
 // POST bulk create nodes
-router.post('/bulk', authenticateJWT, enforceCampusIsolation, async (req, res) => {
+router.post('/bulk', authenticateJWT, enforceCampusIsolation, async (req, res, next) => {
   try {
     const nodesArray = req.body.nodes;
     if (req.admin.role !== 'SuperAdmin' && req.admin.campusId) {
@@ -63,7 +63,7 @@ router.post('/bulk', authenticateJWT, enforceCampusIsolation, async (req, res) =
 });
 
 // PUT update node
-router.put('/:id', authenticateJWT, enforceCampusIsolation, async (req, res) => {
+router.put('/:id', authenticateJWT, enforceCampusIsolation, async (req, res, next) => {
   try {
     const node = await NavNode.findByIdAndUpdate(req.params.id, req.body, { new: true });
     if (!node) return res.status(404).json({ error: 'Node not found' });
@@ -74,12 +74,12 @@ router.put('/:id', authenticateJWT, enforceCampusIsolation, async (req, res) => 
 });
 
 // DELETE node
-router.delete('/:id', authenticateJWT, enforceCampusIsolation, async (req, res) => {
+router.delete('/:id', authenticateJWT, enforceCampusIsolation, async (req, res, next) => {
   try {
     await NavNode.findByIdAndUpdate(req.params.id, { isActive: false });
     res.json({ message: 'Node deleted' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 

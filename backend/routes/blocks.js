@@ -3,30 +3,30 @@ const Block = require('../models/Block');
 const { authenticateJWT, optionalAuthenticateJWT, enforceCampusIsolation } = require('../utils/auth');
 
 // GET all blocks (optionally filter by campusId)
-router.get('/', optionalAuthenticateJWT, enforceCampusIsolation, async (req, res) => {
+router.get('/', optionalAuthenticateJWT, enforceCampusIsolation, async (req, res, next) => {
   try {
     const filter = { isActive: true };
     if (req.query.campusId) filter.campusId = req.query.campusId;
     const blocks = await Block.find(filter).sort({ order: 1 });
     res.json(blocks);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // GET single block
-router.get('/:id', optionalAuthenticateJWT, enforceCampusIsolation, async (req, res) => {
+router.get('/:id', optionalAuthenticateJWT, enforceCampusIsolation, async (req, res, next) => {
   try {
     const block = await Block.findById(req.params.id);
     if (!block) return res.status(404).json({ error: 'Block not found' });
     res.json(block);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // POST create block
-router.post('/', authenticateJWT, enforceCampusIsolation, async (req, res) => {
+router.post('/', authenticateJWT, enforceCampusIsolation, async (req, res, next) => {
   try {
     const block = new Block(req.body);
     await block.save();
@@ -37,7 +37,7 @@ router.post('/', authenticateJWT, enforceCampusIsolation, async (req, res) => {
 });
 
 // PUT update block
-router.put('/:id', authenticateJWT, enforceCampusIsolation, async (req, res) => {
+router.put('/:id', authenticateJWT, enforceCampusIsolation, async (req, res, next) => {
   try {
     console.log(`[UPDATE BLOCK] Received shape for ${req.params.id}:`, JSON.stringify(req.body.shape));
     const block = await Block.findByIdAndUpdate(req.params.id, req.body, { new: true });
@@ -50,12 +50,12 @@ router.put('/:id', authenticateJWT, enforceCampusIsolation, async (req, res) => 
 });
 
 // DELETE block
-router.delete('/:id', authenticateJWT, enforceCampusIsolation, async (req, res) => {
+router.delete('/:id', authenticateJWT, enforceCampusIsolation, async (req, res, next) => {
   try {
     await Block.findByIdAndUpdate(req.params.id, { isActive: false });
     res.json({ message: 'Block deleted' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 

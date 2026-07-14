@@ -8,8 +8,7 @@ const AppUser = require('../models/AppUser');
 const Attendance = require('../models/Attendance');
 const Mark = require('../models/Mark');
 const TimetableSubstitution = require('../models/TimetableSubstitution');
-
-const JWT_SECRET = process.env.JWT_SECRET || 'navx_fallback_secret_key_2025';
+const { JWT_SECRET } = require('../utils/auth');
 
 // Middleware to authenticate faculty
 const authenticateFaculty = async (req, res, next) => {
@@ -32,7 +31,7 @@ const authenticateFaculty = async (req, res, next) => {
 };
 
 // POST /api/faculty/login
-router.post('/login', async (req, res) => {
+router.post('/login', async (req, res, next) => {
   try {
     const { username, password } = req.body;
     if (!username || !password) {
@@ -44,13 +43,12 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials or inactive account' });
     }
 
-    let isMatch = (password === faculty.password);
-    if (!isMatch) {
-      try {
-        isMatch = await bcrypt.compare(password, faculty.password);
-      } catch (e) {
-        isMatch = false;
-      }
+    // Compare only with bcrypt — no plaintext fallback
+    let isMatch = false;
+    try {
+      isMatch = await bcrypt.compare(password, faculty.password);
+    } catch (e) {
+      isMatch = false;
     }
 
     if (!isMatch) {
@@ -77,12 +75,12 @@ router.post('/login', async (req, res) => {
       }
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // GET /api/faculty/dashboard
-router.get('/dashboard', authenticateFaculty, async (req, res) => {
+router.get('/dashboard', authenticateFaculty, async (req, res, next) => {
   try {
     const faculty = req.faculty;
     const campusId = faculty.campusId;
@@ -134,12 +132,12 @@ router.get('/dashboard', authenticateFaculty, async (req, res) => {
       fullTimetable
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // GET /api/faculty/students
-router.get('/students', authenticateFaculty, async (req, res) => {
+router.get('/students', authenticateFaculty, async (req, res, next) => {
   try {
     const { department, section } = req.query;
     if (!department || !section) {
@@ -155,12 +153,12 @@ router.get('/students', authenticateFaculty, async (req, res) => {
 
     res.json({ success: true, students });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // POST /api/faculty/attendance
-router.post('/attendance', authenticateFaculty, async (req, res) => {
+router.post('/attendance', authenticateFaculty, async (req, res, next) => {
   try {
     const { studentId, subject, date, status, period } = req.body;
     if (!studentId || !subject || !date || !status) {
@@ -179,12 +177,12 @@ router.post('/attendance', authenticateFaculty, async (req, res) => {
 
     res.json({ success: true, attendance });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // POST /api/faculty/attendance/bulk-upload
-router.post('/attendance/bulk-upload', authenticateFaculty, async (req, res) => {
+router.post('/attendance/bulk-upload', authenticateFaculty, async (req, res, next) => {
   try {
     const { attendanceRecords } = req.body; // Array of { studentId, subject, date, status, period }
     if (!Array.isArray(attendanceRecords)) {
@@ -206,12 +204,12 @@ router.post('/attendance/bulk-upload', authenticateFaculty, async (req, res) => 
     await Attendance.bulkWrite(bulkOps);
     res.json({ success: true, message: `${attendanceRecords.length} attendance records uploaded successfully!` });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // POST /api/faculty/marks
-router.post('/marks', authenticateFaculty, async (req, res) => {
+router.post('/marks', authenticateFaculty, async (req, res, next) => {
   try {
     const { studentId, subject, marksType, obtainedMarks, totalMarks, comments } = req.body;
     if (!studentId || !subject || !marksType || obtainedMarks === undefined || !totalMarks) {
@@ -226,12 +224,12 @@ router.post('/marks', authenticateFaculty, async (req, res) => {
 
     res.json({ success: true, mark });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // POST /api/faculty/marks/bulk-upload
-router.post('/marks/bulk-upload', authenticateFaculty, async (req, res) => {
+router.post('/marks/bulk-upload', authenticateFaculty, async (req, res, next) => {
   try {
     const { marksRecords } = req.body; // Array of { studentId, subject, marksType, obtainedMarks, totalMarks, comments }
     if (!Array.isArray(marksRecords)) {
@@ -251,12 +249,12 @@ router.post('/marks/bulk-upload', authenticateFaculty, async (req, res) => {
     await Mark.bulkWrite(bulkOps);
     res.json({ success: true, message: `${marksRecords.length} grades uploaded successfully!` });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // GET /api/faculty/analytics
-router.get('/analytics', authenticateFaculty, async (req, res) => {
+router.get('/analytics', authenticateFaculty, async (req, res, next) => {
   try {
     const { subject, department, section, marksType } = req.query;
     if (!subject || !department || !section) {
@@ -312,12 +310,12 @@ router.get('/analytics', authenticateFaculty, async (req, res) => {
       strongStudents
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // POST /api/faculty/ai-action
-router.post('/ai-action', authenticateFaculty, async (req, res) => {
+router.post('/ai-action', authenticateFaculty, async (req, res, next) => {
   try {
     const { actionType, promptText } = req.body;
     if (!actionType || !promptText) {
@@ -368,12 +366,12 @@ Provide a comprehensive, complete, professional output without placeholders.`;
 
     res.json({ success: true, result: resultText });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // POST /api/faculty/ai-excel
-router.post('/ai-excel', authenticateFaculty, async (req, res) => {
+router.post('/ai-excel', authenticateFaculty, async (req, res, next) => {
   try {
     const { students, attendanceList, obtainedMarks, marksComments, columns, previousSheet, modificationPrompt } = req.body;
     if (!students || !columns) {
@@ -483,32 +481,32 @@ CRITICAL: Return ONLY a valid JSON block starting with { and ending with }. Do N
 
     res.json({ success: true, sheetData });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // GET /api/faculty/list (Get list of all faculty in this campus to select as substitute)
-router.get('/list', authenticateFaculty, async (req, res) => {
+router.get('/list', authenticateFaculty, async (req, res, next) => {
   try {
     const list = await Faculty.find({ campusId: req.faculty.campusId, status: 'active' }, 'name department designation');
     res.json({ success: true, faculties: list });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // GET /api/faculty/substitutions (Get all leave substitutions in this campus)
-router.get('/substitutions', authenticateFaculty, async (req, res) => {
+router.get('/substitutions', authenticateFaculty, async (req, res, next) => {
   try {
     const subs = await TimetableSubstitution.find({ campusId: req.faculty.campusId });
     res.json({ success: true, substitutions: subs });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // POST /api/faculty/leave (Apply for slot-specific leave and assign substitute)
-router.post('/leave', authenticateFaculty, async (req, res) => {
+router.post('/leave', authenticateFaculty, async (req, res, next) => {
   try {
     const { timetableId, date, substituteFacultyId, substituteFacultyName } = req.body;
     if (!timetableId || !date || !substituteFacultyName) {
@@ -538,12 +536,12 @@ router.post('/leave', authenticateFaculty, async (req, res) => {
 
     res.json({ success: true, message: 'Leave substitution applied successfully!', substitution: sub });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // DELETE /api/faculty/leave (Cancel/Remove a leave substitution)
-router.delete('/leave', authenticateFaculty, async (req, res) => {
+router.delete('/leave', authenticateFaculty, async (req, res, next) => {
   try {
     const { timetableId, date } = req.body;
     if (!timetableId || !date) {
@@ -553,12 +551,12 @@ router.delete('/leave', authenticateFaculty, async (req, res) => {
     await TimetableSubstitution.findOneAndDelete({ timetableId, date, originalFacultyId: req.faculty._id });
     res.json({ success: true, message: 'Leave removed successfully!' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // POST /api/faculty/leave/cancel (Cancel/Remove a leave substitution via POST to bypass proxy blocks)
-router.post('/leave/cancel', authenticateFaculty, async (req, res) => {
+router.post('/leave/cancel', authenticateFaculty, async (req, res, next) => {
   try {
     const { timetableId, date } = req.body;
     if (!timetableId || !date) {
@@ -568,7 +566,7 @@ router.post('/leave/cancel', authenticateFaculty, async (req, res) => {
     await TimetableSubstitution.findOneAndDelete({ timetableId, date, originalFacultyId: req.faculty._id });
     res.json({ success: true, message: 'Leave removed successfully!' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 

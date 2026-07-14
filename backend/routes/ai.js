@@ -186,7 +186,7 @@ Always return valid JSON. Never return plain text outside JSON structure.`;
 }
 
 // ─── POST /chat — Main AI Chat Endpoint ─────────────────────────────────────
-router.post('/chat', async (req, res) => {
+router.post('/chat', async (req, res, next) => {
   const {
     message,
     sessionId = 'default',
@@ -425,7 +425,7 @@ ${facultyList.map(f => `- Faculty: ${f.name} (employeeId: ${f.employeeId}, room:
 });
 
 // ─── POST /suggest — Proactive Suggestions ──────────────────────────────────
-router.post('/suggest', async (req, res) => {
+router.post('/suggest', async (req, res, next) => {
   try {
     const { campusId, context = {} } = req.body;
 
@@ -451,22 +451,22 @@ router.post('/suggest', async (req, res) => {
 
     res.json({ suggestions: suggestions.slice(0, 6) });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // ─── GET /faq — FAQ List ────────────────────────────────────────────────────
-router.get('/faq', (req, res) => {
+router.get('/faq', (req, res, next) => {
   res.json({ faqs: FAQ_ENTRIES });
 });
 
 // ─── GET /chips — Quick Suggestion Chips ────────────────────────────────────
-router.get('/chips', (req, res) => {
+router.get('/chips', (req, res, next) => {
   res.json({ chips: SUGGESTION_CHIPS });
 });
 
 // ─── GET /welcome — Welcome Message ────────────────────────────────────────
-router.get('/welcome', (req, res) => {
+router.get('/welcome', (req, res, next) => {
   const lang = req.query.lang || 'en';
   res.json({
     text: WELCOME_MESSAGES[lang] || WELCOME_MESSAGES.en,
@@ -475,7 +475,7 @@ router.get('/welcome', (req, res) => {
 });
 
 // ─── DELETE /chat/:sessionId — Clear Session ────────────────────────────────
-router.delete('/chat/:sessionId', (req, res) => {
+router.delete('/chat/:sessionId', (req, res, next) => {
   delete sessions[req.params.sessionId];
   res.json({ success: true });
 });

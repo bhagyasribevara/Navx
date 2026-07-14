@@ -6,7 +6,7 @@ const { v4: uuidv4 } = require('uuid');
 const { authenticateJWT, optionalAuthenticateJWT, enforceCampusIsolation } = require('../utils/auth');
 
 // GET all QR codes (filter by floorId, campusId)
-router.get('/', optionalAuthenticateJWT, enforceCampusIsolation, async (req, res) => {
+router.get('/', optionalAuthenticateJWT, enforceCampusIsolation, async (req, res, next) => {
   try {
     const filter = { isActive: true };
     if (req.query.floorId) filter.floorId = req.query.floorId;
@@ -15,12 +15,12 @@ router.get('/', optionalAuthenticateJWT, enforceCampusIsolation, async (req, res
     const qrcodes = await QRCode.find(filter);
     res.json(qrcodes);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // GET QR code by code string (for mobile scanning - public)
-router.get('/scan/:code', async (req, res) => {
+router.get('/scan/:code', async (req, res, next) => {
   try {
     const qr = await QRCode.findOne({ code: req.params.code, isActive: true })
       .populate('floorId', 'name level blockId')
@@ -29,12 +29,12 @@ router.get('/scan/:code', async (req, res) => {
     if (!qr) return res.status(404).json({ error: 'QR code not found' });
     res.json(qr);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // POST create QR code
-router.post('/', authenticateJWT, enforceCampusIsolation, async (req, res) => {
+router.post('/', authenticateJWT, enforceCampusIsolation, async (req, res, next) => {
   try {
     if (!req.body.code) {
       req.body.code = `NAVX-${uuidv4().substring(0, 8).toUpperCase()}`;
@@ -55,7 +55,7 @@ router.post('/', authenticateJWT, enforceCampusIsolation, async (req, res) => {
 });
 
 // GET generate QR image for printing
-router.get('/:id/image', optionalAuthenticateJWT, enforceCampusIsolation, async (req, res) => {
+router.get('/:id/image', optionalAuthenticateJWT, enforceCampusIsolation, async (req, res, next) => {
   try {
     const qr = await QRCode.findById(req.params.id);
     if (!qr) return res.status(404).json({ error: 'QR code not found' });
@@ -77,12 +77,12 @@ router.get('/:id/image', optionalAuthenticateJWT, enforceCampusIsolation, async 
       image: qrDataUrl 
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // GET export all QR codes for a floor as printable (Admin only)
-router.get('/export/:floorId', authenticateJWT, async (req, res) => {
+router.get('/export/:floorId', authenticateJWT, async (req, res, next) => {
   try {
     const floor = await Floor.findById(req.params.floorId);
     if (!floor) return res.status(404).json({ error: 'Floor not found' });
@@ -107,12 +107,12 @@ router.get('/export/:floorId', authenticateJWT, async (req, res) => {
     }));
     res.json(results);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // PUT update QR code
-router.put('/:id', authenticateJWT, enforceCampusIsolation, async (req, res) => {
+router.put('/:id', authenticateJWT, enforceCampusIsolation, async (req, res, next) => {
   try {
     const qr = await QRCode.findByIdAndUpdate(req.params.id, req.body, { new: true });
     if (!qr) return res.status(404).json({ error: 'QR code not found' });
@@ -123,12 +123,12 @@ router.put('/:id', authenticateJWT, enforceCampusIsolation, async (req, res) => 
 });
 
 // DELETE QR code
-router.delete('/:id', authenticateJWT, enforceCampusIsolation, async (req, res) => {
+router.delete('/:id', authenticateJWT, enforceCampusIsolation, async (req, res, next) => {
   try {
     await QRCode.findByIdAndUpdate(req.params.id, { isActive: false });
     res.json({ message: 'QR code deleted' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 

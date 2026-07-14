@@ -57,7 +57,7 @@ function invalidateGraphCache(campusId) {
 }
 
 // POST find route to nearest exit
-router.post('/route-to-exit', async (req, res) => {
+router.post('/route-to-exit', async (req, res, next) => {
   try {
     const { startX, startY, campusId } = req.body;
     const cached = await getCachedGraph(campusId);
@@ -123,12 +123,12 @@ router.post('/route-to-exit', async (req, res) => {
     });
   } catch (err) {
     console.error('[Navigation Error]', err);
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // POST find route between two points
-router.post('/route', async (req, res) => {
+router.post('/route', async (req, res, next) => {
   try {
     const { startNodeId, endNodeId, campusId, accessible = false } = req.body;
 
@@ -155,12 +155,12 @@ router.post('/route', async (req, res) => {
     });
   } catch (err) {
     console.error('[Navigation Error]', err);
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // POST find route between coordinates (for Live Meet / dynamic routing)
-router.post('/route-coords', async (req, res) => {
+router.post('/route-coords', async (req, res, next) => {
   try {
     const { startX, startY, endX, endY, campusId, accessible = false } = req.body;
 
@@ -266,12 +266,12 @@ router.post('/route-coords', async (req, res) => {
 
   } catch (err) {
     console.error('[Navigation Route-Coords Error]', err);
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // POST find route to a room — with multi-level fallback
-router.post('/route-to-room', async (req, res) => {
+router.post('/route-to-room', async (req, res, next) => {
   try {
     const { startNodeId, startX, startY, roomId, campusId, accessible = false } = req.body;
 
@@ -449,12 +449,12 @@ router.post('/route-to-room', async (req, res) => {
     });
   } catch (err) {
     console.error('[Navigation Error]', err);
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // POST find nearest node to coordinates
-router.post('/nearest-node', async (req, res) => {
+router.post('/nearest-node', async (req, res, next) => {
   try {
     const { x, y, floorId, campusId } = req.body;
     const { graph } = await getCachedGraph(campusId);
@@ -462,12 +462,12 @@ router.post('/nearest-node', async (req, res) => {
     if (!nearest) return res.status(404).json({ error: 'No nodes found' });
     res.json(nearest);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // GET full navigation data for a campus (mobile app bulk download)
-router.get('/map-data/:campusId', async (req, res) => {
+router.get('/map-data/:campusId', async (req, res, next) => {
   try {
     const { campusId } = req.params;
     const [nodes, paths, rooms, qrcodes, beacons] = await Promise.all([
@@ -488,7 +488,7 @@ router.get('/map-data/:campusId', async (req, res) => {
 
     res.json({ nodes, paths, rooms, qrcodes, beacons, blocks, floors });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 

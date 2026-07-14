@@ -2,7 +2,7 @@ import React, { useState, useContext } from 'react';
 import { 
   View, Text, TextInput, TouchableOpacity, 
   StyleSheet, KeyboardAvoidingView, Platform, 
-  ActivityIndicator, Alert, ScrollView
+  ActivityIndicator, Alert, ScrollView, Animated
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -33,6 +33,33 @@ export default function AuthScreen() {
   const [otpCode, setOtpCode] = useState('');
   const [newPassword, setNewPassword] = useState('');
 
+  const fadeAnim = React.useRef(new Animated.Value(0)).current;
+  const slideAnim = React.useRef(new Animated.Value(30)).current;
+  const logoPulse = React.useRef(new Animated.Value(1)).current;
+
+  React.useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 800,
+        useNativeDriver: true,
+      }),
+      Animated.spring(slideAnim, {
+        toValue: 0,
+        tension: 50,
+        friction: 7,
+        useNativeDriver: true,
+      })
+    ]).start();
+
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(logoPulse, { toValue: 1.1, duration: 1500, useNativeDriver: true }),
+        Animated.timing(logoPulse, { toValue: 1, duration: 1500, useNativeDriver: true }),
+      ])
+    ).start();
+  }, []);
+
   const handleSubmit = async () => {
     if (!password) {
       Alert.alert('Error', 'Password is required');
@@ -40,8 +67,11 @@ export default function AuthScreen() {
     }
 
     if (isStudent) {
-      if (!collegeEmail || !collegeId) {
-        Alert.alert('Error', 'College Email and College ID are required for student login');
+      if (!isLogin && (!collegeEmail || !collegeId)) {
+        Alert.alert('Error', 'College Email and College ID are required for student registration');
+        return;
+      } else if (isLogin && !collegeEmail) {
+        Alert.alert('Error', 'College Email is required for student login');
         return;
       }
     } else {
@@ -149,19 +179,29 @@ export default function AuthScreen() {
 
   return (
     <KeyboardAvoidingView 
-      style={s.container} 
+      style={[s.container, { backgroundColor: '#ffffff' }]} 
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <LinearGradient 
-        colors={[COLORS.bgGradient[0], COLORS.bgGradient[1]]} 
-        style={StyleSheet.absoluteFillObject} 
+      <LinearGradient
+        colors={['rgba(139, 92, 246, 0.22)', 'rgba(99, 102, 241, 0.10)', 'rgba(255, 255, 255, 0)']}
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          height: 380,
+        }}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
       />
 
       <ScrollView contentContainerStyle={s.scrollContainer} showsVerticalScrollIndicator={false}>
-        <View style={s.card}>
+        <Animated.View style={[s.card, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
           <View style={s.header}>
-            <Ionicons name="compass" size={48} color={COLORS.primary} />
-            <Text style={s.title}>NavX</Text>
+            <Animated.View style={{ transform: [{ scale: logoPulse }] }}>
+              <Ionicons name="compass" size={54} color={COLORS.primary} />
+            </Animated.View>
+            <Text style={s.title}>Nav<Text style={{ color: COLORS.primary }}>X</Text></Text>
             <Text style={s.subtitle}>
               {forgotPasswordStep > 0 
                 ? 'Reset your password'
@@ -312,17 +352,19 @@ export default function AuthScreen() {
                       autoCapitalize="none"
                     />
                   </View>
-                  <View style={s.inputGroup}>
-                    <Ionicons name="id-card-outline" size={20} color={COLORS.textSec} style={s.inputIcon} />
-                    <TextInput
-                      style={s.input}
-                      placeholder="College ID (Roll Number)"
-                      placeholderTextColor={COLORS.textMuted}
-                      value={collegeId}
-                      onChangeText={setCollegeId}
-                      autoCapitalize="characters"
-                    />
-                  </View>
+                  {!isLogin && (
+                    <View style={s.inputGroup}>
+                      <Ionicons name="id-card-outline" size={20} color={COLORS.textSec} style={s.inputIcon} />
+                      <TextInput
+                        style={s.input}
+                        placeholder="College ID (Roll Number)"
+                        placeholderTextColor={COLORS.textMuted}
+                        value={collegeId}
+                        onChangeText={setCollegeId}
+                        autoCapitalize="characters"
+                      />
+                    </View>
+                  )}
 
                   {!isLogin && (
                     <View style={{ flexDirection: 'row', gap: 8 }}>
@@ -446,7 +488,7 @@ export default function AuthScreen() {
               </Text>
             </AnimatedPressable>
           )}
-        </View>
+        </Animated.View>
       </ScrollView>
     </KeyboardAvoidingView>
   );

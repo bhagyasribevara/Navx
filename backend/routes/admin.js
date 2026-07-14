@@ -3,21 +3,28 @@ const bcrypt = require('bcryptjs');
 const mongoose = require('mongoose');
 const Admin = require('../models/Admin');
 const Campus = require('../models/Campus');
-const { generateTokens, authenticateJWT, verifyRefreshToken, authLimiter } = require('../utils/auth');
+const { generateTokens, authenticateJWT, verifyRefreshToken } = require('../utils/auth');
+const { authLimiter } = require('../middleware/rateLimiter');
+const { validateBody } = require('../middleware/inputValidator');
+const { adminLoginSchema, createCampusAdminSchema } = require('../middleware/schemas');
 
-// POST /login (Phase 4, 5, 12 - with Rate Limiting)
-router.post('/login', authLimiter, async (req, res) => {
+// POST /login (Phase 4, 5, 12 - with Rate Limiting + Input Validation)
+router.post('/login', authLimiter, validateBody(adminLoginSchema), async (req, res, next) => {
   try {
     const { username, password } = req.body;
     
-    // Auto-create SuperAdmin if no admins exist
+    // Auto-create SuperAdmin if no admins exist (credentials from env vars)
     const adminCount = await Admin.countDocuments();
     if (adminCount === 0) {
-      if (username === 'superadmin' && password === 'admin123') {
+      const saUser = process.env.SUPERADMIN_USERNAME || 'superadmin';
+      const saPass = process.env.SUPERADMIN_PASSWORD;
+      if (!saPass) {
+        return res.status(503).json({ error: 'Server setup incomplete. SUPERADMIN_PASSWORD environment variable is required for initial setup.' });
+      }
+      if (username === saUser && password === saPass) {
         const hashedPassword = bcrypt.hashSync(password, 10);
         const newSuper = new Admin({ 
-          username, 
-          password: password, // For legacy compatibility
+          username: saUser, 
           passwordHash: hashedPassword, 
           role: 'SuperAdmin' 
         });
@@ -40,15 +47,16 @@ router.post('/login', authLimiter, async (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials or inactive account' });
     }
     
-    // Validate password (supports legacy plain-text and hashed passwords)
+    // Validate password (bcrypt hash only — no plaintext fallback)
     let isMatch = false;
     if (admin.passwordHash) {
       isMatch = bcrypt.compareSync(password, admin.passwordHash);
-    } else {
+    } else if (admin.password) {
+      // Legacy: compare against old plaintext, then upgrade to hash
       isMatch = admin.password === password;
-      // Auto-upgrade legacy password to hash
       if (isMatch) {
         admin.passwordHash = bcrypt.hashSync(password, 10);
+        admin.password = undefined; // Remove plaintext
         await admin.save();
       }
     }
@@ -79,12 +87,12 @@ router.post('/login', authLimiter, async (req, res) => {
       }
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // POST /refresh (Phase 4, 12)
-router.post('/refresh', async (req, res) => {
+router.post('/refresh', async (req, res, next) => {
   try {
     let refreshToken = req.cookies?.refreshToken || req.body.refreshToken;
     if (!refreshToken) {
@@ -105,19 +113,19 @@ router.post('/refresh', async (req, res) => {
       refreshToken: tokens.refreshToken
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // POST /logout (Phase 5)
-router.post('/logout', (req, res) => {
+router.post('/logout', (req, res, next) => {
   res.clearCookie('accessToken');
   res.clearCookie('refreshToken');
   res.json({ success: true, message: 'Logged out successfully' });
 });
 
 // POST /create-campus-admin (Phase 2, 12 - SuperAdmin only)
-router.post('/create-campus-admin', authenticateJWT, async (req, res) => {
+router.post('/create-campus-admin', authenticateJWT, validateBody(createCampusAdminSchema), async (req, res, next) => {
   try {
     if (req.admin.role !== 'SuperAdmin') {
       return res.status(403).json({ error: 'Unauthorized. Only SuperAdmin can perform this operation.' });
@@ -170,7 +178,6 @@ router.post('/create-campus-admin', authenticateJWT, async (req, res) => {
     const hashedPassword = bcrypt.hashSync(newPassword, 10);
     const newAdmin = new Admin({
       username: newUsername,
-      password: newPassword, // For compatibility
       passwordHash: hashedPassword,
       role: 'campus_admin',
       campusId: campus._id,
@@ -189,12 +196,12 @@ router.post('/create-campus-admin', authenticateJWT, async (req, res) => {
     if (err.code === 11000) {
       return res.status(400).json({ error: 'Admin username or Campus name already exists.' });
     }
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // GET all admins (SuperAdmin only)
-router.get('/admins/:superAdminId', authenticateJWT, async (req, res) => {
+router.get('/admins/:superAdminId', authenticateJWT, async (req, res, next) => {
   try {
     if (req.admin.role !== 'SuperAdmin') {
       return res.status(403).json({ error: 'Unauthorized.' });
@@ -202,12 +209,12 @@ router.get('/admins/:superAdminId', authenticateJWT, async (req, res) => {
     const admins = await Admin.find().populate('campusId');
     res.json(admins);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // DELETE admin (SuperAdmin only)
-router.delete('/admins/:superAdminId/:adminId', authenticateJWT, async (req, res) => {
+router.delete('/admins/:superAdminId/:adminId', authenticateJWT, async (req, res, next) => {
   try {
     if (req.admin.role !== 'SuperAdmin') {
       return res.status(403).json({ error: 'Unauthorized.' });
@@ -230,12 +237,12 @@ router.delete('/admins/:superAdminId/:adminId', authenticateJWT, async (req, res
     await Admin.findByIdAndDelete(req.params.adminId);
     res.json({ success: true, message: 'Admin deleted successfully.' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // Update admin details (SuperAdmin only)
-router.put('/admins/:superAdminId/:adminId', authenticateJWT, async (req, res) => {
+router.put('/admins/:superAdminId/:adminId', authenticateJWT, async (req, res, next) => {
   try {
     if (req.admin.role !== 'SuperAdmin') {
       return res.status(403).json({ error: 'Unauthorized.' });
@@ -250,8 +257,8 @@ router.put('/admins/:superAdminId/:adminId', authenticateJWT, async (req, res) =
 
     if (username) adminToUpdate.username = username;
     if (password) {
-      adminToUpdate.password = password;
       adminToUpdate.passwordHash = bcrypt.hashSync(password, 10);
+      adminToUpdate.password = undefined; // Remove any legacy plaintext
       adminToUpdate.sessionVersion += 1; // Invalidate current session on password change
     }
 
@@ -261,12 +268,12 @@ router.put('/admins/:superAdminId/:adminId', authenticateJWT, async (req, res) =
     if (err.code === 11000) {
       return res.status(400).json({ error: 'Username already exists.' });
     }
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // POST /admins/:adminId/status (SuperAdmin only - toggle active/disabled)
-router.post('/admins/:adminId/status', authenticateJWT, async (req, res) => {
+router.post('/admins/:adminId/status', authenticateJWT, async (req, res, next) => {
   try {
     if (req.admin.role !== 'SuperAdmin') {
       return res.status(403).json({ error: 'Unauthorized.' });
@@ -288,12 +295,12 @@ router.post('/admins/:adminId/status', authenticateJWT, async (req, res) => {
 
     res.json({ success: true, message: `Admin account has been ${status}.` });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // POST /admins/:adminId/revoke (SuperAdmin only - Session Revocation)
-router.post('/admins/:adminId/revoke', authenticateJWT, async (req, res) => {
+router.post('/admins/:adminId/revoke', authenticateJWT, async (req, res, next) => {
   try {
     if (req.admin.role !== 'SuperAdmin') {
       return res.status(403).json({ error: 'Unauthorized.' });
@@ -307,12 +314,12 @@ router.post('/admins/:adminId/revoke', authenticateJWT, async (req, res) => {
 
     res.json({ success: true, message: 'All active sessions for this admin have been revoked.' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // GET /telemetry (SuperAdmin only)
-router.get('/telemetry', authenticateJWT, async (req, res) => {
+router.get('/telemetry', authenticateJWT, async (req, res, next) => {
   try {
     if (req.admin.role !== 'SuperAdmin') {
       return res.status(403).json({ error: 'Unauthorized.' });
@@ -392,12 +399,12 @@ router.get('/telemetry', authenticateJWT, async (req, res) => {
       latencies
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // PUT /campus/:campusId/subscription (SuperAdmin only)
-router.put('/campus/:campusId/subscription', authenticateJWT, async (req, res) => {
+router.put('/campus/:campusId/subscription', authenticateJWT, async (req, res, next) => {
   try {
     if (req.admin.role !== 'SuperAdmin') {
       return res.status(403).json({ error: 'Unauthorized.' });
@@ -415,7 +422,7 @@ router.put('/campus/:campusId/subscription', authenticateJWT, async (req, res) =
 
     res.json({ success: true, campus });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 

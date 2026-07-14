@@ -3,11 +3,12 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const axios = require('axios');
 const AppUser = require('../models/AppUser');
-
-const JWT_SECRET = process.env.JWT_SECRET || 'navx_fallback_secret_key_2025';
+const { JWT_SECRET } = require('../utils/auth');
+const { validateBody } = require('../middleware/inputValidator');
+const { registerSchema, loginSchema, otpRequestSchema, otpVerifySchema, profileUpdateSchema } = require('../middleware/schemas');
 
 // ─── POST /api/app-auth/register ───────────────────────────────────────────
-router.post('/register', async (req, res) => {
+router.post('/register', validateBody(registerSchema), async (req, res, next) => {
   try {
     const { username, mobileNumber, password, collegeEmail, collegeId, isStudent } = req.body;
 
@@ -22,47 +23,67 @@ router.post('/register', async (req, res) => {
     }
 
     // Check if user already exists
-    const existingConditions = [{ username }];
+    let finalUsername = username;
+    if (isStudent) {
+      finalUsername = `stu_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+    }
+
+    const existingConditions = [];
+    if (!isStudent) {
+      existingConditions.push({ username: finalUsername });
+    }
     if (mobileNumber) existingConditions.push({ mobileNumber });
     if (collegeEmail) existingConditions.push({ collegeEmail });
 
-    const existingUser = await AppUser.findOne({ $or: existingConditions });
+    let existingUser = null;
+    if (existingConditions.length > 0) {
+      existingUser = await AppUser.findOne({ $or: existingConditions });
+    }
 
     if (existingUser) {
-      return res.status(400).json({ error: 'Username, Mobile Number, or College Email already exists' });
+      if (mobileNumber && existingUser.mobileNumber === mobileNumber) {
+        return res.status(400).json({ error: 'Mobile number already registered' });
+      }
+      if (collegeEmail && existingUser.collegeEmail === collegeEmail) {
+        return res.status(400).json({ error: 'College Email already registered' });
+      }
+      if (!isStudent && existingUser.username === finalUsername) {
+        return res.status(400).json({ error: 'Username already taken' });
+      }
+      return res.status(400).json({ error: 'User details already exist' });
     }
 
     // Hash password
     const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
+    const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Create user
     const newUser = new AppUser({
-      username,
+      username: finalUsername,
+      fullName: isStudent ? username : undefined,
       mobileNumber: mobileNumber || undefined,
       password: hashedPassword,
       collegeEmail,
       collegeId,
-      role: isStudent ? 'student' : 'guest'
+      role: isStudent ? 'student' : 'regular'
     });
 
     await newUser.save();
 
     // Generate token
-    const token = jwt.sign({ userId: newUser._id, username: newUser.username }, JWT_SECRET, { expiresIn: '30d' });
+    const token = jwt.sign({ userId: newUser._id, username: newUser.username, fullName: newUser.fullName }, JWT_SECRET, { expiresIn: '30d' });
 
     res.status(201).json({
       success: true,
       token,
-      user: { id: newUser._id, username: newUser.username, mobileNumber: newUser.mobileNumber }
+      user: { id: newUser._id, username: newUser.username, fullName: newUser.fullName, mobileNumber: newUser.mobileNumber, profileImage: newUser.profileImage }
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    next(error);
   }
 });
 
 // ─── POST /api/app-auth/login ──────────────────────────────────────────────
-router.post('/login', async (req, res) => {
+router.post('/login', validateBody(loginSchema), async (req, res, next) => {
   try {
     const { identifier, password, isStudent, collegeEmail, collegeId } = req.body;
 
@@ -72,10 +93,14 @@ router.post('/login', async (req, res) => {
 
     let user;
     if (isStudent) {
-      if (!collegeEmail || !collegeId) {
-        return res.status(400).json({ error: 'College Email and College ID are required for student login' });
+      if (!collegeEmail) {
+        return res.status(400).json({ error: 'College Email is required for student login' });
       }
-      user = await AppUser.findOne({ collegeEmail, collegeId });
+      user = await AppUser.findOne({ collegeEmail });
+      // If a student tries to login, make sure they actually registered as a student.
+      if (user && user.role !== 'student') {
+         return res.status(401).json({ error: 'This account is not a student account. Try regular login.' });
+      }
     } else {
       if (!identifier) {
         return res.status(400).json({ error: 'Please provide credentials' });
@@ -86,6 +111,9 @@ router.post('/login', async (req, res) => {
           { mobileNumber: identifier }
         ]
       });
+      if (user && user.role === 'student') {
+        return res.status(401).json({ error: 'This account is a student account. Please use Student login.' });
+      }
     }
 
     if (!user) {
@@ -104,15 +132,15 @@ router.post('/login', async (req, res) => {
     res.json({
       success: true,
       token,
-      user: { id: user._id, username: user.username, mobileNumber: user.mobileNumber }
+      user: { id: user._id, username: user.username, fullName: user.fullName, mobileNumber: user.mobileNumber, profileImage: user.profileImage }
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    next(error);
   }
 });
 
 // ─── GET /api/app-auth/me ──────────────────────────────────────────────────
-router.get('/me', async (req, res) => {
+router.get('/me', async (req, res, next) => {
   try {
     const token = req.headers.authorization?.split(' ')[1];
     if (!token) return res.status(401).json({ error: 'No token provided' });
@@ -132,8 +160,38 @@ router.get('/me', async (req, res) => {
   }
 });
 
+// ─── POST /api/app-auth/update-profile ─────────────────────────────────────────
+router.post('/update-profile', validateBody(profileUpdateSchema), async (req, res, next) => {
+  try {
+    const user = await getAuthUser(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { fullName, mobileNumber, profileImage } = req.body;
+
+    if (fullName) user.fullName = fullName;
+    if (mobileNumber) user.mobileNumber = mobileNumber;
+    if (profileImage) user.profileImage = profileImage;
+
+    await user.save();
+
+    res.json({
+      success: true,
+      message: 'Profile updated successfully',
+      user: {
+        id: user._id,
+        username: user.username,
+        fullName: user.fullName,
+        mobileNumber: user.mobileNumber,
+        profileImage: user.profileImage
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // ─── POST /api/app-auth/request-otp ──────────────────────────────────────────
-router.post('/request-otp', async (req, res) => {
+router.post('/request-otp', validateBody(otpRequestSchema), async (req, res, next) => {
   try {
     const { isStudent, mobileNumber, collegeEmail } = req.body;
     
@@ -169,12 +227,12 @@ router.post('/request-otp', async (req, res) => {
     // Returning devOtp in the response for frontend dev Alert
     res.json({ success: true, message: `OTP sent successfully to ${isStudent ? 'your email' : 'your mobile'}`, devOtp: otpCode });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    next(error);
   }
 });
 
 // ─── POST /api/app-auth/verify-otp ───────────────────────────────────────────
-router.post('/verify-otp', async (req, res) => {
+router.post('/verify-otp', validateBody(otpVerifySchema), async (req, res, next) => {
   try {
     const { isStudent, mobileNumber, collegeEmail, otpCode, newPassword } = req.body;
     
@@ -212,7 +270,7 @@ router.post('/verify-otp', async (req, res) => {
 
     res.json({ success: true, message: 'Password updated successfully' });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    next(error);
   }
 });
 
@@ -247,7 +305,7 @@ const haversine = (lat1, lon1, lat2, lon2) => {
 };
 
 // ─── POST /api/app-auth/guest-login ──────────────────────────────────────────
-router.post('/guest-login', async (req, res) => {
+router.post('/guest-login', async (req, res, next) => {
   try {
     // 1. Find and atomically lock an existing inactive guest user to recycle
     let guest = await AppUser.findOneAndUpdate(
@@ -303,13 +361,12 @@ router.post('/guest-login', async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Guest login error:', error);
-    res.status(500).json({ error: error.message });
+    next(error);
   }
 });
 
 // ─── POST /api/app-auth/guest-logout ─────────────────────────────────────────
-router.post('/guest-logout', async (req, res) => {
+router.post('/guest-logout', async (req, res, next) => {
   try {
     const user = await getAuthUser(req);
     if (!user) {
@@ -329,13 +386,12 @@ router.post('/guest-logout', async (req, res) => {
 
     res.json({ success: true, message: 'Logged out successfully' });
   } catch (error) {
-    console.error('Guest logout error:', error);
-    res.status(500).json({ error: error.message });
+    next(error);
   }
 });
 
 // ─── POST /api/app-auth/heartbeat ────────────────────────────────────────────
-router.post('/heartbeat', async (req, res) => {
+router.post('/heartbeat', async (req, res, next) => {
   try {
     const user = await getAuthUser(req);
     if (!user) {
@@ -384,16 +440,15 @@ router.post('/heartbeat', async (req, res) => {
     await user.save();
     res.json({ success: true, active: true });
   } catch (error) {
-    console.error('Heartbeat error:', error);
-    res.status(500).json({ error: error.message });
+    next(error);
   }
 });
 
 // ─── BACKGROUND GUEST RECYCLING LOOP ──────────────────────────────────────────
 setInterval(async () => {
   try {
-    const threshold = new Date(Date.now() - 60 * 1000); // 60 seconds ago
-    // Recycle active guests with lastHeartbeat older than 60 seconds (or null)
+    const threshold = new Date(Date.now() - 12 * 60 * 60 * 1000); // 12 hours ago
+    // Recycle active guests with lastHeartbeat older than 12 hours
     const expiredGuests = await AppUser.find({
       isGuest: true,
       guestStatus: 'active',

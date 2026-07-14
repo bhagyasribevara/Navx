@@ -3,7 +3,7 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const Faculty = require('../models/Faculty');
 const Timetable = require('../models/Timetable');
 
-router.post('/calculate', async (req, res) => {
+router.post('/calculate', async (req, res, next) => {
   try {
     const { calculationType, promptText, campusId } = req.body;
     if (!calculationType || !campusId) {
@@ -57,7 +57,7 @@ Respond with a highly structured, descriptive, analytical Markdown report detail
 
     res.json({ success: true, result: resultText });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 

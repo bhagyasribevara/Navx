@@ -13,6 +13,7 @@ export default function FacultyManager({ admin }) {
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [activeDepartment, setActiveDepartment] = useState('All');
 
   // Form state
   const [form, setForm] = useState({
@@ -178,11 +179,13 @@ export default function FacultyManager({ admin }) {
     }
   };
 
-  const filteredFaculties = faculties.filter(f => 
-    f.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    f.employeeId.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    f.department.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredFaculties = faculties.filter(f => {
+    const matchesSearch = f.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                          f.employeeId.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                          f.department.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesDept = activeDepartment === 'All' || f.department === activeDepartment;
+    return matchesSearch && matchesDept;
+  });
 
   return (
     <div className="page-content">
@@ -211,6 +214,29 @@ export default function FacultyManager({ admin }) {
               style={{ background: 'none', border: 'none', color: '#fff', outline: 'none', width: '100%' }}
             />
           </div>
+        </div>
+
+        {/* Department Filters */}
+        <div style={{ display: 'flex', gap: 8, marginBottom: 16, overflowX: 'auto', paddingBottom: 4 }} className="hide-scrollbar">
+          {['All', ...DEPARTMENTS].map(dept => (
+            <button 
+              key={dept} 
+              onClick={() => setActiveDepartment(dept)}
+              style={{
+                background: activeDepartment === dept ? 'var(--primary-color)' : 'rgba(255,255,255,0.05)',
+                color: activeDepartment === dept ? '#fff' : 'var(--text-secondary)',
+                border: '1px solid rgba(255,255,255,0.1)',
+                padding: '6px 16px',
+                borderRadius: '20px',
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+                transition: 'all 0.2s',
+                fontWeight: activeDepartment === dept ? 600 : 400
+              }}
+            >
+              {dept}
+            </button>
+          ))}
         </div>
 
         {loading ? (

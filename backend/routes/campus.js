@@ -1,25 +1,28 @@
 const router = require('express').Router();
+const bcrypt = require('bcryptjs');
 const Campus = require('../models/Campus');
 const Block = require('../models/Block');
 const Room = require('../models/Room');
 const NavPath = require('../models/NavPath');
 const MapLayer = require('../models/MapLayer');
 const Admin = require('../models/Admin');
+const Faculty = require('../models/Faculty');
+const Timetable = require('../models/Timetable');
 const qrcode = require('qrcode');
 const { authenticateJWT, enforceCampusIsolation } = require('../utils/auth');
 
 // GET all campuses (Phase 13: Scalability - public)
-router.get('/', async (req, res) => {
+router.get('/', async (req, res, next) => {
   try {
     const campuses = await Campus.find({ isActive: true, status: 'active' }).sort({ createdAt: 1 });
     res.json(campuses);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // GET single campus by campusCode (Phase 3: Dynamic Route Resolution)
-router.get('/code/:campusCode', async (req, res) => {
+router.get('/code/:campusCode', async (req, res, next) => {
   try {
     const campus = await Campus.findOne({ campusCode: req.params.campusCode.toLowerCase() });
     if (!campus) {
@@ -30,12 +33,12 @@ router.get('/code/:campusCode', async (req, res) => {
     }
     res.json(campus);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // GET single campus by ID (public)
-router.get('/:id', async (req, res) => {
+router.get('/:id', async (req, res, next) => {
   try {
     const campus = await Campus.findById(req.params.id);
     if (!campus) return res.status(404).json({ error: 'Campus not found' });
@@ -44,12 +47,12 @@ router.get('/:id', async (req, res) => {
     }
     res.json(campus);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // POST create campus (SuperAdmin only)
-router.post('/', authenticateJWT, async (req, res) => {
+router.post('/', authenticateJWT, async (req, res, next) => {
   try {
     if (req.admin.role !== 'SuperAdmin') {
       return res.status(403).json({ error: 'Unauthorized.' });
@@ -97,7 +100,7 @@ router.post('/', authenticateJWT, async (req, res) => {
 });
 
 // POST regenerate campus URL (Phase 11: URL Regeneration - SuperAdmin only)
-router.post('/:id/regenerate-url', authenticateJWT, async (req, res) => {
+router.post('/:id/regenerate-url', authenticateJWT, async (req, res, next) => {
   try {
     if (req.admin.role !== 'SuperAdmin') {
       return res.status(403).json({ error: 'Unauthorized.' });
@@ -139,12 +142,12 @@ router.post('/:id/regenerate-url', authenticateJWT, async (req, res) => {
 
     res.json({ success: true, campus });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // PUT update campus details
-router.put('/:id', authenticateJWT, enforceCampusIsolation, async (req, res) => {
+router.put('/:id', authenticateJWT, enforceCampusIsolation, async (req, res, next) => {
   try {
     const campus = await Campus.findByIdAndUpdate(req.params.id, req.body, { new: true });
     if (!campus) return res.status(404).json({ error: 'Campus not found' });
@@ -155,7 +158,7 @@ router.put('/:id', authenticateJWT, enforceCampusIsolation, async (req, res) => 
 });
 
 // DELETE campus (SuperAdmin only)
-router.delete('/:id', authenticateJWT, async (req, res) => {
+router.delete('/:id', authenticateJWT, async (req, res, next) => {
   try {
     if (req.admin.role !== 'SuperAdmin') {
       return res.status(403).json({ error: 'Unauthorized.' });
@@ -163,12 +166,12 @@ router.delete('/:id', authenticateJWT, async (req, res) => {
     await Campus.findByIdAndUpdate(req.params.id, { isActive: false, status: 'disabled' });
     res.json({ message: 'Campus deleted' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // POST trigger emergency (Phase 12: Campus Level Authorization)
-router.post('/:id/emergency', authenticateJWT, enforceCampusIsolation, async (req, res) => {
+router.post('/:id/emergency', authenticateJWT, enforceCampusIsolation, async (req, res, next) => {
   try {
     const { isActive, message, type } = req.body;
     const campus = await Campus.findById(req.params.id);
@@ -184,12 +187,12 @@ router.post('/:id/emergency', authenticateJWT, enforceCampusIsolation, async (re
     await campus.save();
     res.json({ success: true, emergencyState: campus.emergencyState });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // GET campus by QR code — resolves QR data to campus info
-router.get('/qr/:campusId', async (req, res) => {
+router.get('/qr/:campusId', async (req, res, next) => {
   try {
     const campus = await Campus.findById(req.params.campusId);
     if (!campus || !campus.isActive) {
@@ -209,7 +212,7 @@ router.get('/qr/:campusId', async (req, res) => {
 });
 
 // POST verify campus QR with geofence — location-based access control
-router.post('/qr/:campusId/verify', async (req, res) => {
+router.post('/qr/:campusId/verify', async (req, res, next) => {
   try {
     const { lat, lng } = req.body;
     if (lat == null || lng == null) {
@@ -279,7 +282,7 @@ router.post('/qr/:campusId/verify', async (req, res) => {
 });
 
 // GET campus data as unified GeoJSON FeatureCollection
-router.get('/geojson/:id', async (req, res) => {
+router.get('/geojson/:id', async (req, res, next) => {
   try {
     const campusId = req.params.id;
     const [blocks, rooms, paths, mapLayers] = await Promise.all([
@@ -349,12 +352,12 @@ router.get('/geojson/:id', async (req, res) => {
     });
 
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // POST publish map to live
-router.post('/:id/publish', async (req, res) => {
+router.post('/:id/publish', async (req, res, next) => {
   try {
     const campus = await Campus.findById(req.params.id);
     if (!campus) return res.status(404).json({ error: 'Campus not found' });
@@ -364,12 +367,12 @@ router.post('/:id/publish', async (req, res) => {
     }
     res.json({ success: true, message: 'Map published live successfully' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // POST generate & save campus entry QR code to DB (Admin)
-router.post('/:id/campus-qr', authenticateJWT, enforceCampusIsolation, async (req, res) => {
+router.post('/:id/campus-qr', authenticateJWT, enforceCampusIsolation, async (req, res, next) => {
   try {
     const campus = await Campus.findById(req.params.id);
     if (!campus) return res.status(404).json({ error: 'Campus not found' });
@@ -386,17 +389,14 @@ router.post('/:id/campus-qr', authenticateJWT, enforceCampusIsolation, async (re
 
     res.json({ success: true, image, campusId: campus._id, campusName: campus.name });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // --- Campus Admin Faculty Management Routes ---
-const Faculty = require('../models/Faculty');
-const Timetable = require('../models/Timetable');
-const bcrypt = require('bcryptjs');
 
 // GET all faculties for a campus
-router.get('/:id/faculties', authenticateJWT, enforceCampusIsolation, async (req, res) => {
+router.get('/:id/faculties', authenticateJWT, enforceCampusIsolation, async (req, res, next) => {
   try {
     const faculties = await Faculty.find({ campusId: req.params.id }).sort({ employeeId: 1 });
     
@@ -434,12 +434,12 @@ router.get('/:id/faculties', authenticateJWT, enforceCampusIsolation, async (req
 
     res.json({ success: true, faculties: processedFaculties });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // POST create a faculty
-router.post('/:id/faculties', authenticateJWT, enforceCampusIsolation, async (req, res) => {
+router.post('/:id/faculties', authenticateJWT, enforceCampusIsolation, async (req, res, next) => {
   try {
     const { name, employeeId, department, designation, email, phone, facultyRoom, officeHours, subjects, assignedSections, username, password, maxWeeklyHours, assignedSubjectsSections } = req.body;
     
@@ -473,7 +473,7 @@ router.post('/:id/faculties', authenticateJWT, enforceCampusIsolation, async (re
 });
 
 // PUT update a faculty
-router.put('/:id/faculties/:facultyId', authenticateJWT, enforceCampusIsolation, async (req, res) => {
+router.put('/:id/faculties/:facultyId', authenticateJWT, enforceCampusIsolation, async (req, res, next) => {
   try {
     const updateData = { ...req.body };
     
@@ -493,17 +493,17 @@ router.put('/:id/faculties/:facultyId', authenticateJWT, enforceCampusIsolation,
 });
 
 // DELETE a faculty
-router.delete('/:id/faculties/:facultyId', authenticateJWT, enforceCampusIsolation, async (req, res) => {
+router.delete('/:id/faculties/:facultyId', authenticateJWT, enforceCampusIsolation, async (req, res, next) => {
   try {
     await Faculty.findByIdAndDelete(req.params.facultyId);
     res.json({ success: true, message: 'Faculty deleted' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // POST reset faculty password
-router.post('/:id/faculties/:facultyId/reset-password', authenticateJWT, enforceCampusIsolation, async (req, res) => {
+router.post('/:id/faculties/:facultyId/reset-password', authenticateJWT, enforceCampusIsolation, async (req, res, next) => {
   try {
     const { password } = req.body;
     if (!password) return res.status(400).json({ error: 'Password is required' });
@@ -513,24 +513,24 @@ router.post('/:id/faculties/:facultyId/reset-password', authenticateJWT, enforce
     if (!faculty) return res.status(404).json({ error: 'Faculty not found' });
     res.json({ success: true, message: 'Password reset successful!' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // --- Campus Admin Timetable Management Routes ---
 
 // GET timetable slots
-router.get('/:id/timetable', authenticateJWT, enforceCampusIsolation, async (req, res) => {
+router.get('/:id/timetable', authenticateJWT, enforceCampusIsolation, async (req, res, next) => {
   try {
     const timetable = await Timetable.find({ campusId: req.params.id }).sort({ period: 1 });
     res.json({ success: true, timetable });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // POST allocate a slot
-router.post('/:id/timetable', authenticateJWT, enforceCampusIsolation, async (req, res) => {
+router.post('/:id/timetable', authenticateJWT, enforceCampusIsolation, async (req, res, next) => {
   try {
     const slot = new Timetable({
       campusId: req.params.id,
@@ -544,12 +544,12 @@ router.post('/:id/timetable', authenticateJWT, enforceCampusIsolation, async (re
 });
 
 // DELETE a timetable slot
-router.delete('/:id/timetable/:slotId', authenticateJWT, enforceCampusIsolation, async (req, res) => {
+router.delete('/:id/timetable/:slotId', authenticateJWT, enforceCampusIsolation, async (req, res, next) => {
   try {
     await Timetable.findByIdAndDelete(req.params.slotId);
     res.json({ success: true, message: 'Slot deleted' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
@@ -557,7 +557,7 @@ router.delete('/:id/timetable/:slotId', authenticateJWT, enforceCampusIsolation,
 const SectionTiming = require('../models/SectionTiming');
 
 // GET section timings
-router.get('/:id/section-timings', authenticateJWT, enforceCampusIsolation, async (req, res) => {
+router.get('/:id/section-timings', authenticateJWT, enforceCampusIsolation, async (req, res, next) => {
   try {
     const { department, semester, section } = req.query;
     if (!department || !semester || !section) {
@@ -571,12 +571,12 @@ router.get('/:id/section-timings', authenticateJWT, enforceCampusIsolation, asyn
     });
     res.json({ success: true, timings: timingRecord ? timingRecord.timings : null });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // POST save section timings
-router.post('/:id/section-timings', authenticateJWT, enforceCampusIsolation, async (req, res) => {
+router.post('/:id/section-timings', authenticateJWT, enforceCampusIsolation, async (req, res, next) => {
   try {
     const { department, semester, section, timings } = req.body;
     if (!department || !semester || !section || !Array.isArray(timings)) {

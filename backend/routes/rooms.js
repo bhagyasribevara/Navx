@@ -3,7 +3,7 @@ const Room = require('../models/Room');
 const { authenticateJWT, optionalAuthenticateJWT, enforceCampusIsolation } = require('../utils/auth');
 
 // GET all rooms (filter by floorId, blockId, campusId)
-router.get('/', optionalAuthenticateJWT, enforceCampusIsolation, async (req, res) => {
+router.get('/', optionalAuthenticateJWT, enforceCampusIsolation, async (req, res, next) => {
   try {
     const filter = { isActive: true };
     if (req.query.floorId && req.query.blockId) {
@@ -23,12 +23,12 @@ router.get('/', optionalAuthenticateJWT, enforceCampusIsolation, async (req, res
       .sort({ name: 1 });
     res.json(rooms);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // GET search rooms
-router.get('/search/:query', optionalAuthenticateJWT, enforceCampusIsolation, async (req, res) => {
+router.get('/search/:query', optionalAuthenticateJWT, enforceCampusIsolation, async (req, res, next) => {
   try {
     const query = req.params.query;
     const filter = { isActive: true };
@@ -66,12 +66,12 @@ router.get('/search/:query', optionalAuthenticateJWT, enforceCampusIsolation, as
     
     res.json(rooms);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // GET single room
-router.get('/:id', optionalAuthenticateJWT, enforceCampusIsolation, async (req, res) => {
+router.get('/:id', optionalAuthenticateJWT, enforceCampusIsolation, async (req, res, next) => {
   try {
     const room = await Room.findById(req.params.id)
       .populate('floorId', 'name level')
@@ -79,12 +79,12 @@ router.get('/:id', optionalAuthenticateJWT, enforceCampusIsolation, async (req, 
     if (!room) return res.status(404).json({ error: 'Room not found' });
     res.json(room);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // POST create room
-router.post('/', authenticateJWT, enforceCampusIsolation, async (req, res) => {
+router.post('/', authenticateJWT, enforceCampusIsolation, async (req, res, next) => {
   try {
     const room = new Room(req.body);
     await room.save();
@@ -95,7 +95,7 @@ router.post('/', authenticateJWT, enforceCampusIsolation, async (req, res) => {
 });
 
 // PUT update room
-router.put('/:id', authenticateJWT, enforceCampusIsolation, async (req, res) => {
+router.put('/:id', authenticateJWT, enforceCampusIsolation, async (req, res, next) => {
   try {
     console.log(`[UPDATE ROOM] Received shape for ${req.params.id}:`, JSON.stringify(req.body.shape));
     const room = await Room.findByIdAndUpdate(req.params.id, req.body, { new: true });
@@ -108,17 +108,17 @@ router.put('/:id', authenticateJWT, enforceCampusIsolation, async (req, res) => 
 });
 
 // DELETE room
-router.delete('/:id', authenticateJWT, enforceCampusIsolation, async (req, res) => {
+router.delete('/:id', authenticateJWT, enforceCampusIsolation, async (req, res, next) => {
   try {
     await Room.findByIdAndUpdate(req.params.id, { isActive: false });
     res.json({ message: 'Room deleted' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // DELETE stairs/elevator from a specific floor (adds floor to excludedFloors)
-router.delete('/:id/floor/:floorId', authenticateJWT, enforceCampusIsolation, async (req, res) => {
+router.delete('/:id/floor/:floorId', authenticateJWT, enforceCampusIsolation, async (req, res, next) => {
   try {
     const room = await Room.findById(req.params.id);
     if (!room) return res.status(404).json({ error: 'Room not found' });
@@ -133,12 +133,12 @@ router.delete('/:id/floor/:floorId', authenticateJWT, enforceCampusIsolation, as
     await room.save();
     res.json({ message: `Stairs removed from floor ${floorId}`, room });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // RESTORE stairs/elevator to a specific floor (removes floor from excludedFloors)
-router.put('/:id/floor/:floorId/restore', authenticateJWT, enforceCampusIsolation, async (req, res) => {
+router.put('/:id/floor/:floorId/restore', authenticateJWT, enforceCampusIsolation, async (req, res, next) => {
   try {
     const room = await Room.findById(req.params.id);
     if (!room) return res.status(404).json({ error: 'Room not found' });
@@ -148,18 +148,18 @@ router.put('/:id/floor/:floorId/restore', authenticateJWT, enforceCampusIsolatio
     await room.save();
     res.json({ message: `Stairs restored to floor ${req.params.floorId}`, room });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // GET excluded floors for a specific stairs/elevator room
-router.get('/:id/excluded-floors', optionalAuthenticateJWT, enforceCampusIsolation, async (req, res) => {
+router.get('/:id/excluded-floors', optionalAuthenticateJWT, enforceCampusIsolation, async (req, res, next) => {
   try {
     const room = await Room.findById(req.params.id).populate('excludedFloors', 'name level');
     if (!room) return res.status(404).json({ error: 'Room not found' });
     res.json({ excludedFloors: room.excludedFloors || [] });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 

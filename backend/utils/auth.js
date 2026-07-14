@@ -1,18 +1,36 @@
 const jwt = require('jsonwebtoken');
-const rateLimit = require('express-rate-limit');
 const Admin = require('../models/Admin');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'navx_super_secret_access_key_123';
-const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'navx_super_secret_refresh_key_987';
+// ─── Environment Variable Validation ────────────────────────────────────────
+// Secrets are injected ONLY via environment variables. No fallbacks.
 
-// Rate Limiter for Authentication endpoints (Phase 12: Security)
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Limit each IP to 100 requests per windowMs
-  message: { error: 'Too many authentication attempts. Please try again after 15 minutes.' },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
+/**
+ * Validates that all required environment variables are set.
+ * Call this at server startup before any routes are loaded.
+ * Throws a clear error if any required variable is missing.
+ */
+function validateRequiredEnvVars() {
+  const required = [
+    'MONGODB_URI',
+    'JWT_SECRET',
+    'JWT_REFRESH_SECRET',
+  ];
+
+  const missing = required.filter(key => !process.env[key]);
+
+  if (missing.length > 0) {
+    console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.error('❌ FATAL: Missing required environment variables:');
+    missing.forEach(key => console.error(`   • ${key}`));
+    console.error('');
+    console.error('👉 Copy .env.example to .env and fill in all values.');
+    console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    process.exit(1);
+  }
+}
+
+const JWT_SECRET = process.env.JWT_SECRET;
+const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET;
 
 // Generate JWT tokens
 const generateTokens = (admin) => {
@@ -219,7 +237,7 @@ const enforceCampusIsolation = async (req, res, next) => {
 };
 
 module.exports = {
-  authLimiter,
+  validateRequiredEnvVars,
   generateTokens,
   authenticateJWT,
   optionalAuthenticateJWT,

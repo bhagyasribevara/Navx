@@ -31,6 +31,6 @@ const facultySchema = new mongoose.Schema({
 }, { timestamps: true });
 
 facultySchema.index({ campusId: 1 });
-facultySchema.index({ username: 1 });
+
 
 module.exports = mongoose.model('Faculty', facultySchema);

@@ -1,6 +1,6 @@
 import React, { useContext, useState } from "react";
 import {
-  View, Text, ScrollView, TouchableOpacity, StyleSheet, Modal, TextInput, ActivityIndicator, Alert, Platform, KeyboardAvoidingView
+  View, Text, ScrollView, TouchableOpacity, StyleSheet, Modal, TextInput, ActivityIndicator, Alert, Platform, KeyboardAvoidingView, Image
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { ThemeContext } from "../context/ThemeContext";
@@ -94,11 +94,13 @@ export default function SettingsScreen({ navigation }) {
       borderWidth: 1, borderColor: "rgba(99, 102, 241, 0.25)", ...SHADOWS.sm,
     },
     avatar: {
-      width: 54, height: 54, borderRadius: 27,
+      width: 60, height: 60, borderRadius: 30,
       backgroundColor: colors.primary + "20",
       alignItems: "center", justifyContent: "center",
       borderWidth: 2.5, borderColor: colors.primary + "40", marginRight: 16,
+      overflow: 'hidden'
     },
+    avatarImg: { width: '100%', height: '100%' },
     profileName: { fontSize: 17, fontWeight: "800", color: colors.text },
     profileSub: { fontSize: 13, color: colors.textSec, marginTop: 2 },
     
@@ -177,15 +179,22 @@ export default function SettingsScreen({ navigation }) {
         </View>
 
         {/* Profile card */}
-        <View style={s.profileCard}>
+        <TouchableOpacity style={s.profileCard} onPress={() => navigation.navigate("Profile")} activeOpacity={0.8}>
           <View style={s.avatar}>
-            <Ionicons name="person" size={26} color={colors.primary} />
+            {user?.profileImage ? (
+              <Image source={{ uri: user.profileImage }} style={s.avatarImg} />
+            ) : (
+              <Ionicons name="person" size={26} color={colors.primary} />
+            )}
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={s.profileName}>{user?.username || "NavX User"}</Text>
+            <Text style={s.profileName}>{user?.fullName || user?.username || "NavX User"}</Text>
             <Text style={s.profileSub}>{user?.mobileNumber || "No mobile number linked"}</Text>
           </View>
-        </View>
+          <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: colors.primary + "15", alignItems: 'center', justifyContent: 'center' }}>
+            <Ionicons name="pencil" size={16} color={colors.primary} />
+          </View>
+        </TouchableOpacity>
 
         {/* Student Services */}
         {user && !user.isGuest && (

@@ -12,7 +12,7 @@ const Faculty = require('../models/Faculty');
 const Announcement = require('../models/Announcement');
 const TimetableSubstitution = require('../models/TimetableSubstitution');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'navx_fallback_secret_key_2025';
+const { JWT_SECRET } = require('../utils/auth');
 
 // Middleware to authenticate student AppUser
 const authenticateStudent = async (req, res, next) => {
@@ -254,7 +254,7 @@ const autoSeedStudentData = async (student) => {
 };
 
 // GET /api/student/dashboard
-router.get('/dashboard', authenticateStudent, async (req, res) => {
+router.get('/dashboard', authenticateStudent, async (req, res, next) => {
   try {
     const student = req.student;
     
@@ -360,12 +360,12 @@ router.get('/dashboard', authenticateStudent, async (req, res) => {
       }))
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // GET /api/student/academics
-router.get('/academics', authenticateStudent, async (req, res) => {
+router.get('/academics', authenticateStudent, async (req, res, next) => {
   try {
     const student = req.student;
     const campusId = student.activeCampusId || student.campusId;
@@ -445,23 +445,23 @@ router.get('/academics', authenticateStudent, async (req, res) => {
       calendar
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // GET /api/student/fees
-router.get('/fees', authenticateStudent, async (req, res) => {
+router.get('/fees', authenticateStudent, async (req, res, next) => {
   try {
     const student = req.student;
     const fees = await Fee.find({ studentId: student._id }).sort({ dueDate: 1 });
     res.json({ success: true, fees });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // POST /api/student/fees/pay
-router.post('/fees/pay', authenticateStudent, async (req, res) => {
+router.post('/fees/pay', authenticateStudent, async (req, res, next) => {
   try {
     const { feeId, transactionId, paymentMethod } = req.body;
     if (!feeId) return res.status(400).json({ error: 'Fee ID is required' });
@@ -486,7 +486,7 @@ router.post('/fees/pay', authenticateStudent, async (req, res) => {
 
     res.json({ success: true, message: 'Payment simulated successfully!', fee });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 

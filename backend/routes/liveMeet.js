@@ -6,7 +6,7 @@ const crypto = require('crypto');
 const generateSessionId = () => crypto.randomBytes(4).toString('hex');
 
 // ─── POST Create Meet Session ───────────────────────────────────────────────
-router.post('/create', async (req, res) => {
+router.post('/create', async (req, res, next) => {
   try {
     const { campusId, creatorDevice, creatorName, creatorLocation, destinationLabel, durationMinutes } = req.body;
     
@@ -38,12 +38,12 @@ router.post('/create', async (req, res) => {
       expiresAt: session.expiresAt
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    next(error);
   }
 });
 
 // ─── POST Join Meet Session ─────────────────────────────────────────────────
-router.post('/join/:sessionId', async (req, res) => {
+router.post('/join/:sessionId', async (req, res, next) => {
   try {
     const { joinerDevice, joinerName, joinerLocation } = req.body;
     
@@ -67,24 +67,24 @@ router.post('/join/:sessionId', async (req, res) => {
 
     res.json({ success: true, session });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    next(error);
   }
 });
 
 // ─── GET Fetch Active Session ───────────────────────────────────────────────
-router.get('/:sessionId', async (req, res) => {
+router.get('/:sessionId', async (req, res, next) => {
   try {
     const session = await LiveMeetSession.findOne({ sessionId: req.params.sessionId }).populate('campusId', 'name venueType');
     if (!session) return res.status(404).json({ error: 'Session not found' });
     
     res.json(session);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    next(error);
   }
 });
 
 // ─── POST End/Cancel Session ────────────────────────────────────────────────
-router.post('/:sessionId/end', async (req, res) => {
+router.post('/:sessionId/end', async (req, res, next) => {
   try {
     const session = await LiveMeetSession.findOne({ sessionId: req.params.sessionId });
     if (!session) return res.status(404).json({ error: 'Session not found' });
@@ -94,7 +94,7 @@ router.post('/:sessionId/end', async (req, res) => {
 
     res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    next(error);
   }
 });
 
