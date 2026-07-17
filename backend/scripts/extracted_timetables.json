@@ -1,0 +1,2135 @@
+[
+  {
+    "source": "3rd Semester_ Civil_Sec A.pdf",
+    "data": {
+      "branch": "Civil",
+      "semester": "3",
+      "sections": [
+        {
+          "section": "A",
+          "room": "3-F-01",
+          "schedule": {
+            "Monday": [
+              {
+                "period": 1,
+                "code": "23CE303",
+                "subject": "Building Planning and Drawing",
+                "facultyName": "Dr.Abu Rashid",
+                "facultyInitials": "AR"
+              },
+              {
+                "period": 2,
+                "code": "23ESX01",
+                "subject": "Employability Skills I(AS)",
+                "facultyName": "Mr.J Kameswara Rao",
+                "facultyInitials": "JKR"
+              },
+              {
+                "period": 3,
+                "code": "23CE305",
+                "subject": "Solid Mechanics I",
+                "facultyName": "Dr.G Madhava Krishna Reddy",
+                "facultyInitials": "MKR"
+              },
+              {
+                "period": 4,
+                "code": "23CE306",
+                "subject": "Surveying",
+                "facultyName": "Dr.N Nageswara Reddy",
+                "facultyInitials": "NNR"
+              },
+              {
+                "period": 5,
+                "code": "23CE306/23CE307",
+                "subject": "Surveying/Solid Mechanics Lab",
+                "facultyName": "Dr.G Madhava Krishna Reddy, Dr.A Arun Solomon / Dr.N Nageswara Reddy, Mr.P Ramu",
+                "facultyInitials": "MKR,AS/NNR,PR"
+              }
+            ],
+            "Tuesday": [
+              {
+                "period": 1,
+                "code": "23CE304",
+                "subject": "Fluid Mechanics",
+                "facultyName": "Dr.Bimalendu Dash",
+                "facultyInitials": "BD"
+              },
+              {
+                "period": 2,
+                "code": "23CE302",
+                "subject": "Building Materials and Concrete Technology",
+                "facultyName": "Dr.J Sridhar",
+                "facultyInitials": "JS"
+              },
+              {
+                "period": 3,
+                "code": "23CE302/23CE303",
+                "subject": "Building Materials and Concrete Technology/Building Planning and Drawing",
+                "facultyName": "Dr.Bimalendu Dash, Dr.K Naga Rajesh / Dr.Abu Rashid, Dr.SSG Prasad",
+                "facultyInitials": "BD,KNR/AR,SSG"
+              },
+              {
+                "period": 4,
+                "code": "23CE306",
+                "subject": "Surveying",
+                "facultyName": "Dr.N Nageswara Reddy",
+                "facultyInitials": "NNR"
+              },
+              {
+                "period": 5,
+                "code": "23CE305",
+                "subject": "Solid Mechanics I",
+                "facultyName": "Dr.G Madhava Krishna Reddy",
+                "facultyInitials": "MKR"
+              },
+              {
+                "period": 6,
+                "code": "SDA",
+                "subject": "Student Development Activity",
+                "facultyName": "Dr.N Nageswara Reedy",
+                "facultyInitials": "NNR"
+              }
+            ],
+            "Wednesday": [
+              {
+                "period": 1,
+                "code": "23CE305",
+                "subject": "Solid Mechanics I",
+                "facultyName": "Dr.G Madhava Krishna Reddy",
+                "facultyInitials": "MKR"
+              },
+              {
+                "period": 2,
+                "code": "23CE303",
+                "subject": "Building Planning and Drawing",
+                "facultyName": "Dr.Abu Rashid",
+                "facultyInitials": "AR"
+              },
+              {
+                "period": 3,
+                "code": "23CE302",
+                "subject": "Building Materials and Concrete Technology",
+                "facultyName": "Dr.J Sridhar",
+                "facultyInitials": "JS"
+              },
+              {
+                "period": 4,
+                "code": "23CE306",
+                "subject": "Surveying",
+                "facultyName": "Dr.N Nageswara Reddy",
+                "facultyInitials": "NNR"
+              },
+              {
+                "period": 5,
+                "code": "23MA303",
+                "subject": "Numerical Methods",
+                "facultyName": "Dr.K Dasu Naidu",
+                "facultyInitials": "KDN"
+              },
+              {
+                "period": 6,
+                "code": "23CE304",
+                "subject": "Fluid Mechanics",
+                "facultyName": "Dr.Bimalendu Dash",
+                "facultyInitials": "BD"
+              }
+            ],
+            "Thursday": [
+              {
+                "period": 1,
+                "code": "23MA303",
+                "subject": "Numerical Methods",
+                "facultyName": "Dr.K Dasu Naidu",
+                "facultyInitials": "KDN"
+              },
+              {
+                "period": 2,
+                "code": "23ESX01",
+                "subject": "Employability Skills I(SS)",
+                "facultyName": "Mr.Pavan Nagendra",
+                "facultyInitials": "PN"
+              },
+              {
+                "period": 3,
+                "code": "23CE302",
+                "subject": "Building Materials and Concrete Technology",
+                "facultyName": "Dr.J Sridhar",
+                "facultyInitials": "JS"
+              },
+              {
+                "period": 4,
+                "code": "23CE304",
+                "subject": "Fluid Mechanics",
+                "facultyName": "Dr.Bimalendu Dash",
+                "facultyInitials": "BD"
+              },
+              {
+                "period": 5,
+                "code": "23CE306/23CE307",
+                "subject": "Surveying/Solid Mechanics Lab",
+                "facultyName": "Dr.G Madhava Krishna Reddy, Dr.A Arun Solomon / Dr.N Nageswara Reddy, Mr.P Ramu",
+                "facultyInitials": "MKR,AS/NNR,PR"
+              },
+              {
+                "period": 6,
+                "code": "Counseling",
+                "subject": "Counseling",
+                "facultyName": "Dr.N Nageswara Reddy",
+                "facultyInitials": "KNR"
+              }
+            ],
+            "Friday": [
+              {
+                "period": 1,
+                "code": "23CE303",
+                "subject": "Building Planning and Drawing",
+                "facultyName": "Dr.Abu Rashid",
+                "facultyInitials": "AR"
+              },
+              {
+                "period": 2,
+                "code": "23MA303",
+                "subject": "Numerical Methods",
+                "facultyName": "Dr.K Dasu Naidu",
+                "facultyInitials": "KDN"
+              },
+              {
+                "period": 3,
+                "code": "23CE302/23CE303",
+                "subject": "Building Materials and Concrete Technology/Building Planning and Drawing",
+                "facultyName": "Dr.Bimalendu Dash, Dr.K Naga Rajesh / Dr.Abu Rashid, Dr.SSG Prasad",
+                "facultyInitials": "BD,KNR/AR,SSG"
+              },
+              {
+                "period": 4,
+                "code": "23ESX01",
+                "subject": "Employability Skills I(DS)",
+                "facultyName": "Mrs.V Priya",
+                "facultyInitials": "VP"
+              }
+            ]
+          }
+        }
+      ],
+      "facultyMapping": [
+        {
+          "initials": "KDN",
+          "name": "Dr.K Dasu Naidu"
+        },
+        {
+          "initials": "JS",
+          "name": "Dr.J Sridhar"
+        },
+        {
+          "initials": "AR",
+          "name": "Dr.Abu Rashid"
+        },
+        {
+          "initials": "SSG",
+          "name": "Dr.SSG Prasad"
+        },
+        {
+          "initials": "BD",
+          "name": "Dr.Bimalendu Dash"
+        },
+        {
+          "initials": "KNR",
+          "name": "Dr.K Naga Rajesh"
+        },
+        {
+          "initials": "MKR",
+          "name": "Dr.G Madhava Krishna Reddy"
+        },
+        {
+          "initials": "NNR",
+          "name": "Dr.N Nageswara Reddy"
+        },
+        {
+          "initials": "AS",
+          "name": "Dr.A Arun Solomon"
+        },
+        {
+          "initials": "PR",
+          "name": "Mr.P Ramu"
+        },
+        {
+          "initials": "JKR",
+          "name": "Mr.J Kameswara Rao"
+        },
+        {
+          "initials": "PN",
+          "name": "Mr.Pavan Nagendra"
+        },
+        {
+          "initials": "VP",
+          "name": "Mrs.V Priya"
+        }
+      ]
+    }
+  },
+  {
+    "source": "3rd Semester_Civil_Sec B.pdf",
+    "data": {
+      "branch": "Civil",
+      "semester": "3",
+      "sections": [
+        {
+          "section": "B",
+          "room": "3-F-02(LCS)",
+          "schedule": {
+            "Monday": [
+              {
+                "period": 1,
+                "code": "23CE302",
+                "subject": "Building Materials and Concrete Technology",
+                "facultyName": "Dr.Pandimani",
+                "facultyInitials": "PM"
+              },
+              {
+                "period": 2,
+                "code": "23CE304",
+                "subject": "Fluid Mechanics",
+                "facultyName": "Mrs.V Priya",
+                "facultyInitials": "VP"
+              },
+              {
+                "period": 3,
+                "code": "23ESX01",
+                "subject": "Employability Skills I(AS)",
+                "facultyName": "Mr.J Kameswara Rao",
+                "facultyInitials": "JKR"
+              },
+              {
+                "period": 4,
+                "code": "23MA302",
+                "subject": "Numerical Methods",
+                "facultyName": "Dr.K Dasu Naidu",
+                "facultyInitials": "KDN"
+              },
+              {
+                "period": 5,
+                "code": "23CE302/23CE303",
+                "subject": "Building Materials and Concrete Technology / Building Planning and Drawing",
+                "facultyName": "Dr.Pandimani, Dr.A Priyanka / Dr.PVR Narendra Babu, Dr. BAV Ram Kumar",
+                "facultyInitials": "PM,AP/PNB,BAV"
+              }
+            ],
+            "Tuesday": [
+              {
+                "period": 1,
+                "code": "23MA302",
+                "subject": "Numerical Methods",
+                "facultyName": "Dr.K Dasu Naidu",
+                "facultyInitials": "KDN"
+              },
+              {
+                "period": 2,
+                "code": "23CE306",
+                "subject": "Surveying",
+                "facultyName": "Dr.D Upendra",
+                "facultyInitials": "DU"
+              },
+              {
+                "period": 3,
+                "code": "23CE305",
+                "subject": "Solid Mechanics I",
+                "facultyName": "Mr.BPRVS Priyatham",
+                "facultyInitials": "BPRVS"
+              },
+              {
+                "period": 4,
+                "code": "23CE303",
+                "subject": "Building Planning and Drawing",
+                "facultyName": "Dr.PVR Narendra Babu",
+                "facultyInitials": "PNB"
+              },
+              {
+                "period": 5,
+                "code": "23CE306/23CE307",
+                "subject": "Surveying / Solid Mechanics Lab",
+                "facultyName": "Mr.BPRVS Priyatham, Ms.M Jyotsna / Dr.D Upendra, Dr.S Athibaranan",
+                "facultyInitials": "BPRVS,MJ/DU,SA"
+              },
+              {
+                "period": 6,
+                "code": "SDA",
+                "subject": "Student Development Activity",
+                "facultyName": "Dr.N Nageswara Reedy",
+                "facultyInitials": "NNR"
+              }
+            ],
+            "Wednesday": [
+              {
+                "period": 1,
+                "code": "23CE304",
+                "subject": "Fluid Mechanics",
+                "facultyName": "Mrs.V Priya",
+                "facultyInitials": "VP"
+              },
+              {
+                "period": 2,
+                "code": "23CE305",
+                "subject": "Solid Mechanics I",
+                "facultyName": "Mr.BPRVS Priyatham",
+                "facultyInitials": "BPRVS"
+              },
+              {
+                "period": 3,
+                "code": "23ESX01",
+                "subject": "Employability Skills I(DS)",
+                "facultyName": "Mrs.V Priya",
+                "facultyInitials": "VP"
+              },
+              {
+                "period": 4,
+                "code": "23MA302",
+                "subject": "Numerical Methods",
+                "facultyName": "Dr.K Dasu Naidu",
+                "facultyInitials": "KDN"
+              },
+              {
+                "period": 5,
+                "code": "23CE306/23CE307",
+                "subject": "Surveying / Solid Mechanics Lab",
+                "facultyName": "Mr.BPRVS Priyatham, Ms.M Jyotsna / Dr.D Upendra, Dr.S Athibaranan",
+                "facultyInitials": "BPRVS,MJ/DU,SA"
+              },
+              {
+                "period": 6,
+                "code": "SDA",
+                "subject": "Student Development Activity",
+                "facultyName": "Dr.N Nageswara Reedy",
+                "facultyInitials": "SDA"
+              }
+            ],
+            "Thursday": [
+              {
+                "period": 1,
+                "code": "23CE306",
+                "subject": "Surveying",
+                "facultyName": "Dr.D Upendra",
+                "facultyInitials": "DU"
+              },
+              {
+                "period": 2,
+                "code": "23CE302",
+                "subject": "Building Materials and Concrete Technology",
+                "facultyName": "Dr.Pandimani",
+                "facultyInitials": "PM"
+              },
+              {
+                "period": 3,
+                "code": "23CE303",
+                "subject": "Building Planning and Drawing",
+                "facultyName": "Dr.PVR Narendra Babu",
+                "facultyInitials": "PNB"
+              },
+              {
+                "period": 4,
+                "code": "23CE304",
+                "subject": "Fluid Mechanics",
+                "facultyName": "Mrs.V Priya",
+                "facultyInitials": "VP"
+              },
+              {
+                "period": 5,
+                "code": "23CE302/23CE303",
+                "subject": "Building Materials and Concrete Technology / Building Planning and Drawing",
+                "facultyName": "Dr.Pandimani, Dr.A Priyanka / Dr.PVR Narendra Babu, Dr. BAV Ram Kumar",
+                "facultyInitials": "PM,AP/PNB,BAV"
+              },
+              {
+                "period": 6,
+                "code": "Counseling",
+                "subject": "Counseling",
+                "facultyName": "KNR",
+                "facultyInitials": "KNR"
+              }
+            ],
+            "Friday": [
+              {
+                "period": 1,
+                "code": "23CE303",
+                "subject": "Building Planning and Drawing",
+                "facultyName": "Dr.PVR Narendra Babu",
+                "facultyInitials": "PNB"
+              },
+              {
+                "period": 2,
+                "code": "23CE302",
+                "subject": "Building Materials and Concrete Technology",
+                "facultyName": "Dr.Pandimani",
+                "facultyInitials": "PM"
+              },
+              {
+                "period": 3,
+                "code": "23CE305",
+                "subject": "Solid Mechanics I",
+                "facultyName": "Mr.BPRVS Priyatham",
+                "facultyInitials": "BPRVS"
+              },
+              {
+                "period": 4,
+                "code": "23CE306",
+                "subject": "Surveying",
+                "facultyName": "Dr.D Upendra",
+                "facultyInitials": "DU"
+              },
+              {
+                "period": 5,
+                "code": "23MA302",
+                "subject": "Numerical Methods",
+                "facultyName": "Dr.K Dasu Naidu",
+                "facultyInitials": "KDN"
+              },
+              {
+                "period": 6,
+                "code": "23ESX01",
+                "subject": "Employability Skills I(SS)",
+                "facultyName": "Mr.Pavan Nagendra",
+                "facultyInitials": "PN"
+              }
+            ]
+          }
+        }
+      ],
+      "facultyMapping": [
+        {
+          "initials": "KDN",
+          "name": "Dr.K Dasu Naidu"
+        },
+        {
+          "initials": "PM",
+          "name": "Dr.Pandimani"
+        },
+        {
+          "initials": "AP",
+          "name": "Dr.A Priyanka"
+        },
+        {
+          "initials": "PNB",
+          "name": "Dr.PVR Narendra Babu"
+        },
+        {
+          "initials": "BAV",
+          "name": "Dr. BAV Ram Kumar"
+        },
+        {
+          "initials": "VP",
+          "name": "Mrs.V Priya"
+        },
+        {
+          "initials": "BPRVS",
+          "name": "Mr.BPRVS Priyatham"
+        },
+        {
+          "initials": "DU",
+          "name": "Dr.D Upendra"
+        },
+        {
+          "initials": "MJ",
+          "name": "Ms.M Jyotsna"
+        },
+        {
+          "initials": "SA",
+          "name": "Dr.S Athibaranan"
+        },
+        {
+          "initials": "JKR",
+          "name": "Mr.J Kameswara Rao"
+        },
+        {
+          "initials": "PN",
+          "name": "Mr.Pavan Nagendra"
+        },
+        {
+          "initials": "NNR",
+          "name": "Dr.N Nageswara Reedy"
+        },
+        {
+          "initials": "KNR",
+          "name": "Dr.K Naga Rajesh"
+        }
+      ]
+    }
+  },
+  {
+    "source": "CSE_3rd Semester Timetable 2026-27.pdf",
+    "data": {
+      "branch": "CSE",
+      "semester": "3",
+      "sections": [
+        {
+          "section": "A",
+          "room": "5-S-10",
+          "schedule": {
+            "Monday": [
+              {
+                "period": 1,
+                "code": "23CS303",
+                "subject": "Design and Analysis of Algorithms",
+                "facultyName": "Mr.Baisakh",
+                "facultyInitials": "BiSK"
+              },
+              {
+                "period": 2,
+                "code": "23CS301",
+                "subject": "Problem solving using Python",
+                "facultyName": "Mrs.A.Bhavani/Mr.P.Kedar",
+                "facultyInitials": "AB"
+              },
+              {
+                "period": 3,
+                "code": "23CS306",
+                "subject": "Object Oriented Programming with JAVA",
+                "facultyName": "Mr.G.Dharma Raju",
+                "facultyInitials": "GDR"
+              },
+              {
+                "period": 4,
+                "code": "23ESX01",
+                "subject": "Employability Skills I",
+                "facultyName": "Mr.M.Santhosh Kumar/Ms.Santhoshini Sahu/Dr.B.Sanyasi Rao",
+                "facultyInitials": "SS-BSR"
+              },
+              {
+                "period": 5,
+                "code": "23CS304",
+                "subject": "Digital Logic Design",
+                "facultyName": "Mr.Y.Naga Pramod Kumar/Ms.Santhoshini Sahu",
+                "facultyInitials": "YNPK"
+              }
+            ]
+          }
+        },
+        {
+          "section": "B",
+          "room": "5-S-13",
+          "schedule": {
+            "Monday": [
+              {
+                "period": 1,
+                "code": "23CS305",
+                "subject": "Discrete Mathematical Structures",
+                "facultyName": "Dr.Y.Aditya",
+                "facultyInitials": "YAD"
+              },
+              {
+                "period": 2,
+                "code": "23HSX10",
+                "subject": "Engineering Economics and Project Management",
+                "facultyName": "Dr.K.V.S.Prasad",
+                "facultyInitials": "KVSP"
+              },
+              {
+                "period": 3,
+                "code": "23CS301",
+                "subject": "Problem solving using Python",
+                "facultyName": "Mrs.M.Sravani/Mr.Suraj Soren",
+                "facultyInitials": "MSN"
+              },
+              {
+                "period": 4,
+                "code": "23CS303",
+                "subject": "Design and Analysis of Algorithms",
+                "facultyName": "Ms.Santhoshini Sahu",
+                "facultyInitials": "SS"
+              }
+            ]
+          }
+        },
+        {
+          "section": "C",
+          "room": "5-S-12",
+          "schedule": {
+            "Monday": [
+              {
+                "period": 1,
+                "code": "23CS301",
+                "subject": "Problem solving using Python",
+                "facultyName": "Ms.Sucheta Krupalini M/Dr.S.Akila Agnes/Mrs.A.Vineela",
+                "facultyInitials": "SKM"
+              },
+              {
+                "period": 2,
+                "code": "23HSX10",
+                "subject": "Engineering Economics and Project Management",
+                "facultyName": "Dr.D.Srinivasa Kumar",
+                "facultyInitials": "DSK"
+              },
+              {
+                "period": 3,
+                "code": "23CS305",
+                "subject": "Discrete Mathematical Structures",
+                "facultyName": "Dr.Y.Aditya",
+                "facultyInitials": "YAD"
+              },
+              {
+                "period": 4,
+                "code": "23CS303",
+                "subject": "Design and Analysis of Algorithms",
+                "facultyName": "Mrs.T.Anusha",
+                "facultyInitials": "TAS"
+              }
+            ]
+          }
+        },
+        {
+          "section": "D",
+          "room": "5-S-11",
+          "schedule": {
+            "Monday": [
+              {
+                "period": 1,
+                "code": "23CS306",
+                "subject": "Object Oriented Programming with JAVA",
+                "facultyName": "Mr.G.Ravi Kumar",
+                "facultyInitials": "GRK"
+              },
+              {
+                "period": 2,
+                "code": "23ESX01",
+                "subject": "Employability Skills I",
+                "facultyName": "Mr.M.Santhosh Kumar/Ms.Binodini Kar/Dr.B.Sanyasi Rao",
+                "facultyInitials": "SS-BSR"
+              },
+              {
+                "period": 3,
+                "code": "23CS303",
+                "subject": "Design and Analysis of Algorithms",
+                "facultyName": "Mr.P.Kedar",
+                "facultyInitials": "PKD"
+              },
+              {
+                "period": 4,
+                "code": "23CS305",
+                "subject": "Discrete Mathematical Structures",
+                "facultyName": "Mrs.A.Bhavani",
+                "facultyInitials": "AB"
+              }
+            ]
+          }
+        }
+      ],
+      "facultyMapping": [
+        {
+          "initials": "AB",
+          "name": "Mrs.A.Bhavani"
+        },
+        {
+          "initials": "PKD",
+          "name": "Mr.P.Kedar"
+        },
+        {
+          "initials": "DSK",
+          "name": "Dr.D.Srinivasa Kumar"
+        },
+        {
+          "initials": "BiSK",
+          "name": "Mr.Baisakh"
+        },
+        {
+          "initials": "YNPK",
+          "name": "Mr.Y.Naga Pramod Kumar"
+        },
+        {
+          "initials": "GSL",
+          "name": "Mr.G.Suneel"
+        },
+        {
+          "initials": "GDR",
+          "name": "Mr.G.Dharma Raju"
+        },
+        {
+          "initials": "MSN",
+          "name": "Mrs.M.Sravani"
+        },
+        {
+          "initials": "KVSP",
+          "name": "Dr.K.V.S.Prasad"
+        },
+        {
+          "initials": "SS",
+          "name": "Ms.Santhoshini Sahu"
+        },
+        {
+          "initials": "YAD",
+          "name": "Dr.Y.Aditya"
+        },
+        {
+          "initials": "SKM",
+          "name": "Ms.Sucheta Krupalini M"
+        },
+        {
+          "initials": "TAS",
+          "name": "Mrs.T.Anusha"
+        },
+        {
+          "initials": "GRK",
+          "name": "Mr.G.Ravi Kumar"
+        }
+      ]
+    }
+  },
+  {
+    "source": "3rd Semester Timetable (1)_260703_113824.pdf",
+    "data": {
+      "branch": "Electronics and Communication Engineering",
+      "semester": "3",
+      "sections": [
+        {
+          "section": "A",
+          "room": "6-F-1",
+          "schedule": {
+            "Monday": [
+              {
+                "period": 1,
+                "code": "23EC304",
+                "subject": "Electronic Devices and Circuits",
+                "facultyName": "J.V. Suman",
+                "facultyInitials": "JVS"
+              },
+              {
+                "period": 2,
+                "code": "23EC303",
+                "subject": "Python Programming",
+                "facultyName": "Dr. T. Geethamma",
+                "facultyInitials": "TG"
+              }
+            ],
+            "Tuesday": [
+              {
+                "period": 1,
+                "code": "23EC305",
+                "subject": "Signals and Systems",
+                "facultyName": "B. Vandana",
+                "facultyInitials": "BV"
+              },
+              {
+                "period": 2,
+                "code": "23MA301",
+                "subject": "Complex Variables",
+                "facultyName": "N. Srinivas Rao",
+                "facultyInitials": "NSR"
+              }
+            ],
+            "Wednesday": [
+              {
+                "period": 1,
+                "code": "23EC305",
+                "subject": "Signals and Systems",
+                "facultyName": "N. Srinivas Rao",
+                "facultyInitials": "NSR"
+              },
+              {
+                "period": 2,
+                "code": "23MA301",
+                "subject": "Complex Variables",
+                "facultyName": "N. Srinivas Rao",
+                "facultyInitials": "NSR"
+              }
+            ],
+            "Thursday": [
+              {
+                "period": 1,
+                "code": "23ESX01",
+                "subject": "Employability Skills",
+                "facultyName": "J.V. Suman",
+                "facultyInitials": "JVS"
+              },
+              {
+                "period": 2,
+                "code": "23EC305",
+                "subject": "Signals and Systems",
+                "facultyName": "N. Srinivas Rao",
+                "facultyInitials": "NSR"
+              }
+            ],
+            "Friday": [
+              {
+                "period": 1,
+                "code": "23MA301",
+                "subject": "Complex Variables",
+                "facultyName": "N. Srinivas Rao",
+                "facultyInitials": "NSR"
+              },
+              {
+                "period": 2,
+                "code": "23EC302",
+                "subject": "Electronic Devices and Circuits",
+                "facultyName": "Dr. T. Geethamma",
+                "facultyInitials": "TG"
+              },
+              {
+                "period": 3,
+                "code": "23EC302",
+                "subject": "Electronic Devices and Circuits",
+                "facultyName": "Dr. G. B. S. R. Naidu",
+                "facultyInitials": "GBSR"
+              },
+              {
+                "period": 4,
+                "code": "23EC304",
+                "subject": "Random Variables and Stochastic Process",
+                "facultyName": "Dr. M. Nageswara Rao",
+                "facultyInitials": "MNVR"
+              },
+              {
+                "period": 5,
+                "code": "23EC304",
+                "subject": "Random Variables and Stochastic Process",
+                "facultyName": "Dr. M. Nageswara Rao",
+                "facultyInitials": "MNVR"
+              }
+            ]
+          }
+        },
+        {
+          "section": "B",
+          "room": "6-F-12",
+          "schedule": {
+            "Monday": [
+              {
+                "period": 1,
+                "code": "23EC302",
+                "subject": "Electronic Devices and Circuits",
+                "facultyName": "R. S. Sravan",
+                "facultyInitials": "RSS"
+              },
+              {
+                "period": 2,
+                "code": "23EC303",
+                "subject": "Python Programming",
+                "facultyName": "T. Anuradha",
+                "facultyInitials": "TAK"
+              }
+            ],
+            "Tuesday": [
+              {
+                "period": 1,
+                "code": "23EC305",
+                "subject": "Signals and Systems",
+                "facultyName": "B. Vandana",
+                "facultyInitials": "BV"
+              },
+              {
+                "period": 2,
+                "code": "23EC304",
+                "subject": "Random Variables and Stochastic Process",
+                "facultyName": "G. N. R. Prasad",
+                "facultyInitials": "GNR"
+              }
+            ],
+            "Wednesday": [
+              {
+                "period": 1,
+                "code": "23EC305",
+                "subject": "Signals and Systems",
+                "facultyName": "N. Ch. Srinivas",
+                "facultyInitials": "NCS"
+              },
+              {
+                "period": 2,
+                "code": "23MA301",
+                "subject": "Complex Variables",
+                "facultyName": "N. Srinivas Rao",
+                "facultyInitials": "NSR"
+              }
+            ],
+            "Thursday": [
+              {
+                "period": 1,
+                "code": "23EC303",
+                "subject": "Python Programming",
+                "facultyName": "T. Anuradha",
+                "facultyInitials": "TAK"
+              },
+              {
+                "period": 2,
+                "code": "23MA301",
+                "subject": "Complex Variables",
+                "facultyName": "N. Srinivas Rao",
+                "facultyInitials": "NSR"
+              }
+            ],
+            "Friday": [
+              {
+                "period": 1,
+                "code": "23MA301",
+                "subject": "Complex Variables",
+                "facultyName": "N. Srinivas Rao",
+                "facultyInitials": "NSR"
+              },
+              {
+                "period": 2,
+                "code": "23EC302",
+                "subject": "Electronic Devices and Circuits",
+                "facultyName": "Dr. T. Geethamma",
+                "facultyInitials": "TG"
+              },
+              {
+                "period": 3,
+                "code": "23EC302",
+                "subject": "Electronic Devices and Circuits",
+                "facultyName": "Dr. T. Geethamma",
+                "facultyInitials": "TG"
+              },
+              {
+                "period": 4,
+                "code": "23EC304",
+                "subject": "Random Variables and Stochastic Process",
+                "facultyName": "G. N. R. Prasad",
+                "facultyInitials": "GNR"
+              },
+              {
+                "period": 5,
+                "code": "23EC304",
+                "subject": "Random Variables and Stochastic Process",
+                "facultyName": "G. N. R. Prasad",
+                "facultyInitials": "GNR"
+              }
+            ]
+          }
+        },
+        {
+          "section": "C",
+          "room": "6-F-13",
+          "schedule": {
+            "Monday": [
+              {
+                "period": 1,
+                "code": "23EC302",
+                "subject": "Electronic Devices and Circuits",
+                "facultyName": "Ch. B. P. Rao",
+                "facultyInitials": "CHBP"
+              },
+              {
+                "period": 2,
+                "code": "23EC303",
+                "subject": "Python Programming",
+                "facultyName": "S. Hema Madhuri",
+                "facultyInitials": "SHM"
+              }
+            ],
+            "Tuesday": [
+              {
+                "period": 1,
+                "code": "23EC305",
+                "subject": "Signals and Systems",
+                "facultyName": "B. Vandana",
+                "facultyInitials": "BVD"
+              },
+              {
+                "period": 2,
+                "code": "23EC304",
+                "subject": "Random Variables and Stochastic Process",
+                "facultyName": "R. S. Sravan",
+                "facultyInitials": "RSS"
+              }
+            ],
+            "Wednesday": [
+              {
+                "period": 1,
+                "code": "23EC305",
+                "subject": "Signals and Systems",
+                "facultyName": "Ch. B. P. Rao",
+                "facultyInitials": "CHBP"
+              },
+              {
+                "period": 2,
+                "code": "23EC304",
+                "subject": "Random Variables and Stochastic Process",
+                "facultyName": "K. Ravi Kumar",
+                "facultyInitials": "KKR"
+              }
+            ],
+            "Thursday": [
+              {
+                "period": 1,
+                "code": "23EC303",
+                "subject": "Python Programming",
+                "facultyName": "S. Hema Madhuri",
+                "facultyInitials": "SHM"
+              },
+              {
+                "period": 2,
+                "code": "23MA301",
+                "subject": "Complex Variables",
+                "facultyName": "Dr. G. B. S. R. Naidu",
+                "facultyInitials": "GBSR"
+              }
+            ],
+            "Friday": [
+              {
+                "period": 1,
+                "code": "23MA301",
+                "subject": "Complex Variables",
+                "facultyName": "Dr. G. B. S. R. Naidu",
+                "facultyInitials": "GBSR"
+              },
+              {
+                "period": 2,
+                "code": "23EC302",
+                "subject": "Electronic Devices and Circuits",
+                "facultyName": "B. M. Sreenivasa Rao",
+                "facultyInitials": "BMS"
+              },
+              {
+                "period": 3,
+                "code": "23EC302",
+                "subject": "Electronic Devices and Circuits",
+                "facultyName": "B. M. Sreenivasa Rao",
+                "facultyInitials": "BMS"
+              },
+              {
+                "period": 4,
+                "code": "23EC304",
+                "subject": "Random Variables and Stochastic Process",
+                "facultyName": "K. Ravi Kumar",
+                "facultyInitials": "KKR"
+              },
+              {
+                "period": 5,
+                "code": "23EC304",
+                "subject": "Random Variables and Stochastic Process",
+                "facultyName": "B. M. Sreenivasa Rao",
+                "facultyInitials": "BMS"
+              }
+            ]
+          }
+        }
+      ],
+      "facultyMapping": [
+        {
+          "initials": "JVS",
+          "name": "Dr. J.V. Suman"
+        },
+        {
+          "initials": "TG",
+          "name": "Dr. T. Geethamma"
+        },
+        {
+          "initials": "NSR",
+          "name": "Dr. N. Srinivas Rao"
+        },
+        {
+          "initials": "BV",
+          "name": "B. Vandana"
+        },
+        {
+          "initials": "MNVR",
+          "name": "Dr. M. Nageswara Rao"
+        },
+        {
+          "initials": "GBSR",
+          "name": "Dr. G. B. S. R. Naidu"
+        },
+        {
+          "initials": "RSS",
+          "name": "R. S. Sravan"
+        },
+        {
+          "initials": "TAK",
+          "name": "T. Anuradha"
+        },
+        {
+          "initials": "GNR",
+          "name": "G. N. R. Prasad"
+        },
+        {
+          "initials": "NCS",
+          "name": "N. Ch. Srinivas"
+        },
+        {
+          "initials": "CHBP",
+          "name": "Ch. B. P. Rao"
+        },
+        {
+          "initials": "SHM",
+          "name": "S. Hema Madhuri"
+        },
+        {
+          "initials": "KKR",
+          "name": "K. Ravi Kumar"
+        },
+        {
+          "initials": "BMS",
+          "name": "B. M. Sreenivasa Rao"
+        }
+      ]
+    }
+  },
+  {
+    "source": "WhatsApp Image 2026-07-17 at 2.57.51 PM.jpeg",
+    "data": {
+      "branch": "Electrical and Electronics Engineering",
+      "semester": "3",
+      "sections": [
+        {
+          "section": "A",
+          "room": "3-S-03",
+          "schedule": {
+            "Monday": [
+              {
+                "period": 1,
+                "code": "23EE305",
+                "subject": "Measurements and Instrumentation",
+                "facultyName": "Dr. G. Chandra Sekhar",
+                "facultyInitials": "GCS"
+              },
+              {
+                "period": 2,
+                "code": "23EE302",
+                "subject": "DC Machines and Transformers",
+                "facultyName": "Dr. T. S. Kishore",
+                "facultyInitials": "TSK"
+              },
+              {
+                "period": 3,
+                "code": "23EE307/308",
+                "subject": "DC Machines Lab / Python Programming Lab",
+                "facultyName": "Dr. Rama Krishna / Dr. V. Manoj / Dr. P. Upendra Kumar / Dr. Sthita Prajna",
+                "facultyInitials": "RRK,VM/PUK,SPM"
+              },
+              {
+                "period": 4,
+                "code": "23MA302",
+                "subject": "Engineering Mathematics III",
+                "facultyName": "Dr. K. Ravibabu / Dr. P. Murali Mohan",
+                "facultyInitials": "KRB,PMMK"
+              },
+              {
+                "period": 5,
+                "code": "COUNSELING",
+                "subject": "Counseling",
+                "facultyName": "COUNSELING",
+                "facultyInitials": "COUNSELING"
+              }
+            ],
+            "Tuesday": [
+              {
+                "period": 1,
+                "code": "23EE306",
+                "subject": "Semiconductor Devices and Circuits",
+                "facultyName": "Dr. J S V Siva Kumar / Dr. K. Karthik",
+                "facultyInitials": "JSV,KK"
+              },
+              {
+                "period": 2,
+                "code": "23EE304",
+                "subject": "Electromagnetic Field Theory",
+                "facultyName": "Dr. P. Upendra Kumar",
+                "facultyInitials": "PUK"
+              },
+              {
+                "period": 3,
+                "code": "23EE302",
+                "subject": "DC Machines and Transformers",
+                "facultyName": "Dr. T. S. Kishore",
+                "facultyInitials": "TSK"
+              },
+              {
+                "period": 4,
+                "code": "23EE305",
+                "subject": "Measurements and Instrumentation",
+                "facultyName": "Dr. G. Chandra Sekhar",
+                "facultyInitials": "GCS"
+              },
+              {
+                "period": 5,
+                "code": "23EE303",
+                "subject": "Electrical Circuit Analysis -II",
+                "facultyName": "Dr. R. Vijaya Krishna",
+                "facultyInitials": "RVK"
+              },
+              {
+                "period": 6,
+                "code": "LIBRARY",
+                "subject": "Library",
+                "facultyName": "LIBRARY",
+                "facultyInitials": "LIBRARY"
+              }
+            ],
+            "Wednesday": [
+              {
+                "period": 1,
+                "code": "23MA302",
+                "subject": "Engineering Mathematics III",
+                "facultyName": "Dr. K. Ravibabu / Dr. P. Murali Mohan",
+                "facultyInitials": "KRB"
+              },
+              {
+                "period": 2,
+                "code": "23EE306",
+                "subject": "Semiconductor Devices and Circuits",
+                "facultyName": "Dr. J S V Siva Kumar / Dr. K. Karthik",
+                "facultyInitials": "JSV"
+              },
+              {
+                "period": 3,
+                "code": "23EE302",
+                "subject": "DC Machines and Transformers",
+                "facultyName": "Dr. T. S. Kishore",
+                "facultyInitials": "TSK"
+              },
+              {
+                "period": 4,
+                "code": "23EE305",
+                "subject": "Measurements and Instrumentation",
+                "facultyName": "Dr. G. Chandra Sekhar",
+                "facultyInitials": "GCS"
+              },
+              {
+                "period": 5,
+                "code": "23EE303",
+                "subject": "Electrical Circuit Analysis -II",
+                "facultyName": "Dr. R. Vijaya Krishna",
+                "facultyInitials": "RVK"
+              },
+              {
+                "period": 6,
+                "code": "SDA",
+                "subject": "Student Development Activities",
+                "facultyName": "Dr. NVA Ravi Kumar",
+                "facultyInitials": "NVARK"
+              }
+            ],
+            "Thursday": [
+              {
+                "period": 1,
+                "code": "23EE306",
+                "subject": "Semiconductor Devices and Circuits",
+                "facultyName": "Dr. J S V Siva Kumar / Dr. K. Karthik",
+                "facultyInitials": "JSV"
+              },
+              {
+                "period": 2,
+                "code": "23EE303",
+                "subject": "Electrical Circuit Analysis -II",
+                "facultyName": "Dr. R. Vijaya Krishna",
+                "facultyInitials": "RVK"
+              },
+              {
+                "period": 3,
+                "code": "23MA302",
+                "subject": "Engineering Mathematics III",
+                "facultyName": "Dr. K. Ravibabu / Dr. P. Murali Mohan",
+                "facultyInitials": "KRB"
+              },
+              {
+                "period": 4,
+                "code": "23EE304",
+                "subject": "Electromagnetic Field Theory",
+                "facultyName": "Dr. P. Upendra Kumar",
+                "facultyInitials": "PUK"
+              },
+              {
+                "period": 5,
+                "code": "23ESX01(AS)",
+                "subject": "Employability Skills I",
+                "facultyName": "Dr. Ch. Hemanth Kumar / Mr. M. Santosh Kumar / Dr. B. Sanyasi Rao",
+                "facultyInitials": "MSK"
+              },
+              {
+                "period": 6,
+                "code": "23EE307/308",
+                "subject": "DC Machines Lab / Python Programming Lab",
+                "facultyName": "Dr. Rama Krishna / Dr. V. Manoj / Dr. P. Upendra Kumar / Dr. Sthita Prajna",
+                "facultyInitials": "RRK,VM/PUK,SPM"
+              }
+            ],
+            "Friday": [
+              {
+                "period": 1,
+                "code": "23ESX01(DS)",
+                "subject": "Employability Skills I",
+                "facultyName": "Dr. Ch. Hemanth Kumar / Mr. M. Santosh Kumar / Dr. B. Sanyasi Rao",
+                "facultyInitials": "Ch.HK"
+              },
+              {
+                "period": 2,
+                "code": "23EE304",
+                "subject": "Electromagnetic Field Theory",
+                "facultyName": "Dr. P. Upendra Kumar",
+                "facultyInitials": "PUK"
+              },
+              {
+                "period": 3,
+                "code": "23ESX01(SS)",
+                "subject": "Employability Skills I",
+                "facultyName": "Dr. Ch. Hemanth Kumar / Mr. M. Santosh Kumar / Dr. B. Sanyasi Rao",
+                "facultyInitials": "BSR"
+              },
+              {
+                "period": 4,
+                "code": "23EE306",
+                "subject": "Semiconductor Devices and Circuits",
+                "facultyName": "Dr. J S V Siva Kumar / Dr. K. Karthik",
+                "facultyInitials": "JSV"
+              },
+              {
+                "period": 5,
+                "code": "23MA302",
+                "subject": "Engineering Mathematics III",
+                "facultyName": "Dr. K. Ravibabu / Dr. P. Murali Mohan",
+                "facultyInitials": "KRB"
+              },
+              {
+                "period": 6,
+                "code": "23EE303",
+                "subject": "Electrical Circuit Analysis -II",
+                "facultyName": "Dr. R. Vijaya Krishna",
+                "facultyInitials": "RVK"
+              }
+            ]
+          }
+        }
+      ],
+      "facultyMapping": [
+        {
+          "initials": "KRB",
+          "name": "Dr. K. Ravibabu"
+        },
+        {
+          "initials": "PMMK",
+          "name": "Dr. P. Murali Mohan"
+        },
+        {
+          "initials": "TSK",
+          "name": "Dr. T. S. Kishore"
+        },
+        {
+          "initials": "RVK",
+          "name": "Dr. R. Vijaya Krishna"
+        },
+        {
+          "initials": "PUK",
+          "name": "Dr. P. Upendra Kumar"
+        },
+        {
+          "initials": "GCS",
+          "name": "Dr. G. Chandra Sekhar"
+        },
+        {
+          "initials": "JSV",
+          "name": "Dr. J S V Siva Kumar"
+        },
+        {
+          "initials": "KK",
+          "name": "Dr. K. Karthik"
+        },
+        {
+          "initials": "RRK",
+          "name": "Dr. Rama Krishna"
+        },
+        {
+          "initials": "VM",
+          "name": "Dr. V. Manoj"
+        },
+        {
+          "initials": "SPM",
+          "name": "Dr. Sthita Prajna"
+        },
+        {
+          "initials": "Ch.HK",
+          "name": "Dr. Ch. Hemanth Kumar"
+        },
+        {
+          "initials": "MSK",
+          "name": "Mr. M. Santosh Kumar"
+        },
+        {
+          "initials": "BSR",
+          "name": "Dr. B. Sanyasi Rao"
+        },
+        {
+          "initials": "NVARK",
+          "name": "Dr. NVA Ravi Kumar"
+        }
+      ]
+    }
+  },
+  {
+    "source": "WhatsApp Image 2026-07-17 at 2.50.47 PM.jpeg",
+    "data": {
+      "branch": "Information Technology",
+      "semester": "3",
+      "sections": [
+        {
+          "section": "A",
+          "room": "1-F-11",
+          "schedule": {
+            "Monday": [
+              {
+                "period": 1,
+                "code": "23CS304",
+                "subject": "Digital Logic Design",
+                "facultyName": "Mrs.T.Sowjanya Kumari/Ms.P.Hemalatha",
+                "facultyInitials": "TSK"
+              },
+              {
+                "period": 2,
+                "code": "23ESX01",
+                "subject": "Employability Skills-I",
+                "facultyName": "Ms.B.Vandana",
+                "facultyInitials": "SS-BV"
+              },
+              {
+                "period": 3,
+                "code": "23IT307-LAB",
+                "subject": "Python Programming and Applications Lab",
+                "facultyName": "Dr.G.Stalin Babu/P.Hemalatha",
+                "facultyInitials": "GSB/PHL"
+              },
+              {
+                "period": 4,
+                "code": "23IT306",
+                "subject": "Object Oriented Programming through Java",
+                "facultyName": "Dr.V.VasudhaRani/Mr.P.Deepak",
+                "facultyInitials": "VVR"
+              },
+              {
+                "period": 5,
+                "code": "23IT301",
+                "subject": "Python Programming and Applications",
+                "facultyName": "Dr.G.Stalin Babu",
+                "facultyInitials": "GSB"
+              }
+            ],
+            "Tuesday": [
+              {
+                "period": 1,
+                "code": "23IT304",
+                "subject": "Database Management Systems",
+                "facultyName": "Mrs.K.Santoshi",
+                "facultyInitials": "KS"
+              },
+              {
+                "period": 2,
+                "code": "23IT306",
+                "subject": "Object Oriented Programming through Java",
+                "facultyName": "Dr.V.VasudhaRani/Mr.P.Deepak",
+                "facultyInitials": "VVR"
+              },
+              {
+                "period": 3,
+                "code": "23CS305",
+                "subject": "Discrete Mathematical Structures",
+                "facultyName": "Mr.M.HariKrishna",
+                "facultyInitials": "MHK"
+              },
+              {
+                "period": 4,
+                "code": "23IT305",
+                "subject": "Data Communication Systems",
+                "facultyName": "Ms.P.Pooja",
+                "facultyInitials": "PP"
+              },
+              {
+                "period": 5,
+                "code": "23ESX01",
+                "subject": "Employability Skills-I",
+                "facultyName": "Ms.P.Hemalatha/Mrs.K.Santoshi",
+                "facultyInitials": "PHL/KS"
+              }
+            ],
+            "Wednesday": [
+              {
+                "period": 1,
+                "code": "23IT305",
+                "subject": "Data Communication Systems",
+                "facultyName": "Ms.P.Pooja",
+                "facultyInitials": "PP"
+              },
+              {
+                "period": 2,
+                "code": "23IT301",
+                "subject": "Python Programming and Applications",
+                "facultyName": "Dr.G.Stalin Babu",
+                "facultyInitials": "GSB"
+              },
+              {
+                "period": 3,
+                "code": "23CS304-LAB",
+                "subject": "Digital Logic Design Lab",
+                "facultyName": "Mrs.T.Sowjanya Kumari/Ms.P.Hemalatha",
+                "facultyInitials": "TSK/PHL"
+              },
+              {
+                "period": 4,
+                "code": "23CS305",
+                "subject": "Discrete Mathematical Structures",
+                "facultyName": "Mr.M.HariKrishna",
+                "facultyInitials": "MHK"
+              },
+              {
+                "period": 5,
+                "code": "23IT304",
+                "subject": "Database Management Systems",
+                "facultyName": "Mrs.K.Santoshi",
+                "facultyInitials": "KS"
+              }
+            ],
+            "Thursday": [
+              {
+                "period": 1,
+                "code": "23CS305",
+                "subject": "Discrete Mathematical Structures",
+                "facultyName": "Mr.M.HariKrishna",
+                "facultyInitials": "MHK"
+              },
+              {
+                "period": 2,
+                "code": "23IT306",
+                "subject": "Object Oriented Programming through Java",
+                "facultyName": "Dr.V.VasudhaRani/Mr.P.Deepak",
+                "facultyInitials": "VVR"
+              },
+              {
+                "period": 3,
+                "code": "23CS304",
+                "subject": "Digital Logic Design",
+                "facultyName": "Mrs.T.Sowjanya Kumari/Ms.P.Hemalatha",
+                "facultyInitials": "TSK"
+              },
+              {
+                "period": 4,
+                "code": "23ESX01",
+                "subject": "Employability Skills-I",
+                "facultyName": "Mr.D.Dhanunjaya Rao",
+                "facultyInitials": "AS-DD"
+              },
+              {
+                "period": 5,
+                "code": "23IT308-LAB",
+                "subject": "Database Management Systems Lab",
+                "facultyName": "Mrs.K.Santoshi/Mr.S.Chanti",
+                "facultyInitials": "KS/SCH"
+              }
+            ],
+            "Friday": [
+              {
+                "period": 1,
+                "code": "23IT301",
+                "subject": "Python Programming and Applications",
+                "facultyName": "Dr.G.Stalin Babu",
+                "facultyInitials": "GSB"
+              },
+              {
+                "period": 2,
+                "code": "23IT304",
+                "subject": "Database Management Systems",
+                "facultyName": "Mrs.K.Santoshi",
+                "facultyInitials": "KS"
+              },
+              {
+                "period": 3,
+                "code": "23IT306-LAB",
+                "subject": "Object Oriented Programming through Java Lab",
+                "facultyName": "Dr.V.VasudhaRani/Mr.P.Deepak",
+                "facultyInitials": "VVR/PD"
+              },
+              {
+                "period": 4,
+                "code": "23CS304",
+                "subject": "Digital Logic Design",
+                "facultyName": "Mrs.T.Sowjanya Kumari/Ms.P.Hemalatha",
+                "facultyInitials": "TSK"
+              },
+              {
+                "period": 5,
+                "code": "23IT305",
+                "subject": "Data Communication Systems",
+                "facultyName": "Ms.P.Pooja",
+                "facultyInitials": "PP"
+              }
+            ]
+          }
+        }
+      ],
+      "facultyMapping": [
+        {
+          "initials": "GSB",
+          "name": "Dr.G.Stalin Babu"
+        },
+        {
+          "initials": "TSK",
+          "name": "Mrs.T.Sowjanya Kumari"
+        },
+        {
+          "initials": "PHL",
+          "name": "Ms.P.Hemalatha"
+        },
+        {
+          "initials": "MHK",
+          "name": "Mr.M.HariKrishna"
+        },
+        {
+          "initials": "KS",
+          "name": "Mrs.K.Santoshi"
+        },
+        {
+          "initials": "PP",
+          "name": "Ms.P.Pooja"
+        },
+        {
+          "initials": "VVR",
+          "name": "Dr.V.VasudhaRani"
+        },
+        {
+          "initials": "PD",
+          "name": "Mr.P.Deepak"
+        },
+        {
+          "initials": "SCH",
+          "name": "Mr.S.Chanti"
+        },
+        {
+          "initials": "BV",
+          "name": "Ms.B.Vandana"
+        },
+        {
+          "initials": "AS-DD",
+          "name": "Mr.D.Dhanunjaya Rao"
+        }
+      ]
+    }
+  },
+  {
+    "source": "WhatsApp Image 2026-07-17 at 2.51.01 PM.jpeg",
+    "data": {
+      "branch": "Information Technology",
+      "semester": "3",
+      "sections": [
+        {
+          "section": "B",
+          "room": "1-F-10",
+          "schedule": {
+            "Monday": [
+              {
+                "period": 1,
+                "code": "23IT304",
+                "subject": "Database Management Systems",
+                "facultyName": "Ms.P.Hemalatha",
+                "facultyInitials": "PHL"
+              },
+              {
+                "period": 2,
+                "code": "23CS305",
+                "subject": "Discrete Mathematical Structures",
+                "facultyName": "Dr.V.VasudhaRani",
+                "facultyInitials": "VVR"
+              },
+              {
+                "period": 3,
+                "code": "23IT305",
+                "subject": "Data Communication Systems",
+                "facultyName": "Ms.Ch.Bharathi",
+                "facultyInitials": "CHB"
+              },
+              {
+                "period": 4,
+                "code": "23IT301",
+                "subject": "Python Programming and Applications",
+                "facultyName": "Mrs.P.Padmavathi",
+                "facultyInitials": "PPD"
+              },
+              {
+                "period": 5,
+                "code": "23IT306-LAB",
+                "subject": "Object Oriented Programming through Java",
+                "facultyName": "Mrs.T.Sowjanya Kumari/Ms.Y.Divya/Dr.V.VasudhaRani",
+                "facultyInitials": "TSK/YD"
+              }
+            ],
+            "Tuesday": [
+              {
+                "period": 1,
+                "code": "23IT301",
+                "subject": "Python Programming and Applications",
+                "facultyName": "Mrs.P.Padmavathi",
+                "facultyInitials": "PPD"
+              },
+              {
+                "period": 2,
+                "code": "23IT304",
+                "subject": "Database Management Systems",
+                "facultyName": "Ms.P.Hemalatha",
+                "facultyInitials": "PHL"
+              },
+              {
+                "period": 3,
+                "code": "23CS304-LAB",
+                "subject": "Digital Logic Design",
+                "facultyName": "Mr.Soubhagya Ranjan Nayak/Ms.Ch.Bharathi",
+                "facultyInitials": "SRN/CHB"
+              },
+              {
+                "period": 4,
+                "code": "2312SS03",
+                "subject": "Employability Skills-I(SS)",
+                "facultyName": "Ms.B.Vandana",
+                "facultyInitials": "SS-BV"
+              },
+              {
+                "period": 5,
+                "code": "23CS304",
+                "subject": "Digital Logic Design",
+                "facultyName": "Mr.Soubhagya Ranjan Nayak",
+                "facultyInitials": "SRN"
+              }
+            ],
+            "Wednesday": [
+              {
+                "period": 1,
+                "code": "23CS305",
+                "subject": "Discrete Mathematical Structures",
+                "facultyName": "Dr.V.VasudhaRani",
+                "facultyInitials": "VVR"
+              },
+              {
+                "period": 2,
+                "code": "2312AS03",
+                "subject": "Employability Skills-I(AS)",
+                "facultyName": "Mr.D.Dhanunjaya rao",
+                "facultyInitials": "AS-DD"
+              },
+              {
+                "period": 3,
+                "code": "23IT307-LAB",
+                "subject": "Python Programming and Applications",
+                "facultyName": "Mrs.P.Padmavathi/Ms.Y.Divya/Dr.V.VasudhaRani",
+                "facultyInitials": "PPD/YD/VVR"
+              },
+              {
+                "period": 4,
+                "code": "23IT305",
+                "subject": "Data Communication Systems",
+                "facultyName": "Ms.Ch.Bharathi",
+                "facultyInitials": "CHB"
+              },
+              {
+                "period": 5,
+                "code": "23IT306",
+                "subject": "Object Oriented Programming through Java",
+                "facultyName": "Mrs.T.Sowjanya Kumari",
+                "facultyInitials": "TSK"
+              }
+            ],
+            "Thursday": [
+              {
+                "period": 1,
+                "code": "23IT305",
+                "subject": "Data Communication Systems",
+                "facultyName": "Ms.Ch.Bharathi",
+                "facultyInitials": "CHB"
+              },
+              {
+                "period": 2,
+                "code": "23CS304",
+                "subject": "Digital Logic Design",
+                "facultyName": "Mr.Soubhagya Ranjan Nayak",
+                "facultyInitials": "SRN"
+              },
+              {
+                "period": 3,
+                "code": "2312DS03",
+                "subject": "Employability Skills-I(DS)",
+                "facultyName": "Mrs.P.Padmavathi/Dr.V.VasudhaRani",
+                "facultyInitials": "PPD/VVR"
+              },
+              {
+                "period": 4,
+                "code": "23IT306",
+                "subject": "Object Oriented Programming through Java",
+                "facultyName": "Mrs.T.Sowjanya Kumari",
+                "facultyInitials": "TSK"
+              },
+              {
+                "period": 5,
+                "code": "23IT304",
+                "subject": "Database Management Systems",
+                "facultyName": "Ms.P.Hemalatha",
+                "facultyInitials": "PHL"
+              }
+            ],
+            "Friday": [
+              {
+                "period": 1,
+                "code": "23IT308-LAB",
+                "subject": "Database Management Systems Laboratory",
+                "facultyName": "Ms.P.Hemalatha/Ms.P.Pooja/Mrs.P.Padmavathi",
+                "facultyInitials": "PHL/PP/PPD"
+              },
+              {
+                "period": 2,
+                "code": "23IT301",
+                "subject": "Python Programming and Applications",
+                "facultyName": "Mrs.P.Padmavathi",
+                "facultyInitials": "PPD"
+              },
+              {
+                "period": 3,
+                "code": "23IT306",
+                "subject": "Object Oriented Programming through Java",
+                "facultyName": "Mrs.T.Sowjanya Kumari",
+                "facultyInitials": "TSK"
+              },
+              {
+                "period": 4,
+                "code": "23CS304",
+                "subject": "Digital Logic Design",
+                "facultyName": "Mr.Soubhagya Ranjan Nayak",
+                "facultyInitials": "SRN"
+              },
+              {
+                "period": 5,
+                "code": "23CS305",
+                "subject": "Discrete Mathematical Structures",
+                "facultyName": "Dr.V.VasudhaRani",
+                "facultyInitials": "VVR"
+              }
+            ]
+          }
+        }
+      ],
+      "facultyMapping": [
+        {
+          "initials": "PP",
+          "name": "Mrs.P.Padmavathi"
+        },
+        {
+          "initials": "SRN",
+          "name": "Mr.Soubhagya Ranjan Nayak"
+        },
+        {
+          "initials": "CHB",
+          "name": "Ms.Ch.Bharathi"
+        },
+        {
+          "initials": "VVR",
+          "name": "Dr.V.VasudhaRani"
+        },
+        {
+          "initials": "PHL",
+          "name": "Ms.P.Hemalatha"
+        },
+        {
+          "initials": "TSK",
+          "name": "Mrs.T.Sowjanya Kumari"
+        },
+        {
+          "initials": "YD",
+          "name": "Ms.Y.Divya"
+        },
+        {
+          "initials": "SS-BV",
+          "name": "Ms.B.Vandana"
+        },
+        {
+          "initials": "AS-DD",
+          "name": "Mr.D.Dhanunjaya rao"
+        },
+        {
+          "initials": "PPD",
+          "name": "Mrs.P.Padmavathi"
+        }
+      ]
+    }
+  },
+  {
+    "source": "WhatsApp Image 2026-07-17 at 2.54.48 PM.jpeg",
+    "data": {
+      "branch": "Mechanical Engineering",
+      "semester": "3",
+      "sections": [
+        {
+          "section": "A",
+          "room": "2-F-02",
+          "schedule": {
+            "Monday": [
+              {
+                "period": 1,
+                "code": "23ME301",
+                "subject": "Engineering Materials and Manufacturing Technology",
+                "facultyName": "Dr. M.K. Prasad",
+                "facultyInitials": "MKP"
+              },
+              {
+                "period": 2,
+                "code": "23ME305",
+                "subject": "Kinematics of Machinery",
+                "facultyName": "Dr. G. Sasidhar",
+                "facultyInitials": "GSD"
+              },
+              {
+                "period": 3,
+                "code": "23ME303",
+                "subject": "Fundamentals of Python Programming",
+                "facultyName": "Sri N. Govinda Rao",
+                "facultyInitials": "NGR"
+              },
+              {
+                "period": 4,
+                "code": "23ME303",
+                "subject": "Fundamentals of Python Programming",
+                "facultyName": "Sri N. Govinda Rao",
+                "facultyInitials": "NGR"
+              }
+            ],
+            "Tuesday": [
+              {
+                "period": 1,
+                "code": "23ME304",
+                "subject": "Computer Aided Machine Drawing",
+                "facultyName": "Dr. S. Ravibabu",
+                "facultyInitials": "SRB"
+              },
+              {
+                "period": 2,
+                "code": "23ME306",
+                "subject": "Thermodynamics",
+                "facultyName": "Dr. K. Siva Prasad",
+                "facultyInitials": "KSP"
+              },
+              {
+                "period": 3,
+                "code": "23ME301/23ME307-FMHM Lab",
+                "subject": "Engineering Materials and Manufacturing Technology / Fluid Mechanics and Hydraulic Machines Lab",
+                "facultyName": "Dr. M.K. Prasad / Dr. S. Ravibabu",
+                "facultyInitials": "MKP/SRB"
+              },
+              {
+                "period": 4,
+                "code": "23ME305",
+                "subject": "Kinematics of Machinery",
+                "facultyName": "Dr. G. Sasidhar",
+                "facultyInitials": "GSD"
+              }
+            ],
+            "Wednesday": [
+              {
+                "period": 1,
+                "code": "23ME303",
+                "subject": "Fundamentals of Python Programming",
+                "facultyName": "Sri N. Govinda Rao",
+                "facultyInitials": "NGR"
+              },
+              {
+                "period": 2,
+                "code": "23ME306",
+                "subject": "Thermodynamics",
+                "facultyName": "Dr. K. Siva Prasad",
+                "facultyInitials": "KSP"
+              },
+              {
+                "period": 3,
+                "code": "23ME304",
+                "subject": "Computer Aided Machine Drawing",
+                "facultyName": "Dr. S. Ravibabu",
+                "facultyInitials": "SRB"
+              },
+              {
+                "period": 4,
+                "code": "23ME305",
+                "subject": "Kinematics of Machinery",
+                "facultyName": "Dr. G. Sasidhar",
+                "facultyInitials": "GSD"
+              }
+            ],
+            "Thursday": [
+              {
+                "period": 1,
+                "code": "23ME303",
+                "subject": "Fundamentals of Python Programming",
+                "facultyName": "Sri N. Govinda Rao",
+                "facultyInitials": "NGR"
+              },
+              {
+                "period": 2,
+                "code": "23ME306",
+                "subject": "Thermodynamics",
+                "facultyName": "Dr. K. Siva Prasad",
+                "facultyInitials": "KSP"
+              },
+              {
+                "period": 3,
+                "code": "23ME301",
+                "subject": "Engineering Materials and Manufacturing Technology",
+                "facultyName": "Dr. M.K. Prasad",
+                "facultyInitials": "MKP"
+              },
+              {
+                "period": 4,
+                "code": "23ME301/23ME307-FMHM Lab",
+                "subject": "Engineering Materials and Manufacturing Technology / Fluid Mechanics and Hydraulic Machines Lab",
+                "facultyName": "Dr. M.K. Prasad / Dr. S. Ravibabu",
+                "facultyInitials": "MKP/SRB"
+              }
+            ],
+            "Friday": [
+              {
+                "period": 1,
+                "code": "23ME302-CAMD",
+                "subject": "Fundamentals of Python Programming / Computer Aided Machine Drawing",
+                "facultyName": "Dr. K. Siva Prasad / Dr. GVSS Sharma",
+                "facultyInitials": "KSR/GVSS"
+              },
+              {
+                "period": 2,
+                "code": "23ME306",
+                "subject": "Thermodynamics",
+                "facultyName": "Dr. K. Siva Prasad",
+                "facultyInitials": "KSP"
+              },
+              {
+                "period": 3,
+                "code": "23ME303",
+                "subject": "Fundamentals of Python Programming",
+                "facultyName": "Sri N. Govinda Rao",
+                "facultyInitials": "NGR"
+              },
+              {
+                "period": 4,
+                "code": "23ME307-FMHM Lab",
+                "subject": "Fluid Mechanics and Hydraulic Machines Lab",
+                "facultyName": "Sri N. Govinda Rao",
+                "facultyInitials": "NGR"
+              }
+            ]
+          }
+        }
+      ],
+      "facultyMapping": [
+        {
+          "initials": "MKP",
+          "name": "Dr. M.K. Prasad"
+        },
+        {
+          "initials": "SRB",
+          "name": "Dr. S. Ravibabu"
+        },
+        {
+          "initials": "NGR",
+          "name": "Sri N. Govinda Rao"
+        },
+        {
+          "initials": "GSD",
+          "name": "Dr. G. Sasidhar"
+        },
+        {
+          "initials": "KSP",
+          "name": "Dr. K. Siva Prasad"
+        },
+        {
+          "initials": "KSR",
+          "name": "Dr. S. Ravibabu/Dr. K. Siva Prasad"
+        },
+        {
+          "initials": "GVSS",
+          "name": "Dr. GVSS Sharma"
+        }
+      ]
+    }
+  }
+]

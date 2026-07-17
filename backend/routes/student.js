@@ -18,7 +18,7 @@ const Campus = require('../models/Campus');
 const getStudentCampusId = async (student) => {
   if (student.activeCampusId) return student.activeCampusId;
   if (student.campusId) return student.campusId;
-  const campus = await Campus.findOne();
+  const campus = await Campus.findOne({ name: 'GMRIT' }) || await Campus.findOne();
   return campus ? campus._id : null;
 };
 

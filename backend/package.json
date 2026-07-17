@@ -10,7 +10,7 @@
     "audit": "npm audit --production"
   },
   "dependencies": {
-    "@google/generative-ai": "0.24.1",
+    "@google/generative-ai": "^0.24.1",
     "axios": "1.17.0",
     "bcryptjs": "3.0.3",
     "cookie-parser": "1.4.7",
@@ -31,4 +31,3 @@
     "nodemon": "3.1.7"
   }
 }
-
