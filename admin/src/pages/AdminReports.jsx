@@ -28,7 +28,9 @@ export default function AdminReports({ admin }) {
       { term: 'Principal Office', count: 76 },
       { term: 'CSE HOD Room', count: 54 }
     ],
-    facultyStatus: []
+    facultyStatus: [],
+    averageAttendance: "87.4",
+    totalQrScansMonth: "1,121"
   });
 
   const API_BASE = import.meta.env.VITE_API_BASE_URL || "/api";
@@ -41,9 +43,19 @@ export default function AdminReports({ admin }) {
       const campusId = campus._id;
       // Load faculty roster to summarize leave status
       const res = await axios.get(`${API_BASE}/campus/${campusId}/faculties`, { headers });
+      
+      // Load analytics summary
+      const analyticsRes = await axios.get(`${API_BASE}/analytics/summary/${campusId}`, { headers });
+      const analyticsData = analyticsRes.data;
+
       setReportsData(prev => ({
         ...prev,
-        facultyStatus: res.data.faculties || []
+        facultyStatus: res.data.faculties || [],
+        attendanceTrend: analyticsData.attendanceTrend && analyticsData.attendanceTrend.length > 0 ? analyticsData.attendanceTrend : prev.attendanceTrend,
+        qrScans: analyticsData.qrScans && analyticsData.qrScans.length > 0 ? analyticsData.qrScans : prev.qrScans,
+        topSearches: analyticsData.topSearches && analyticsData.topSearches.length > 0 ? analyticsData.topSearches.map(ts => ({ term: ts._id || 'Unknown', count: ts.count })) : prev.topSearches,
+        averageAttendance: analyticsData.averageAttendance || "0",
+        totalQrScansMonth: analyticsData.qrCount || 0,
       }));
     } catch (e) {
       toast.error('Failed to compile campus metrics.');
@@ -86,13 +98,13 @@ export default function AdminReports({ admin }) {
         </div>
         <div className="stat-card">
           <div>
-            <div className="stat-value">87.4%</div>
+            <div className="stat-value">{reportsData.averageAttendance}%</div>
             <div className="stat-label">Average Attendance</div>
           </div>
         </div>
         <div className="stat-card">
           <div>
-            <div className="stat-value">1,121</div>
+            <div className="stat-value">{reportsData.totalQrScansMonth}</div>
             <div className="stat-label">Total QR Scans (Month)</div>
           </div>
         </div>
