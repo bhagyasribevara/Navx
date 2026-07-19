@@ -64,6 +64,7 @@ router.post('/register', validateBody(registerSchema), async (req, res, next) =>
       password: hashedPassword,
       collegeEmail,
       collegeId,
+      rollNumber: isStudent ? (collegeId || undefined) : undefined,
       role: isStudent ? 'student' : 'guest',
       department: isStudent ? (department || 'CSE') : undefined,
       semester: isStudent ? (semester || '3') : undefined,
@@ -78,7 +79,20 @@ router.post('/register', validateBody(registerSchema), async (req, res, next) =>
     res.status(201).json({
       success: true,
       token,
-      user: { id: newUser._id, username: newUser.username, fullName: newUser.fullName, mobileNumber: newUser.mobileNumber, profileImage: newUser.profileImage }
+      user: {
+        id: newUser._id,
+        username: newUser.username,
+        fullName: newUser.fullName,
+        mobileNumber: newUser.mobileNumber,
+        profileImage: newUser.profileImage,
+        role: newUser.role,
+        department: newUser.department,
+        semester: newUser.semester,
+        section: newUser.section,
+        collegeEmail: newUser.collegeEmail,
+        collegeId: newUser.collegeId,
+        rollNumber: newUser.rollNumber
+      }
     });
   } catch (error) {
     next(error);
@@ -135,7 +149,20 @@ router.post('/login', validateBody(loginSchema), async (req, res, next) => {
     res.json({
       success: true,
       token,
-      user: { id: user._id, username: user.username, fullName: user.fullName, mobileNumber: user.mobileNumber, profileImage: user.profileImage }
+      user: {
+        id: user._id,
+        username: user.username,
+        fullName: user.fullName,
+        mobileNumber: user.mobileNumber,
+        profileImage: user.profileImage,
+        role: user.role,
+        department: user.department,
+        semester: user.semester,
+        section: user.section,
+        collegeEmail: user.collegeEmail,
+        collegeId: user.collegeId,
+        rollNumber: user.rollNumber
+      }
     });
   } catch (error) {
     next(error);

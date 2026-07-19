@@ -45,6 +45,9 @@ export function GeofenceProvider({ children }) {
   const [activeCampus, setActiveCampus] = useState(null);
   const [sessionRevoked, setSessionRevoked] = useState(false);
   const [revokedCampusName, setRevokedCampusName] = useState(null);
+  const [currentFloorId, setCurrentFloorId] = useState(null);
+  const [detectedFloorIndex, setDetectedFloorIndex] = useState(0);
+  const baseAltitudeRef = useRef(null);
   const watcherRef = useRef(null);
 
   const { user, token, logout, loading: authLoading } = require("./AuthContext").useAuth();
@@ -181,6 +184,20 @@ export function GeofenceProvider({ children }) {
               if (watcherRef.current) {
                 watcherRef.current.remove();
                 watcherRef.current = null;
+              }
+            } else {
+              // User is within campus boundary - auto detect floor based on altitude
+              if (loc.coords.altitude !== null && loc.coords.altitude !== undefined) {
+                if (baseAltitudeRef.current === null) {
+                  // Assume the first altitude reading is the ground floor
+                  baseAltitudeRef.current = loc.coords.altitude;
+                  setDetectedFloorIndex(0);
+                } else {
+                  const altDiff = loc.coords.altitude - baseAltitudeRef.current;
+                  // Assume ~3.5 meters per floor
+                  const floorIndex = Math.max(0, Math.round(altDiff / 3.5));
+                  setDetectedFloorIndex(floorIndex);
+                }
               }
             }
           }
@@ -347,6 +364,9 @@ export function GeofenceProvider({ children }) {
         activeCampusId: activeCampus?.id || null,
         sessionRevoked,
         revokedCampusName,
+        currentFloorId,
+        setCurrentFloorId,
+        detectedFloorIndex,
         activateCampus,
         deactivateCampus,
         clearRevocation,

@@ -188,8 +188,8 @@ export default function SettingsScreen({ navigation }) {
             )}
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={s.profileName}>{user?.fullName || user?.username || "NavX User"}</Text>
-            <Text style={s.profileSub}>{user?.mobileNumber || "No mobile number linked"}</Text>
+            <Text style={s.profileName}>{user?.fullName || (user?.username?.startsWith('stu_') ? 'NavX Student' : user?.username) || "NavX User"}</Text>
+            <Text style={s.profileSub}>{user?.collegeEmail || user?.mobileNumber || "No contact linked"}</Text>
           </View>
           <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: colors.primary + "15", alignItems: 'center', justifyContent: 'center' }}>
             <Ionicons name="pencil" size={16} color={colors.primary} />

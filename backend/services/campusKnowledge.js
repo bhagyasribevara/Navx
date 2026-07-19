@@ -14,6 +14,8 @@ const NavNode = require('../models/NavNode');
 const LiveMeetSession = require('../models/LiveMeetSession');
 const QRCode = require('../models/QRCode');
 const Beacon = require('../models/Beacon');
+const Faculty = require('../models/Faculty');
+const Timetable = require('../models/Timetable');
 const { ROOM_EMOJI } = require('./aiConstants');
 
 // ─── Cache for campus context (avoid hitting DB on every message) ────────
@@ -35,13 +37,19 @@ async function getCampusContext(campusId) {
   }
 
   try {
-    const [campus, blocks, floors, rooms, landmarks, announcements] = await Promise.all([
+    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const today = days[new Date().getDay()];
+    const queryDay = (today === 'Sunday' || today === 'Saturday') ? 'Monday' : today;
+
+    const [campus, blocks, floors, rooms, landmarks, announcements, faculties, todayTimetable] = await Promise.all([
       Campus.findById(campusId).lean(),
       Block.find({ campusId, isActive: true }).lean(),
       Floor.find({ campusId, isActive: true }).lean(),
       Room.find({ campusId, isActive: true }).lean(),
       Landmark.find({ campusId, isActive: true }).lean(),
       Announcement.find({ campusId, isActive: true }).sort({ createdAt: -1 }).limit(10).lean(),
+      Faculty.find({ campusId, status: { $ne: 'disabled' } }).lean(),
+      Timetable.find({ campusId, dayOfWeek: queryDay }).lean(),
     ]);
 
     if (!campus) return null;
@@ -94,6 +102,24 @@ async function getCampusContext(campusId) {
         id: a._id.toString(),
         data: a.announcementData,
         createdAt: a.createdAt,
+      })),
+      faculties: faculties.map(f => ({
+        id: f._id.toString(),
+        name: f.name,
+        department: f.department,
+        facultyRoom: f.facultyRoom,
+        leaveStatus: f.leaveStatus,
+        officeHours: f.officeHours,
+        subjects: f.subjects
+      })),
+      todayTimetable: todayTimetable.map(t => ({
+        facultyId: t.facultyId.toString(),
+        facultyName: t.facultyName,
+        subject: t.subject,
+        roomName: t.roomName,
+        startTime: t.startTime,
+        endTime: t.endTime,
+        period: t.period
       })),
       stats: {
         totalBlocks: blocks.length,
@@ -204,6 +230,20 @@ async function buildContextString(campusId) {
         text += `  📌 ${data.name}`;
         if (data.description) text += `: ${data.description}`;
         text += '\n';
+      }
+    }
+  }
+
+  // Faculty Directory & Schedule
+  if (ctx.faculties && ctx.faculties.length > 0) {
+    text += `\nFACULTY DIRECTORY & TODAY'S CLASSES:\n`;
+    for (const fac of ctx.faculties) {
+      text += `  • ${fac.name} (${fac.department}) | Room: ${fac.facultyRoom} | Status: ${fac.leaveStatus} | Office Hours: ${fac.officeHours}\n`;
+      const facClasses = ctx.todayTimetable.filter(t => t.facultyId === fac.id || (t.facultyName && t.facultyName.includes(fac.name)));
+      if (facClasses.length > 0) {
+        text += `    Classes today: ${facClasses.sort((a,b)=>a.period-b.period).map(c => `P${c.period} ${c.subject} in ${c.roomName} (${c.startTime}-${c.endTime})`).join(', ')}\n`;
+      } else {
+        text += `    Classes today: No classes scheduled.\n`;
       }
     }
   }

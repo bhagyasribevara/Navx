@@ -77,7 +77,15 @@ router.put('/:id', authenticateJWT, enforceCampusIsolation, async (req, res, nex
 router.delete('/:id', authenticateJWT, enforceCampusIsolation, async (req, res, next) => {
   try {
     await NavNode.findByIdAndUpdate(req.params.id, { isActive: false });
-    res.json({ message: 'Node deleted' });
+    
+    // Also delete any paths connected to this node
+    const NavPath = require('../models/NavPath');
+    await NavPath.updateMany(
+      { $or: [{ nodeA: req.params.id }, { nodeB: req.params.id }] },
+      { isActive: false }
+    );
+
+    res.json({ message: 'Node and connected paths deleted' });
   } catch (err) {
     next(err);
   }

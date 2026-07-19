@@ -393,7 +393,7 @@ export default function AIChatOverlay() {
           onPress={openChat}
           activeOpacity={0.8}
         >
-          <Ionicons name="chatbubbles" size={26} color="#fff" />
+          <Ionicons name="compass" size={28} color="#fff" />
         </TouchableOpacity>
       )}
 

@@ -167,7 +167,13 @@ export default function AcademicsScreen({ navigation }) {
   const isDateToday = (date) => date.toDateString() === today.toDateString();
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.bg }]}>
+    <View style={[styles.container, { backgroundColor: '#ffffff' }]}>
+      <LinearGradient
+        colors={['rgba(139, 92, 246, 0.22)', 'rgba(99, 102, 241, 0.10)', 'rgba(255, 255, 255, 0)']}
+        style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 380 }}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+      />
       {/* Header */}
       <LinearGradient
         colors={[colors.primary, colors.primaryDark || '#6d28d9']}
@@ -257,8 +263,20 @@ export default function AcademicsScreen({ navigation }) {
         {/* TIMETABLE TAB */}
         {activeTab === "timetable" && (
           <View>
-            {dayClasses.length > 0 ? (
-              dayClasses.map((slot, idx) => {
+            {dayClasses.length > 0 || (selectedDate.getDay() !== 0 && selectedDate.getDay() !== 6) ? (
+              Array.from({ length: 7 }, (_, i) => {
+                const period = i + 1;
+                const slot = dayClasses.find(c => c.period === period);
+                if (!slot) {
+                  return (
+                    <View key={`free-${period}`} style={[styles.classCard, { backgroundColor: colors.card, padding: 16, borderColor: colors.border, borderWidth: 1, flexDirection: 'row', alignItems: 'center' }]}>
+                      <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: colors.border, alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+                        <Text style={{ color: colors.textMuted, fontSize: 12, fontWeight: '800' }}>P{period}</Text>
+                      </View>
+                      <Text style={{ color: colors.textMuted, fontSize: 15, fontWeight: '600' }}>Free Period</Text>
+                    </View>
+                  );
+                }
                 const classType = getClassType(slot.subject);
                 const status = getClassStatus(slot);
                 const isActive = status === 'active';
@@ -351,10 +369,7 @@ export default function AcademicsScreen({ navigation }) {
               <View style={styles.emptyState}>
                 <Ionicons name="calendar-outline" size={48} color={colors.textMuted} />
                 <Text style={[styles.emptyText, { color: colors.textSec }]}>
-                  {selectedDate.getDay() === 0 || selectedDate.getDay() === 6 
-                    ? "It's the weekend! No classes today." 
-                    : `No classes scheduled for ${selectedDayName}.`
-                  }
+                  It's the weekend! No classes today.
                 </Text>
               </View>
             )}

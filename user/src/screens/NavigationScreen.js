@@ -95,19 +95,21 @@ async function fetchStreetRoute(lat1, lon1, lat2, lon2) {
   return null;
 }
 
-function buildNavMapHTML(geoJSONData, pathPoints, initialPos, targetRoom, mapboxUrl) {
+function buildNavMapHTML(geoJSONData, pathPoints, initialPos, targetRoom, mapboxUrl, floors) {
   const center = initialPos ? [initialPos.x, initialPos.y] : (pathPoints?.length ? [pathPoints[0].x, pathPoints[0].y] : [18.4665, 83.6629]);
   
   const destX = targetRoom?.shape?.points?.[0]?.x || targetRoom?.shape?.x;
-  const destY = targetRoom?.shape?.points?.[0]?.y || targetRoom?.shape?.y;
-  const destDot = (destX && destY) ? `L.circleMarker([${destX},${destY}],{radius:9,color:'#fff',weight:2,fillColor:'#3b82f6',fillOpacity:1}).addTo(map);` : '';
+  const destY = targetRoom?.shape?.points?.[0]?.y || targetRoom?.shape?.y;  const pathCoordinates = pathPoints ? pathPoints.map(p => {
+    let level = p.floorLevel;
+    if (level === undefined && floors) {
+      const f = floors.find(fl => fl._id.toString() === (p.floorId?._id || p.floorId)?.toString());
+      if (f && f.level !== undefined) level = f.level;
+    }
+    // Base height for each floor is 3.5m. We add 0.5 to lift it slightly off the ground.
+    const h = (level || 0) * 3.5 + 0.5;
+    return `[${p.y}, ${p.x}, ${h}]`;
+  }).join(',') : '';
 
-  const pathStr = pathPoints ? pathPoints.map(p => `[${p.x},${p.y}]`).join(',') : '';
-  const routeLine = pathStr ? `
-    L.polyline([${pathStr}],{color:'#c084fc',weight:18,opacity:0.25,lineCap:'round',lineJoin:'round'}).addTo(map);
-    L.polyline([${pathStr}],{color:'#8b5cf6',weight:6,opacity:1,lineCap:'round',lineJoin:'round'}).addTo(map);
-  ` : '';
-  
   const targetFloorId = targetRoom?.floorId
     ? (typeof targetRoom.floorId === 'object' ? targetRoom.floorId._id : targetRoom.floorId)
     : '';
@@ -115,133 +117,206 @@ function buildNavMapHTML(geoJSONData, pathPoints, initialPos, targetRoom, mapbox
   return `<!DOCTYPE html>
 <html><head>
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<link href="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css" rel="stylesheet">
+<script src="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js"></script>
 <style>
   body{margin:0;padding:0;background-color:#0a0e17;}
   #map{width:100%;height:100vh;background:#0a0e17;}
-  .leaflet-container { background: #0a0e17 !important; }
-  .layer-label {
-    background: rgba(10, 14, 23, 0.8); border: 1px solid rgba(255,255,255,0.2);
-    color: white; font-weight: bold; padding: 2px 6px; border-radius: 4px;
-    font-size: 11px; box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+  .mapboxgl-ctrl-logo { display: none !important; }
+  .mapboxgl-popup { max-width: 200px; }
+  .mapboxgl-popup-content { background: rgba(10, 14, 23, 0.8); color: white; padding: 4px 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.2); font-size: 11px; font-weight: bold; }
+  .mapboxgl-popup-tip { border-top-color: rgba(10, 14, 23, 0.8); }
+  .room-label { color: #1e293b; font-weight: bold; font-size: 10px; text-shadow: 0 1px 2px rgba(255,255,255,0.8); }
+  .target-room-label { color: #ffffff; font-weight: bold; font-size: 11px; text-shadow: 0 1px 2px rgba(0,0,0,0.8); }
+  .user-marker {
+    position: relative; width: 70px; height: 70px; display: flex; align-items: center; justify-content: center;
   }
-  .room-label {
-    background: transparent; border: none; box-shadow: none;
-    color: #1e293b; font-weight: bold; font-size: 10px;
-    text-shadow: 0 1px 2px rgba(255,255,255,0.8);
+  @keyframes pulseGlow {
+    0% { transform: scale(0.85); opacity: 0.8; }
+    50% { transform: scale(1.4); opacity: 0.3; }
+    100% { transform: scale(0.85); opacity: 0.8; }
   }
-  .target-room-label {
-    background: transparent; border: none; box-shadow: none;
-    color: #ffffff; font-weight: bold; font-size: 11px;
-    text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+  .pulse {
+    position: absolute; width: 100%; height: 100%; background: radial-gradient(circle, rgba(139, 92, 246, 0.45) 0%, rgba(139, 92, 246, 0) 65%); border-radius: 50%; animation: pulseGlow 2.5s infinite;
+  }
+  .puck {
+    position: relative; width: 30px; height: 30px; background: linear-gradient(135deg, #A855F7, #6D28D9); border-radius: 50%; box-shadow: 0 6px 16px rgba(109, 40, 217, 0.6); display: flex; align-items: center; justify-content: center; border: 2px solid rgba(255,255,255,0.4); transition: transform 0.2s ease-out;
+  }
+  .dest-marker {
+    width: 18px; height: 18px; background-color: #3b82f6; border: 3px solid white; border-radius: 50%; box-shadow: 0 2px 4px rgba(0,0,0,0.4);
   }
 </style>
 </head><body><div id="map"></div>
 <script>
-var map=L.map('map',{zoomControl:false}).setView([${center[0]},${center[1]}], 19);
-L.tileLayer('${mapboxUrl}',{maxZoom:22}).addTo(map);
+const tokenMatch = '${mapboxUrl}'.match(/access_token=([^&]+)/);
+mapboxgl.accessToken = tokenMatch ? tokenMatch[1] : 'YOUR_TOKEN_HERE';
 
-var geojsonLayer = null;
-function styleFeature(feature) {
-  var baseStyle = { weight: 2, fillOpacity: 0.3 };
-  if (feature.properties.type === 'block') {
-    return Object.assign(baseStyle, { color: feature.properties.color || '#64748b', fillOpacity: 0.1 });
-  } else if (feature.properties.type === 'room') {
-    var isTarget = feature.properties.id === '${targetRoom?._id || ''}';
-    return Object.assign(baseStyle, { color: isTarget ? '#3b82f6' : '#64748b', fillColor: isTarget ? '#3b82f6' : '#ffffff', weight: isTarget ? 3 : 1, fillOpacity: isTarget ? 0.6 : 1 });
-  } else if (feature.properties.type === 'path') {
-    return { color: '#c084fc', weight: 4, opacity: 0.6, dashArray: '5, 5' };
-  } else if (feature.properties.type === 'map_layer') {
-    return Object.assign(baseStyle, { 
-      color: feature.properties.color || '#ef4444', 
-      fillColor: feature.properties.color || '#ef4444',
-      fillOpacity: 0.4, weight: 2
-    });
-  }
-  return baseStyle;
-}
+var map = new mapboxgl.Map({
+  container: 'map',
+  style: 'mapbox://styles/mapbox/dark-v11',
+  center: [${center[1]}, ${center[0]}], // [lng, lat]
+  zoom: 19,
+  pitch: 60,
+  bearing: -17.6,
+  antialias: true,
+  attributionControl: false
+});
 
-window.updateGeoJSON = function(data, floorId) {
-  if (geojsonLayer) { map.removeLayer(geojsonLayer); }
-  geojsonLayer = L.geoJSON(data, {
-    filter: function(f) {
-      if (f.properties.type === 'path' || f.properties.type === 'node') return false;
-      
-      // Hide parking areas unless it's the target destination
-      if (f.properties.category === 'parking' || (f.properties.name && f.properties.name.toLowerCase().includes('parking'))) {
-        if (f.properties.id !== '${targetRoom?._id || ''}') return false;
-      }
+map.on('load', () => {
+  // 3D Buildings from Mapbox Streets
+  map.addLayer({
+    'id': '3d-buildings',
+    'source': 'composite',
+    'source-layer': 'building',
+    'filter': ['==', 'extrude', 'true'],
+    'type': 'fill-extrusion',
+    'minzoom': 15,
+    'paint': {
+      'fill-extrusion-color': '#1f2937',
+      'fill-extrusion-height': ['get', 'height'],
+      'fill-extrusion-base': ['get', 'min_height'],
+      'fill-extrusion-opacity': 0.6
+    }
+  });
 
-      if (f.properties.type === 'room' && f.properties.floorId) {
-        if (floorId && f.properties.floorId !== floorId) return false;
-      }
-      return true;
-    },
-    style: styleFeature,
-    onEachFeature: function(f, l) {
-      if (f.properties && f.properties.name) {
-        if (f.properties.type === 'map_layer') {
-          l.bindTooltip(f.properties.name, { permanent: true, direction: 'center', className: 'layer-label' });
-        } else if (f.properties.type === 'room') {
-          var isTarget = f.properties.id === '${targetRoom?._id || ''}';
-          l.bindTooltip(f.properties.name, { permanent: true, direction: 'center', className: isTarget ? 'target-room-label' : 'room-label' });
+  ${geoJSONData ? `window.updateGeoJSON(${JSON.stringify(geoJSONData)}, '${targetFloorId || ''}');` : ''}
+
+  // Draw Route Path
+  ${pathCoordinates ? `
+    map.addSource('route', {
+      'type': 'geojson',
+      'data': {
+        'type': 'Feature',
+        'properties': {},
+        'geometry': {
+          'type': 'LineString',
+          'coordinates': [${pathCoordinates}]
         }
       }
+    });
+    map.addLayer({
+      'id': 'route-bg',
+      'type': 'line',
+      'source': 'route',
+      'layout': { 'line-join': 'round', 'line-cap': 'round' },
+      'paint': { 'line-color': '#c084fc', 'line-width': 18, 'line-opacity': 0.25 }
+    });
+    map.addLayer({
+      'id': 'route-line',
+      'type': 'line',
+      'source': 'route',
+      'layout': { 'line-join': 'round', 'line-cap': 'round' },
+      'paint': { 'line-color': '#8b5cf6', 'line-width': 6 }
+    });
+  ` : ''}
+});
+
+window.updateGeoJSON = function(data, floorId) {
+  if (!map.isStyleLoaded()) return;
+
+  const features = data.features.filter(f => {
+    if (f.properties.type === 'path' || f.properties.type === 'node') return false;
+    if (f.properties.category === 'parking' || (f.properties.name && f.properties.name.toLowerCase().includes('parking'))) {
+      if (f.properties.id !== '${targetRoom?._id || ''}') return false;
     }
-  }).addTo(map);
+    if (f.properties.type === 'room' && f.properties.floorId) {
+      if (floorId && f.properties.floorId !== floorId) return false;
+    }
+    return true;
+  });
+  data.features = features;
+
+  if (map.getSource('campus-data')) {
+    map.getSource('campus-data').setData(data);
+  } else {
+    map.addSource('campus-data', {
+      type: 'geojson',
+      data: data
+    });
+
+    map.addLayer({
+      'id': 'campus-polygons',
+      'type': 'fill-extrusion',
+      'source': 'campus-data',
+      'paint': {
+        'fill-extrusion-color': [
+          'case',
+          ['==', ['get', 'id'], '${targetRoom?._id || ''}'], '#3b82f6',
+          ['coalesce', ['get', 'color'], '#64748b']
+        ],
+        'fill-extrusion-height': [
+          'case',
+          ['==', ['get', 'type'], 'block'], 0.5,
+          ['==', ['get', 'type'], 'room'], 3,
+          2
+        ],
+        'fill-extrusion-base': 0,
+        'fill-extrusion-opacity': [
+          'case',
+          ['==', ['get', 'id'], '${targetRoom?._id || ''}'], 0.8,
+          0.4
+        ]
+      }
+    });
+
+    map.addLayer({
+      'id': 'campus-labels',
+      'type': 'symbol',
+      'source': 'campus-data',
+      'layout': {
+        'text-field': ['get', 'name'],
+        'text-size': 12,
+        'text-anchor': 'top',
+        'text-offset': [0, 1]
+      },
+      'paint': {
+        'text-color': '#ffffff',
+        'text-halo-color': 'rgba(10, 14, 23, 0.8)',
+        'text-halo-width': 2
+      }
+    });
+  }
 };
 
-// Initialize MapLayers
-${geoJSONData ? `window.updateGeoJSON(${JSON.stringify(geoJSONData)}, '${targetFloorId || ''}');` : ''}
+const userIconEl = document.createElement('div');
+userIconEl.className = 'user-marker';
+userIconEl.innerHTML = '<div class="pulse"></div><div id="user-puck-inner" class="puck"><svg width="16" height="16" viewBox="0 0 24 24" fill="white" style="transform: translateY(-1px);"><path d="M12 2L4 20l8-4 8 4z"/></svg></div>';
 
-${routeLine}
-${destDot}
-
-function buildUserIconHtml(hdg) {
-  var r = (hdg !== undefined && hdg !== null) ? hdg : 0;
-  return '<style>'
-    + '@keyframes pulseGlow { 0% { transform: scale(0.85); opacity: 0.8; } 50% { transform: scale(1.4); opacity: 0.3; } 100% { transform: scale(0.85); opacity: 0.8; } }'
-    + '</style>'
-    + '<div style="position:relative; width:70px; height:70px; display:flex; align-items:center; justify-content:center;">'
-    + '<div style="position:absolute; width:100%; height:100%; background:radial-gradient(circle, rgba(139, 92, 246, 0.45) 0%, rgba(139, 92, 246, 0) 65%); border-radius:50%; animation: pulseGlow 2.5s infinite;"></div>'
-    + '<div id="user-puck-inner" style="position:relative; width:30px; height:30px; background:linear-gradient(135deg, #A855F7, #6D28D9); border-radius:50%; box-shadow: 0 6px 16px rgba(109, 40, 217, 0.6); display:flex; align-items:center; justify-content:center; border: 2px solid rgba(255,255,255,0.4); transform: rotate(' + r + 'deg); transition: transform 0.3s ease-out;">'
-    + '<svg width="16" height="16" viewBox="0 0 24 24" fill="white" style="transform: translateY(-1px);"><path d="M12 2L4 20l8-4 8 4z"/></svg>'
-    + '</div>'
-    + '</div>';
-}
-var customUserIcon = L.divIcon({ className: '', html: buildUserIconHtml(0), iconSize: [70, 70], iconAnchor: [35, 35] });
-
-window._lastHeading = 0;
 window.userMarker = null;
-${initialPos ? `window.userMarker = L.marker([${initialPos.x},${initialPos.y}], {icon: customUserIcon, zIndexOffset: 1000}).addTo(map);` : ''}
+
+${initialPos ? `
+  window.userMarker = new mapboxgl.Marker({ element: userIconEl, pitchAlignment: 'map' })
+    .setLngLat([${initialPos.y}, ${initialPos.x}])
+    .addTo(map);
+` : ''}
+
+// Destination marker
+${destX && destY ? `
+  const destEl = document.createElement('div');
+  destEl.className = 'dest-marker';
+  new mapboxgl.Marker({ element: destEl }).setLngLat([${destY}, ${destX}]).addTo(map);
+` : ''}
 
 window.updateUserPos = function(lat, lng, heading) {
   if (!window.userMarker) {
-    var icon = L.divIcon({ className: '', html: buildUserIconHtml(heading || 0), iconSize: [70, 70], iconAnchor: [35, 35] });
-    window.userMarker = L.marker([lat, lng], {icon: icon, zIndexOffset: 1000}).addTo(map);
-    window._lastHeading = heading || 0;
+    window.userMarker = new mapboxgl.Marker({ element: userIconEl, pitchAlignment: 'map' })
+      .setLngLat([lng, lat])
+      .addTo(map);
   } else {
-    window.userMarker.setLatLng([lat, lng]);
+    window.userMarker.setLngLat([lng, lat]);
   }
   if (heading !== undefined && heading !== null) {
     window.updateUserHeading(heading);
   }
-  map.panTo([lat, lng], {animate: false});
+  map.flyTo({ center: [lng, lat], animate: false });
 };
 
 window.updateUserHeading = function(heading) {
   if (heading !== undefined && heading !== null) {
-    if (window.userMarker) {
-      var el = window.userMarker.getElement();
-      if (el) {
-        var puck = el.querySelector('#user-puck-inner');
-        if (puck) {
-          puck.style.transform = 'rotate(' + heading + 'deg)';
-        }
-      }
+    const puck = document.getElementById('user-puck-inner');
+    if (puck) {
+      puck.style.transform = 'rotate(' + heading + 'deg)';
     }
-    window._lastHeading = heading;
   }
 };
 </script></body></html>`;
@@ -307,9 +382,11 @@ export default function NavigationScreen({ navigation, route }) {
   // Keep routeData in a stable ref for startNavigation to avoid stale state
   const routeDataStableRef = useRef(routeData);
   const mapboxUrl = getCachedConfigValue("EXPO_PUBLIC_MAPBOX_URL", "https://api.mapbox.com/styles/v1/mapbox/streets-v11/tiles/256/{z}/{x}/{y}@2x?access_token=pk.eyJ1IjoidmVua2F0YS1rcmlzaG5hIiwiYSI6ImNtZnYycHN0bTAzY28yanFxeG4wOXVsenAifQ.w1yd6XuvWvarYj33rP1LkA");
+  
   const mapHtml = React.useMemo(() => {
-    return buildNavMapHTML(geoJSONData, routeData?.path, initialUserPosRef.current, targetRoom, mapboxUrl);
-  }, [geoJSONData, routeData, targetRoom, mapboxUrl]);
+    if (!geoJSONData) return "";
+    return buildNavMapHTML(geoJSONData, routeData?.path, initialUserPosRef.current, targetRoom, mapboxUrl, mapData?.floors);
+  }, [geoJSONData, routeData, targetRoom, mapboxUrl, mapData?.floors]);
 
   // Inject updated GeoJSON when it changes without reloading WebView
   useEffect(() => {

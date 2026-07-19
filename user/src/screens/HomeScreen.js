@@ -646,30 +646,17 @@ export default function HomeScreen({ navigation }) {
                     <Text style={{ fontSize: 22 }}>🎓</Text>
                   </View>
                   <View>
-                    <Text style={{ color: '#fff', fontSize: 18, fontWeight: '800' }}>{studentData.student?.fullName || studentData.student?.username || user?.fullName || user?.username}</Text>
+                    <Text style={{ color: '#fff', fontSize: 18, fontWeight: '800' }}>{user?.fullName || studentData.student?.fullName || user?.username}</Text>
                     <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, marginTop: 2 }}>
-                      Roll No: {studentData.student?.rollNumber} · {studentData.student?.department} Sem {studentData.student?.semester}
+                      Roll No: {user?.collegeId || user?.rollNumber || studentData.student?.rollNumber} · {user?.department || studentData.student?.department} Sem {user?.semester || studentData.student?.semester}
                     </Text>
                   </View>
                 </View>
-                <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.2)' }}>
-                  <Text style={{ color: '#fff', fontSize: 10, fontWeight: '800' }}>{studentData.student?.academicStatus || 'Good Standing'}</Text>
-                </View>
-              </View>
-
-              <View style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.15)', marginVertical: 14 }} />
-
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                <View>
-                  <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11, fontWeight: '600' }}>OVERALL ATTENDANCE</Text>
-                  <Text style={{ color: '#10b981', fontSize: 18, fontWeight: '800', marginTop: 4 }}>{studentData.student?.attendancePercent}%</Text>
-                </View>
-                <View>
-                  <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11, fontWeight: '600' }}>FEE STATUS</Text>
-                  <Text style={{ color: studentData.student?.feeStatus?.includes('Pending') ? '#ef4444' : '#10b981', fontSize: 18, fontWeight: '800', marginTop: 4 }}>
-                    {studentData.student?.feeStatus || 'Paid'}
-                  </Text>
-                </View>
+                {studentData.student?.academicStatus && (
+                  <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.2)' }}>
+                    <Text style={{ color: '#fff', fontSize: 10, fontWeight: '800' }}>{studentData.student.academicStatus}</Text>
+                  </View>
+                )}
               </View>
             </LinearGradient>
 
@@ -708,62 +695,41 @@ export default function HomeScreen({ navigation }) {
               </View>
             )}
 
-            {/* Today's Timetable Widget */}
-            <View style={{ marginBottom: 16 }}>
-              <Text style={{ color: colors.text, fontSize: 16, fontWeight: '800', marginBottom: 10 }}>Today's Timetable</Text>
-              {studentData.todayTimetable && studentData.todayTimetable.length > 0 ? (
-                studentData.todayTimetable.map((slot, idx) => (
-                  <View
-                    key={slot._id || idx}
-                    style={{
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      backgroundColor: colors.card,
-                      padding: 12,
-                      borderRadius: 14,
-                      borderWidth: 1,
-                      borderColor: colors.border,
-                      marginBottom: 8
-                    }}
-                  >
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1, marginRight: 8 }}>
-                      <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: colors.primary + '15', alignItems: 'center', justifyContent: 'center' }}>
-                        <Text style={{ color: colors.primary, fontSize: 12, fontWeight: '800' }}>P{slot.period}</Text>
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ color: colors.text, fontSize: 14, fontWeight: '700' }}>{slot.subject}</Text>
-                        <Text style={{ color: colors.textSec, fontSize: 11, marginTop: 2 }}>
-                          📍 Room {slot.roomName} · 🕰️ {slot.startTime}
-                        </Text>
-                        {slot.facultyName ? (
-                          <Text style={{ color: colors.textMuted, fontSize: 11, marginTop: 1 }}>
-                            👨‍🏫 Teacher: {slot.facultyName}
-                          </Text>
-                        ) : null}
-                      </View>
-                    </View>
-                    <TouchableOpacity
-                      style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        gap: 4,
-                        backgroundColor: colors.primary,
-                        paddingHorizontal: 12,
-                        paddingVertical: 8,
-                        borderRadius: 10
-                      }}
-                      onPress={() => handleNavigateToRoom(slot.roomName)}
-                    >
-                      <Ionicons name="navigate" size={12} color="#fff" />
-                      <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>Navigate</Text>
-                    </TouchableOpacity>
-                  </View>
-                ))
-              ) : (
-                <Text style={{ color: colors.textSec, fontSize: 13 }}>No classes scheduled today.</Text>
-              )}
-            </View>
+            {/* Today's Timetable Button */}
+            <TouchableOpacity
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                backgroundColor: colors.card,
+                padding: 16,
+                borderRadius: 16,
+                borderWidth: 1,
+                borderColor: colors.border,
+                ...SHADOWS.sm,
+                marginBottom: 16
+              }}
+              onPress={() => navigation.navigate('Academics')}
+              activeOpacity={0.7}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <View style={{ width: 42, height: 42, borderRadius: 14, backgroundColor: colors.primary + '15', alignItems: 'center', justifyContent: 'center' }}>
+                  <Ionicons name="calendar" size={22} color={colors.primary} />
+                </View>
+                <View>
+                  <Text style={{ color: colors.text, fontSize: 15, fontWeight: '800' }}>Today's Timetable</Text>
+                  <Text style={{ color: colors.textSec, fontSize: 12, marginTop: 2 }}>
+                    {studentData.todayTimetable && studentData.todayTimetable.length > 0
+                      ? `${studentData.todayTimetable.length} classes scheduled`
+                      : 'No classes today'}
+                  </Text>
+                </View>
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <Text style={{ color: colors.primary, fontSize: 13, fontWeight: '700' }}>View</Text>
+                <Ionicons name="chevron-forward" size={16} color={colors.primary} />
+              </View>
+            </TouchableOpacity>
 
             {/* Announcements Section */}
             {studentData.announcements && studentData.announcements.length > 0 && (

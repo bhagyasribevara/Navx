@@ -7,6 +7,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { ThemeContext } from "../context/ThemeContext";
 import api from "../api";
 import { SHADOWS } from "../theme/designSystem";
+import { LinearGradient } from 'expo-linear-gradient';
 
 const RAZORPAY_KEY = "rzp_test_RwZJe3KOgTNbo6";
 
@@ -85,7 +86,13 @@ export default function FeesScreen({ navigation }) {
   const paidFees = fees.filter(f => f.status === "Paid");
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.bg }]}>
+    <View style={[styles.container, { backgroundColor: '#ffffff' }]}>
+      <LinearGradient
+        colors={['rgba(139, 92, 246, 0.22)', 'rgba(99, 102, 241, 0.10)', 'rgba(255, 255, 255, 0)']}
+        style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 380 }}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+      />
       {/* Header */}
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>

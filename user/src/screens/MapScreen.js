@@ -20,89 +20,139 @@ function buildCampusMapHTML(geoJSONData, centerCoords, mapboxUrl) {
   return `<!DOCTYPE html>
 <html><head>
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<link href="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css" rel="stylesheet">
+<script src="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js"></script>
 <style>
   body{margin:0;padding:0;background-color:#0a0e17;}
   #map{width:100%;height:100vh;background:#0a0e17;}
-  .leaflet-container { background: #0a0e17 !important; }
-  .layer-label {
-    background: rgba(10, 14, 23, 0.8); border: 1px solid rgba(255,255,255,0.2);
-    color: white; font-weight: bold; padding: 2px 6px; border-radius: 4px;
-    font-size: 11px; box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+  .mapboxgl-ctrl-logo { display: none !important; }
+  .mapboxgl-popup { max-width: 200px; }
+  .mapboxgl-popup-content { background: rgba(10, 14, 23, 0.8); color: white; padding: 4px 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.2); font-size: 11px; font-weight: bold; }
+  .mapboxgl-popup-tip { border-top-color: rgba(10, 14, 23, 0.8); }
+  .user-marker {
+    position: relative; width: 70px; height: 70px; display: flex; align-items: center; justify-content: center;
+  }
+  @keyframes pulseGlow {
+    0% { transform: scale(0.85); opacity: 0.8; }
+    50% { transform: scale(1.4); opacity: 0.3; }
+    100% { transform: scale(0.85); opacity: 0.8; }
+  }
+  .pulse {
+    position: absolute; width: 100%; height: 100%; background: radial-gradient(circle, rgba(139, 92, 246, 0.45) 0%, rgba(139, 92, 246, 0) 65%); border-radius: 50%; animation: pulseGlow 2.5s infinite;
+  }
+  .puck {
+    position: relative; width: 30px; height: 30px; background: linear-gradient(135deg, #A855F7, #6D28D9); border-radius: 50%; box-shadow: 0 6px 16px rgba(109, 40, 217, 0.6); display: flex; align-items: center; justify-content: center; border: 2px solid rgba(255,255,255,0.4); transition: transform 0.2s ease-out;
   }
 </style>
 </head><body><div id="map"></div>
 <script>
-var map=L.map('map',{zoomControl:false}).setView([${center[0]},${center[1]}], 18);
-L.tileLayer('${mapboxUrl}',{maxZoom:22}).addTo(map);
+// Extract mapbox token from the url
+const tokenMatch = '${mapboxUrl}'.match(/access_token=([^&]+)/);
+mapboxgl.accessToken = tokenMatch ? tokenMatch[1] : 'YOUR_TOKEN_HERE';
 
-var geojsonLayer = null;
-function styleFeature(feature) {
-  var baseStyle = { weight: 2, fillOpacity: 0.3 };
-  if (feature.properties.type === 'block') {
-    return Object.assign(baseStyle, { color: feature.properties.color || '#64748b', fillOpacity: 0.15 });
-  } else if (feature.properties.type === 'room') {
-    return Object.assign(baseStyle, { color: '#3b82f6', weight: 1, fillOpacity: 0.2 });
-  } else if (feature.properties.type === 'path') {
-    return { color: '#c084fc', weight: 4, opacity: 0.6, dashArray: '5, 5' };
-  } else if (feature.properties.type === 'map_layer') {
-    return Object.assign(baseStyle, { 
-      color: feature.properties.color || '#ef4444', 
-      fillColor: feature.properties.color || '#ef4444',
-      fillOpacity: 0.4, weight: 2
-    });
-  }
-  return baseStyle;
-}
+var map = new mapboxgl.Map({
+  container: 'map',
+  style: 'mapbox://styles/mapbox/dark-v11', // Beautiful dark mapbox style
+  center: [${center[1]}, ${center[0]}], // [lng, lat]
+  zoom: 17,
+  pitch: 60, // 3D tilt
+  bearing: -17.6, // Rotation
+  antialias: true,
+  attributionControl: false
+});
+
+map.on('load', () => {
+  // Add 3D buildings layer from Mapbox Streets
+  map.addLayer({
+    'id': '3d-buildings',
+    'source': 'composite',
+    'source-layer': 'building',
+    'filter': ['==', 'extrude', 'true'],
+    'type': 'fill-extrusion',
+    'minzoom': 15,
+    'paint': {
+      'fill-extrusion-color': '#1f2937',
+      'fill-extrusion-height': ['get', 'height'],
+      'fill-extrusion-base': ['get', 'min_height'],
+      'fill-extrusion-opacity': 0.6
+    }
+  });
+
+  ${geoJSONData ? `window.updateGeoJSON(${JSON.stringify(geoJSONData)}, '${centerCoords?.floorId || ''}');` : ''}
+});
 
 window.updateGeoJSON = function(data, floorId) {
-  if (geojsonLayer) { map.removeLayer(geojsonLayer); }
-  geojsonLayer = L.geoJSON(data, {
-    filter: function(f) {
-      if (f.properties.type === 'path' || f.properties.type === 'node' || f.properties.type === 'block' || f.properties.type === 'room') return false;
-      
-      // Hide parking areas by default
-      if (f.properties.category === 'parking' || (f.properties.name && f.properties.name.toLowerCase().includes('parking'))) {
-        return false;
+  if (!map.isStyleLoaded()) return;
+
+  // Filter features to show blocks and map layers
+  const features = data.features.filter(f => {
+    // Hide paths, nodes, rooms
+    if (f.properties.type === 'path' || f.properties.type === 'node' || f.properties.type === 'room') return false;
+    // Hide parking areas by default
+    if (f.properties.category === 'parking' || (f.properties.name && f.properties.name.toLowerCase().includes('parking'))) return false;
+    return true;
+  });
+  data.features = features;
+
+  if (map.getSource('campus-data')) {
+    map.getSource('campus-data').setData(data);
+  } else {
+    map.addSource('campus-data', {
+      type: 'geojson',
+      data: data
+    });
+
+    // 3D Extrusion layer for campus blocks
+    map.addLayer({
+      'id': 'campus-polygons',
+      'type': 'fill-extrusion',
+      'source': 'campus-data',
+      'paint': {
+        'fill-extrusion-color': ['coalesce', ['get', 'color'], '#3b82f6'],
+        // Base block height is 15m, else default to 2m
+        'fill-extrusion-height': [
+          'case',
+          ['==', ['get', 'type'], 'block'], 15,
+          2
+        ],
+        'fill-extrusion-base': 0,
+        'fill-extrusion-opacity': 0.8
       }
-      return true;
-    },
-    style: styleFeature,
-    onEachFeature: function(f, l) {
-      if (f.properties && f.properties.name) {
-        l.bindTooltip(f.properties.name, { permanent: f.properties.type === 'map_layer', direction: 'center', className: 'layer-label' });
+    });
+
+    // Labels for blocks
+    map.addLayer({
+      'id': 'campus-labels',
+      'type': 'symbol',
+      'source': 'campus-data',
+      'layout': {
+        'text-field': ['get', 'name'],
+        'text-size': 12,
+        'text-anchor': 'top',
+        'text-offset': [0, 1]
+      },
+      'paint': {
+        'text-color': '#ffffff',
+        'text-halo-color': 'rgba(10, 14, 23, 0.8)',
+        'text-halo-width': 2
       }
-    }
-  }).addTo(map);
+    });
+  }
 };
 
-const userIconHtml = \`
-  <style>
-    @keyframes pulseGlow {
-      0% { transform: scale(0.85); opacity: 0.8; }
-      50% { transform: scale(1.4); opacity: 0.3; }
-      100% { transform: scale(0.85); opacity: 0.8; }
-    }
-  </style>
-  <div style="position:relative; width:70px; height:70px; display:flex; align-items:center; justify-content:center;">
-    <div style="position:absolute; width:100%; height:100%; background:radial-gradient(circle, rgba(139, 92, 246, 0.45) 0%, rgba(139, 92, 246, 0) 65%); border-radius:50%; animation: pulseGlow 2.5s infinite;"></div>
-    <div id="user-puck-inner" style="position:relative; width:30px; height:30px; background:linear-gradient(135deg, #A855F7, #6D28D9); border-radius:50%; box-shadow: 0 6px 16px rgba(109, 40, 217, 0.6); display:flex; align-items:center; justify-content:center; border: 2px solid rgba(255,255,255,0.4); transition: transform 0.2s ease-out;">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="white" style="transform: translateY(-1px);">
-        <path d="M12 2L4 20l8-4 8 4z"/>
-      </svg>
-    </div>
-  </div>
-\`;
-const customUserIcon = L.divIcon({ className: '', html: userIconHtml, iconSize: [70, 70], iconAnchor: [35, 35] });
+const userIconEl = document.createElement('div');
+userIconEl.className = 'user-marker';
+userIconEl.innerHTML = '<div class="pulse"></div><div id="user-puck-inner" class="puck"><svg width="16" height="16" viewBox="0 0 24 24" fill="white" style="transform: translateY(-1px);"><path d="M12 2L4 20l8-4 8 4z"/></svg></div>';
 
 window.userMarker = null;
 
 window.updateUserPos = function(lat, lng, heading) {
   if (!window.userMarker) {
-    window.userMarker = L.marker([lat, lng], {icon: customUserIcon, zIndexOffset: 1000}).addTo(map);
+    window.userMarker = new mapboxgl.Marker({ element: userIconEl, pitchAlignment: 'map' })
+      .setLngLat([lng, lat])
+      .addTo(map);
   } else {
-    window.userMarker.setLatLng([lat, lng]);
+    window.userMarker.setLngLat([lng, lat]);
   }
   if (heading !== undefined && heading !== null) {
     const puck = document.getElementById('user-puck-inner');
@@ -113,11 +163,8 @@ window.updateUserPos = function(lat, lng, heading) {
 };
 
 window.panTo = function(lat, lng) {
-  map.flyTo([lat, lng], 20, { duration: 1.5 });
+  map.flyTo({ center: [lng, lat], zoom: 19, duration: 1500 });
 };
-
-${geoJSONData ? `window.updateGeoJSON(${JSON.stringify(geoJSONData)}, '${centerCoords?.floorId || ''}');` : ''}
-
 </script></body></html>`;
 }
 
@@ -136,7 +183,7 @@ function getHaversineDistance(lat1, lon1, lat2, lon2) {
 
 export default function MapScreen({ navigation, route }) {
   const { colors } = useContext(ThemeContext);
-  const { activeCampusId: contextCampusId } = useGeofence();
+  const { activeCampusId: contextCampusId, detectedFloorIndex, setCurrentFloorId } = useGeofence();
   const [mapData, setMapData] = useState(null);
   const [loading, setLoading] = useState(true);
   
@@ -200,6 +247,26 @@ export default function MapScreen({ navigation, route }) {
       setLoading(false);
     }
   }, [campusId]);
+
+  // Auto-detect floor based on altitude changes
+  useEffect(() => {
+    if (mapData && mapData.floors && mapData.floors.length > 0 && selectedBlock) {
+      const blockFloors = mapData.floors.filter(f => f.blockId === selectedBlock._id);
+      if (blockFloors.length > 0) {
+        const targetFloor = blockFloors[Math.min(detectedFloorIndex, blockFloors.length - 1)];
+        if (selectedFloor?._id !== targetFloor._id) {
+          setSelectedFloor(targetFloor);
+        }
+      }
+    }
+  }, [detectedFloorIndex, mapData, selectedBlock]);
+
+  // Sync selectedFloor with global GeofenceContext for LiveMeet
+  useEffect(() => {
+    if (setCurrentFloorId) {
+      setCurrentFloorId(selectedFloor?._id || null);
+    }
+  }, [selectedFloor, setCurrentFloorId]);
 
   useEffect(() => {
     if (mapData) {

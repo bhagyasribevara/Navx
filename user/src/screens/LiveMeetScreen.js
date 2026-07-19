@@ -34,185 +34,225 @@ function buildLiveMeetMapHTML(centerCoords, mapboxUrl) {
   return `<!DOCTYPE html>
 <html><head>
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<link href="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css" rel="stylesheet">
+<script src="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js"></script>
 <style>
   body{margin:0;padding:0;background-color:#0a0e17;}
   #map{width:100%;height:100vh;background:#0a0e17;}
-  .leaflet-container { background: #0a0e17 !important; }
-  .layer-label {
-    background: rgba(10, 14, 23, 0.8); border: 1px solid rgba(255,255,255,0.2);
-    color: white; font-weight: bold; padding: 2px 6px; border-radius: 4px;
-    font-size: 11px; box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+  .mapboxgl-ctrl-logo { display: none !important; }
+  .mapboxgl-popup { max-width: 200px; }
+  .mapboxgl-popup-content { background: rgba(10, 14, 23, 0.8); color: white; padding: 4px 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.2); font-size: 11px; font-weight: bold; }
+  .mapboxgl-popup-tip { border-top-color: rgba(10, 14, 23, 0.8); }
+  .room-label { color: #1e293b; font-weight: bold; font-size: 10px; text-shadow: 0 1px 2px rgba(255,255,255,0.8); }
+  
+  @keyframes pulseLocal {
+    0% { transform: scale(0.85); opacity: 0.8; }
+    50% { transform: scale(1.4); opacity: 0.3; }
+    100% { transform: scale(0.85); opacity: 0.8; }
   }
-  .room-label {
-    background: transparent; border: none; box-shadow: none;
-    color: #1e293b; font-weight: bold; font-size: 10px;
-    text-shadow: 0 1px 2px rgba(255,255,255,0.8);
+  @keyframes pulseRemote {
+    0% { transform: scale(0.85); opacity: 0.8; }
+    50% { transform: scale(1.4); opacity: 0.3; }
+    100% { transform: scale(0.85); opacity: 0.8; }
   }
+
+  .marker-container { position:relative; width:60px; height:60px; display:flex; align-items:center; justify-content:center; }
+  .local-pulse { position:absolute; width:100%; height:100%; background:radial-gradient(circle, rgba(99, 102, 241, 0.45) 0%, rgba(99, 102, 241, 0) 65%); border-radius:50%; animation: pulseLocal 2.5s infinite; }
+  .local-puck { position:relative; width:26px; height:26px; background:linear-gradient(135deg, #6366f1, #4f46e5); border-radius:50%; box-shadow: 0 4px 12px rgba(79, 70, 229, 0.6); display:flex; align-items:center; justify-content:center; border: 2px solid rgba(255,255,255,0.4); }
+  
+  .remote-pulse { position:absolute; width:100%; height:100%; background:radial-gradient(circle, rgba(16, 185, 129, 0.45) 0%, rgba(16, 185, 129, 0) 65%); border-radius:50%; animation: pulseRemote 2.5s infinite; }
+  .remote-puck { position:relative; width:26px; height:26px; background:linear-gradient(135deg, #10b981, #059669); border-radius:50%; box-shadow: 0 4px 12px rgba(5, 150, 105, 0.6); display:flex; align-items:center; justify-content:center; border: 2px solid rgba(255,255,255,0.4); }
 </style>
 </head><body><div id="map"></div>
 <script>
-var map=L.map('map',{zoomControl:false}).setView([${center[0]},${center[1]}], 18);
-L.tileLayer('${mapboxUrl}',{maxZoom:22}).addTo(map);
- 
-var geojsonLayer = null;
-function styleFeature(feature) {
-  var baseStyle = { weight: 2, fillOpacity: 0.3 };
-  if (feature.properties.type === 'block') {
-    return Object.assign(baseStyle, { color: feature.properties.color || '#64748b', fillOpacity: 0.1 });
-  } else if (feature.properties.type === 'room') {
-    return Object.assign(baseStyle, { color: '#64748b', fillColor: '#ffffff', weight: 1, fillOpacity: 1 });
-  } else if (feature.properties.type === 'path') {
-    return { color: '#c084fc', weight: 4, opacity: 0.6, dashArray: '5, 5' };
-  } else if (feature.properties.type === 'map_layer') {
-    return Object.assign(baseStyle, { 
-      color: feature.properties.color || '#ef4444', 
-      fillColor: feature.properties.color || '#ef4444',
-      fillOpacity: 0.4, weight: 2
+const tokenMatch = '${mapboxUrl}'.match(/access_token=([^&]+)/);
+mapboxgl.accessToken = tokenMatch ? tokenMatch[1] : 'YOUR_TOKEN_HERE';
+
+var map = new mapboxgl.Map({
+  container: 'map',
+  style: 'mapbox://styles/mapbox/dark-v11',
+  center: [${center[1]}, ${center[0]}],
+  zoom: 18,
+  pitch: 60,
+  bearing: -17.6,
+  antialias: true,
+  attributionControl: false
+});
+
+map.on('load', () => {
+  map.addLayer({
+    'id': '3d-buildings',
+    'source': 'composite',
+    'source-layer': 'building',
+    'filter': ['==', 'extrude', 'true'],
+    'type': 'fill-extrusion',
+    'minzoom': 15,
+    'paint': {
+      'fill-extrusion-color': '#1f2937',
+      'fill-extrusion-height': ['get', 'height'],
+      'fill-extrusion-base': ['get', 'min_height'],
+      'fill-extrusion-opacity': 0.6
+    }
+  });
+
+  // Add source for dynamic route path
+  map.addSource('meet-route', {
+    'type': 'geojson',
+    'data': { 'type': 'FeatureCollection', 'features': [] }
+  });
+
+  map.addLayer({
+    'id': 'route-bg',
+    'type': 'line',
+    'source': 'meet-route',
+    'layout': { 'line-join': 'round', 'line-cap': 'round' },
+    'paint': { 'line-color': '#c084fc', 'line-width': 18, 'line-opacity': 0.25 }
+  });
+
+  map.addLayer({
+    'id': 'route-line',
+    'type': 'line',
+    'source': 'meet-route',
+    'layout': { 'line-join': 'round', 'line-cap': 'round' },
+    'paint': { 'line-color': '#8b5cf6', 'line-width': 6 }
+  });
+});
+
+window.updateGeoJSON = function(data, floorId) {
+  if (!map.isStyleLoaded()) return;
+
+  const features = data.features.filter(f => {
+    if (f.properties.type === 'path' || f.properties.type === 'node') return false;
+    if (f.properties.category === 'parking' || (f.properties.name && f.properties.name.toLowerCase().includes('parking'))) return false;
+    if (f.properties.type === 'room' && f.properties.floorId) {
+      if (floorId && f.properties.floorId !== floorId) return false;
+    }
+    return true;
+  });
+  data.features = features;
+
+  if (map.getSource('campus-data')) {
+    map.getSource('campus-data').setData(data);
+  } else {
+    map.addSource('campus-data', { type: 'geojson', data: data });
+
+    map.addLayer({
+      'id': 'campus-polygons',
+      'type': 'fill-extrusion',
+      'source': 'campus-data',
+      'paint': {
+        'fill-extrusion-color': ['coalesce', ['get', 'color'], '#64748b'],
+        'fill-extrusion-height': [
+          'case',
+          ['==', ['get', 'type'], 'block'], 15,
+          ['==', ['get', 'type'], 'room'], 3,
+          2
+        ],
+        'fill-extrusion-base': 0,
+        'fill-extrusion-opacity': 0.7
+      }
+    });
+
+    map.addLayer({
+      'id': 'campus-labels',
+      'type': 'symbol',
+      'source': 'campus-data',
+      'layout': {
+        'text-field': ['get', 'name'],
+        'text-size': 12,
+        'text-anchor': 'top',
+        'text-offset': [0, 1]
+      },
+      'paint': {
+        'text-color': '#ffffff',
+        'text-halo-color': 'rgba(10, 14, 23, 0.8)',
+        'text-halo-width': 2
+      }
     });
   }
-  return baseStyle;
-}
- 
-window.updateGeoJSON = function(data, floorId) {
-  if (geojsonLayer) { map.removeLayer(geojsonLayer); }
-  geojsonLayer = L.geoJSON(data, {
-    filter: function(f) {
-      if (f.properties.type === 'path' || f.properties.type === 'node') return false;
-      if (f.properties.category === 'parking' || (f.properties.name && f.properties.name.toLowerCase().includes('parking'))) {
-        return false;
-      }
-      if (f.properties.type === 'room' && f.properties.floorId) {
-        if (floorId && f.properties.floorId !== floorId) return false;
-      }
-      return true;
-    },
-    style: styleFeature,
-    onEachFeature: function(f, l) {
-      if (f.properties && f.properties.name) {
-        if (f.properties.type === 'map_layer') {
-          l.bindTooltip(f.properties.name, { permanent: true, direction: 'center', className: 'layer-label' });
-        } else if (f.properties.type === 'room') {
-          l.bindTooltip(f.properties.name, { permanent: true, direction: 'center', className: 'room-label' });
-        }
-      }
-    }
-  }).addTo(map);
 };
 
-const localIconHtml = \`
-  <style>
-    @keyframes pulseLocal {
-      0% { transform: scale(0.85); opacity: 0.8; }
-      50% { transform: scale(1.4); opacity: 0.3; }
-      100% { transform: scale(0.85); opacity: 0.8; }
-    }
-  </style>
-  <div style="position:relative; width:60px; height:60px; display:flex; align-items:center; justify-content:center;">
-    <div style="position:absolute; width:100%; height:100%; background:radial-gradient(circle, rgba(99, 102, 241, 0.45) 0%, rgba(99, 102, 241, 0) 65%); border-radius:50%; animation: pulseLocal 2.5s infinite;"></div>
-    <div id="local-puck-inner" style="position:relative; width:26px; height:26px; background:linear-gradient(135deg, #6366f1, #4f46e5); border-radius:50%; box-shadow: 0 4px 12px rgba(79, 70, 229, 0.6); display:flex; align-items:center; justify-content:center; border: 2px solid rgba(255,255,255,0.4);">
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="white">
-        <path d="M12 2L4 20l8-4 8 4z"/>
-      </svg>
-    </div>
-  </div>
-\`;
+const localIconEl = document.createElement('div');
+localIconEl.className = 'marker-container';
+localIconEl.innerHTML = '<div class="local-pulse"></div><div class="local-puck"><svg width="12" height="12" viewBox="0 0 24 24" fill="white"><path d="M12 2L4 20l8-4 8 4z"/></svg></div>';
 
-const remoteIconHtml = \`
-  <style>
-    @keyframes pulseRemote {
-      0% { transform: scale(0.85); opacity: 0.8; }
-      50% { transform: scale(1.4); opacity: 0.3; }
-      100% { transform: scale(0.85); opacity: 0.8; }
-    }
-  </style>
-  <div style="position:relative; width:60px; height:60px; display:flex; align-items:center; justify-content:center;">
-    <div style="position:absolute; width:100%; height:100%; background:radial-gradient(circle, rgba(16, 185, 129, 0.45) 0%, rgba(16, 185, 129, 0) 65%); border-radius:50%; animation: pulseRemote 2.5s infinite;"></div>
-    <div id="remote-puck-inner" style="position:relative; width:26px; height:26px; background:linear-gradient(135deg, #10b981, #059669); border-radius:50%; box-shadow: 0 4px 12px rgba(5, 150, 105, 0.6); display:flex; align-items:center; justify-content:center; border: 2px solid rgba(255,255,255,0.4);">
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="white">
-        <circle cx="12" cy="12" r="8"/>
-      </svg>
-    </div>
-  </div>
-\`;
-
-const localIcon = L.divIcon({ className: '', html: localIconHtml, iconSize: [60, 60], iconAnchor: [30, 30] });
-const remoteIcon = L.divIcon({ className: '', html: remoteIconHtml, iconSize: [60, 60], iconAnchor: [30, 30] });
+const remoteIconEl = document.createElement('div');
+remoteIconEl.className = 'marker-container';
+remoteIconEl.innerHTML = '<div class="remote-pulse"></div><div class="remote-puck"><svg width="12" height="12" viewBox="0 0 24 24" fill="white"><circle cx="12" cy="12" r="8"/></svg></div>';
 
 window.localMarker = null;
 window.remoteMarker = null;
-window.connectingLine = null;
+let routeLineDrawn = false;
 
 window.updateParticipants = function(localLat, localLng, remoteLat, remoteLng) {
   var markers = [];
+  var bounds = new mapboxgl.LngLatBounds();
+
   if (localLat !== null && localLng !== null) {
-    var localPos = [localLat, localLng];
     if (!window.localMarker) {
-      window.localMarker = L.marker(localPos, {icon: localIcon, zIndexOffset: 1000}).addTo(map);
+      window.localMarker = new mapboxgl.Marker({ element: localIconEl, pitchAlignment: 'map' })
+        .setLngLat([localLng, localLat])
+        .addTo(map);
     } else {
-      window.localMarker.setLatLng(localPos);
+      window.localMarker.setLngLat([localLng, localLat]);
     }
-    markers.push(localPos);
+    markers.push([localLng, localLat]);
+    bounds.extend([localLng, localLat]);
   } else if (window.localMarker) {
-    map.removeLayer(window.localMarker);
+    window.localMarker.remove();
     window.localMarker = null;
   }
 
   if (remoteLat !== null && remoteLng !== null) {
-    var remotePos = [remoteLat, remoteLng];
     if (!window.remoteMarker) {
-      window.remoteMarker = L.marker(remotePos, {icon: remoteIcon, zIndexOffset: 900}).addTo(map);
+      window.remoteMarker = new mapboxgl.Marker({ element: remoteIconEl, pitchAlignment: 'map' })
+        .setLngLat([remoteLng, remoteLat])
+        .addTo(map);
     } else {
-      window.remoteMarker.setLatLng(remotePos);
+      window.remoteMarker.setLngLat([remoteLng, remoteLat]);
     }
-    markers.push(remotePos);
+    markers.push([remoteLng, remoteLat]);
+    bounds.extend([remoteLng, remoteLat]);
   } else if (window.remoteMarker) {
-    map.removeLayer(window.remoteMarker);
+    window.remoteMarker.remove();
     window.remoteMarker = null;
   }
 
-  // Auto-adjust view to fit both participants if they are both active and no line is drawn yet
-  if (markers.length === 2 && !window.connectingLineGroup) {
-    var bounds = L.latLngBounds(markers);
-    map.fitBounds(bounds, { padding: [80, 80], maxZoom: 19 });
-  } else if (markers.length === 1 && !window.connectingLineGroup) {
+  if (markers.length === 2 && !routeLineDrawn) {
+    map.fitBounds(bounds, { padding: 80, maxZoom: 19 });
+  } else if (markers.length === 1 && !routeLineDrawn) {
     map.panTo(markers[0]);
   }
 };
 
 window.updateRoutePath = function(coordsJson) {
-  if (window.connectingLineGroup) {
-    map.removeLayer(window.connectingLineGroup);
-    window.connectingLineGroup = null;
-  }
-  
+  if (!map.isStyleLoaded()) return;
+
   if (coordsJson && coordsJson.length > 0) {
-    var latlngs = coordsJson.map(function(pt) { return [pt.lat, pt.lng]; });
+    var latlngs = coordsJson.map(function(pt) { return [pt.lng, pt.lat]; });
     
-    var wideLine = L.polyline(latlngs, {
-      color: '#c084fc',
-      weight: 18,
-      opacity: 0.25,
-      lineCap: 'round',
-      lineJoin: 'round'
-    });
-    
-    var thinLine = L.polyline(latlngs, {
-      color: '#8b5cf6',
-      weight: 6,
-      opacity: 1,
-      lineCap: 'round',
-      lineJoin: 'round'
-    });
-    
-    window.connectingLineGroup = L.layerGroup([wideLine, thinLine]).addTo(map);
-    
-    var bounds = L.latLngBounds(latlngs);
-    map.fitBounds(bounds, { padding: [80, 80], maxZoom: 19 });
+    if (map.getSource('meet-route')) {
+      map.getSource('meet-route').setData({
+        'type': 'Feature',
+        'properties': {},
+        'geometry': {
+          'type': 'LineString',
+          'coordinates': latlngs
+        }
+      });
+      routeLineDrawn = true;
+      
+      var bounds = new mapboxgl.LngLatBounds();
+      latlngs.forEach(c => bounds.extend(c));
+      map.fitBounds(bounds, { padding: 80, maxZoom: 19 });
+    }
+  } else {
+    if (map.getSource('meet-route')) {
+      map.getSource('meet-route').setData({ 'type': 'FeatureCollection', 'features': [] });
+    }
+    routeLineDrawn = false;
   }
 };
-
 </script></body></html>`;
 }
 

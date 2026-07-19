@@ -8,6 +8,7 @@ import '@geoman-io/leaflet-geoman-free';
 import '@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css';
 import { FiArrowLeft, FiPlus, FiTrash2, FiMap, FiLayers, FiSquare, FiNavigation, FiCheck, FiSettings, FiMove, FiInfo, FiCopy, FiRefreshCw, FiArrowRight, FiArrowLeftCircle, FiRepeat, FiMousePointer, FiUploadCloud, FiCrosshair, FiEdit2 } from 'react-icons/fi';
 import { getBlocks, createBlock, updateBlock, deleteBlock, getFloors, createFloor, deleteFloor, getRooms, createRoom, updateRoom, deleteRoom, deleteStairsFromFloor, restoreStairsToFloor, getExcludedFloors, getNodes, createNode, getPaths, createPath, deletePath, updatePath, getCampus, updateCampus, getAllCampusNodes, getAllCampusPaths, getMapLayers, createMapLayer, updateMapLayer, deleteMapLayer, publishMap } from '../api';
+import Admin3DViewer from '../components/Admin3DViewer';
 
 const GMRIT = [18.4665, 83.6629];
 const RC = {
@@ -433,6 +434,9 @@ export default function GuidedMapBuilder() {
   const [stairsFloorPanel, setStairsFloorPanel] = useState(false);
   const [excludedFloorsMap, setExcludedFloorsMap] = useState({});
   const [stairsLoading, setStairsLoading] = useState(false);
+  
+  // 3D Admin Viewer State
+  const [is3DMode, setIs3DMode] = useState(false);
 
   useEffect(() => {
     if (!isAuthorized) return;
@@ -884,7 +888,9 @@ export default function GuidedMapBuilder() {
         if (!nearest || nearest.d > 0.0005) return toast.warn('Click near a node');
         if (!pathStart) { setPathStart(nearest.node); toast.info('Click end node'); }
         else {
-          setPendingPath({ nodeA: pathStart, nodeB: nearest.node, floorId: activeFloor._id, context: 'floor' });
+          const isCrossFloor = pathStart.floorId && nearest.node.floorId && pathStart.floorId !== nearest.node.floorId;
+          const assignedFloorId = isCrossFloor ? null : activeFloor._id;
+          setPendingPath({ nodeA: pathStart, nodeB: nearest.node, floorId: assignedFloorId, context: 'floor', isCrossFloor });
           setPathStart(null);
         }
       }
@@ -892,14 +898,15 @@ export default function GuidedMapBuilder() {
   };
 
   // Save path with chosen direction
-  const savePendingPath = async (direction) => {
+  const savePendingPath = async (direction, customType = null) => {
     if (!pendingPath) return;
     try {
       const bidir = direction === 'both';
       // For 'incoming', swap nodeA and nodeB so the arrow points correctly
       const nodeA = direction === 'incoming' ? pendingPath.nodeB._id : pendingPath.nodeA._id;
       const nodeB = direction === 'incoming' ? pendingPath.nodeA._id : pendingPath.nodeB._id;
-      await createPath({ nodeA, nodeB, floorId: pendingPath.floorId, campusId, bidirectional: bidir });
+      const type = pendingPath.isCrossFloor ? (customType || 'stairs') : 'hallway';
+      await createPath({ nodeA, nodeB, floorId: pendingPath.floorId, campusId, bidirectional: bidir, type });
       toast.success(`Path saved (${direction})`);
       setPendingPath(null);
       loadMainPathway();
@@ -1073,7 +1080,27 @@ export default function GuidedMapBuilder() {
             </div>
           ))}
 
-          <div style={{ marginTop: 30, padding: 16, borderRadius: 12, backgroundColor: '#1a2235', border: '1px solid #1e2d40' }}>
+          <div style={{ marginTop: 20, padding: 16, borderRadius: 12, backgroundColor: '#1a2235', border: '1px solid #1e2d40', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <h4 style={{ margin: '0', fontSize: 13, color: '#f1f5f9', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <FiLayers size={14} color="#3b82f6" /> View Mode
+            </h4>
+            <button 
+              onClick={() => setIs3DMode(!is3DMode)}
+              style={{
+                width: '100%', padding: '10px 14px', borderRadius: 8, 
+                background: is3DMode ? '#3b82f6' : '#111827', 
+                color: '#fff', fontWeight: 600, border: '1px solid', borderColor: is3DMode ? '#3b82f6' : '#2a3352', 
+                cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, transition: 'all 0.2s'
+              }}
+            >
+              <FiMap /> {is3DMode ? 'Switch to 2D Mode' : 'Switch to 3D Mode'}
+            </button>
+            <p style={{ margin: 0, fontSize: 11, color: '#64748b', textAlign: 'center' }}>
+              {is3DMode ? '3D mode is active. You can view elevations and draw inclined stairs.' : 'Switch to 3D to visualize floors and connect them.'}
+            </p>
+          </div>
+
+          <div style={{ marginTop: 20, padding: 16, borderRadius: 12, backgroundColor: '#1a2235', border: '1px solid #1e2d40' }}>
             <h4 style={{ margin: '0 0 10px', fontSize: 13, color: '#f1f5f9', display: 'flex', alignItems: 'center', gap: 6 }}><FiInfo size={14} color="#6366f1" /> Shortcuts</h4>
             <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '8px 12px', fontSize: 12, color: '#94a3b8' }}>
               <span style={{ color: '#fff', fontWeight: 600, background: '#111827', padding: '2px 6px', borderRadius: 4, border: '1px solid #2a3352', textAlign: 'center' }}>Ctrl+C</span>
@@ -1098,55 +1125,57 @@ export default function GuidedMapBuilder() {
       {/* CENTER CANVAS */}
       <div style={S.centerCanvas}>
         {/* Dynamic Top Toolbar based on Mode */}
-        <div style={S.topToolbar}>
-          {step === 0 && (
-            <>
-              <button style={S.toolBtn(drawMode === 'select')} onClick={() => setDrawMode('select')}><FiMove /> Select</button>
-              <button style={S.toolBtn(drawMode === 'addNode')} onClick={() => setDrawMode('addNode')}><FiMap /> Add Node</button>
-              <button style={S.toolBtn(drawMode === 'addPath')} onClick={() => { setDrawMode('addPath'); setMainPathStart(null); }}><FiNavigation /> Draw Path</button>
-              <button style={S.toolBtn(drawMode === 'drawRadius')} onClick={() => setDrawMode('drawRadius')}><FiCrosshair /> Draw Campus Radius</button>
-              <div style={{ width: 1, height: 24, background: '#1e2d40' }} />
-              <button style={S.toolBtn(false)} onClick={() => setShowMainPathway(!showMainPathway)}>
-                {showMainPathway ? '👁 Hide' : '👁‍🗨 Show'} Main Path
-              </button>
-            </>
-          )}
-          {step === 1 && (
-            <>
-              <button style={S.toolBtn(drawMode === 'select')} onClick={() => handleModeChange('select')}><FiMousePointer /> Select</button>
-              <button style={S.toolBtn(drawMode === 'drag')} onClick={() => handleModeChange('drag')}><FiMove /> Drag</button>
-              <button style={S.toolBtn(drawMode === 'rotate')} onClick={() => handleModeChange('rotate')}><FiRefreshCw /> Rotate</button>
-              <button style={S.toolBtn(drawMode === 'drawBlockRect')} onClick={() => handleModeChange('drawBlockRect')}><FiSquare /> Draw Outer Block</button>
-            </>
-          )}
-          {step === 3 && (
-            <>
-              <button style={S.toolBtn(drawMode === 'select')} onClick={() => handleModeChange('select')}><FiMousePointer /> Select Room</button>
-              <button style={S.toolBtn(drawMode === 'drag')} onClick={() => handleModeChange('drag')}><FiMove /> Drag Room</button>
-              <button style={S.toolBtn(drawMode === 'rotate')} onClick={() => handleModeChange('rotate')}><FiRefreshCw /> Rotate</button>
-              <button style={S.toolBtn(drawMode === 'drawRoomRect')} onClick={() => handleModeChange('drawRoomRect')}><FiSquare /> Draw Room</button>
-            </>
-          )}
-          {step === 4 && (
-            <>
-              <button style={S.toolBtn(drawMode === 'select')} onClick={() => setDrawMode('select')}><FiMousePointer /> Select</button>
-              <button style={S.toolBtn(drawMode === 'drag')} onClick={() => setDrawMode('drag')}><FiMove /> Drag Node</button>
-              <button style={S.toolBtn(drawMode === 'addNode')} onClick={() => setDrawMode('addNode')}><FiMap /> Add Node</button>
-              <button style={S.toolBtn(drawMode === 'addPath')} onClick={() => { setDrawMode('addPath'); setPathStart(null); }}><FiNavigation /> Draw Path</button>
-            </>
-          )}
-          {step === 5 && (
-            <>
-              <button style={S.toolBtn(drawMode === 'select')} onClick={() => handleModeChange('select')}><FiMousePointer /> Select Zone</button>
-              <button style={S.toolBtn(drawMode === 'drag')} onClick={() => handleModeChange('drag')}><FiMove /> Drag Zone</button>
-              <button style={S.toolBtn(drawMode === 'rotate')} onClick={() => handleModeChange('rotate')}><FiRefreshCw /> Rotate</button>
-              <button style={S.toolBtn(drawMode === 'drawBlockPoly')} onClick={() => handleModeChange('drawBlockPoly')}><FiSquare /> Draw Polygon Zone</button>
-            </>
-          )}
-        </div>
+        {!is3DMode && (
+          <div style={S.topToolbar}>
+            {step === 0 && (
+              <>
+                <button style={S.toolBtn(drawMode === 'select')} onClick={() => setDrawMode('select')}><FiMove /> Select</button>
+                <button style={S.toolBtn(drawMode === 'addNode')} onClick={() => setDrawMode('addNode')}><FiMap /> Add Node</button>
+                <button style={S.toolBtn(drawMode === 'addPath')} onClick={() => { setDrawMode('addPath'); setMainPathStart(null); }}><FiNavigation /> Draw Path</button>
+                <button style={S.toolBtn(drawMode === 'drawRadius')} onClick={() => setDrawMode('drawRadius')}><FiCrosshair /> Draw Campus Radius</button>
+                <div style={{ width: 1, height: 24, background: '#1e2d40' }} />
+                <button style={S.toolBtn(false)} onClick={() => setShowMainPathway(!showMainPathway)}>
+                  {showMainPathway ? '👁 Hide' : '👁‍🗨 Show'} Main Path
+                </button>
+              </>
+            )}
+            {step === 1 && (
+              <>
+                <button style={S.toolBtn(drawMode === 'select')} onClick={() => handleModeChange('select')}><FiMousePointer /> Select</button>
+                <button style={S.toolBtn(drawMode === 'drag')} onClick={() => handleModeChange('drag')}><FiMove /> Drag</button>
+                <button style={S.toolBtn(drawMode === 'rotate')} onClick={() => handleModeChange('rotate')}><FiRefreshCw /> Rotate</button>
+                <button style={S.toolBtn(drawMode === 'drawBlockRect')} onClick={() => handleModeChange('drawBlockRect')}><FiSquare /> Draw Outer Block</button>
+              </>
+            )}
+            {step === 3 && (
+              <>
+                <button style={S.toolBtn(drawMode === 'select')} onClick={() => handleModeChange('select')}><FiMousePointer /> Select Room</button>
+                <button style={S.toolBtn(drawMode === 'drag')} onClick={() => handleModeChange('drag')}><FiMove /> Drag Room</button>
+                <button style={S.toolBtn(drawMode === 'rotate')} onClick={() => handleModeChange('rotate')}><FiRefreshCw /> Rotate</button>
+                <button style={S.toolBtn(drawMode === 'drawRoomRect')} onClick={() => handleModeChange('drawRoomRect')}><FiSquare /> Draw Room</button>
+              </>
+            )}
+            {step === 4 && (
+              <>
+                <button style={S.toolBtn(drawMode === 'select')} onClick={() => setDrawMode('select')}><FiMousePointer /> Select</button>
+                <button style={S.toolBtn(drawMode === 'drag')} onClick={() => setDrawMode('drag')}><FiMove /> Drag Node</button>
+                <button style={S.toolBtn(drawMode === 'addNode')} onClick={() => setDrawMode('addNode')}><FiMap /> Add Node</button>
+                <button style={S.toolBtn(drawMode === 'addPath')} onClick={() => { setDrawMode('addPath'); setPathStart(null); }}><FiNavigation /> Draw Path</button>
+              </>
+            )}
+            {step === 5 && (
+              <>
+                <button style={S.toolBtn(drawMode === 'select')} onClick={() => handleModeChange('select')}><FiMousePointer /> Select Zone</button>
+                <button style={S.toolBtn(drawMode === 'drag')} onClick={() => handleModeChange('drag')}><FiMove /> Drag Zone</button>
+                <button style={S.toolBtn(drawMode === 'rotate')} onClick={() => handleModeChange('rotate')}><FiRefreshCw /> Rotate</button>
+                <button style={S.toolBtn(drawMode === 'drawBlockPoly')} onClick={() => handleModeChange('drawBlockPoly')}><FiSquare /> Draw Polygon Zone</button>
+              </>
+            )}
+          </div>
+        )}
 
         {/* Floor Switcher for Steps 3 & 4 */}
-        {(step === 3 || step === 4) && floors.length > 0 && (
+        {!is3DMode && (step === 3 || step === 4) && floors.length > 0 && (
           <div style={{ position: 'absolute', top: 80, left: 20, zIndex: 1000, background: '#111827E6', backdropFilter: 'blur(10px)', borderRadius: 12, border: '1px solid #1e2d40', overflow: 'hidden' }}>
             <div style={{ padding: '8px 12px', fontSize: 10, fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', background: '#1a2235' }}>Active Floor</div>
             <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -1159,6 +1188,7 @@ export default function GuidedMapBuilder() {
           </div>
         )}
 
+        {!is3DMode ? (
         <MapContainer center={GMRIT} zoom={17} style={{ width: '100%', height: '100%', zIndex: 0 }} zoomControl={false} maxZoom={24} whenReady={() => setMapReady(true)}>
           <TileLayer url={import.meta.env.VITE_MAPBOX_URL || ""} maxZoom={24} maxNativeZoom={19} />
           {campus?.location?.lat && campus?.location?.lng && <MapUpdater center={[campus.location.lat, campus.location.lng]} />}
@@ -1283,6 +1313,17 @@ export default function GuidedMapBuilder() {
             <EditablePolygon key="temp-layer" r={{ _id: 'temp', shape: tempBlockShape, type: 'other', name: 'New Zone', color: blockForm.color }} isSelected={true} isLocked={false} onUpdate={(_, s) => setTempBlockShape(s)} onClick={() => { }} activeMode={drawMode} />
           )}
         </MapContainer>
+        ) : (
+          <Admin3DViewer 
+            blocks={blocks} 
+            floors={floors} 
+            rooms={rooms} 
+            nodes={Array.from(new Map([...allNodes, ...nodes, ...mainNodes].map(n => [n._id, n])).values())} 
+            paths={Array.from(new Map([...paths, ...mainPaths].map(p => [p._id, p])).values())} 
+            campus={campus}
+            mapboxUrl={import.meta.env.VITE_MAPBOX_URL}
+          />
+        )}
       </div>
 
       {/* RIGHT PANEL: CONTEXT PROPERTIES */}
@@ -1721,52 +1762,77 @@ export default function GuidedMapBuilder() {
             onClick={e => e.stopPropagation()}>
             <h3 style={{ margin: '0 0 6px', fontSize: 18, fontWeight: 800, color: '#fff' }}>Choose Direction</h3>
             <p style={{ margin: '0 0 20px', fontSize: 12, color: '#94a3b8' }}>Select the traffic direction for this path segment.</p>
+            {pendingPath.isCrossFloor ? (
+              <>
+                <p style={{ margin: '0 0 10px', fontSize: 13, color: '#f97316', fontWeight: 600 }}>Cross-Floor link detected.</p>
+                <button onClick={() => savePendingPath('both', 'stairs')} style={{
+                  width: '100%', padding: '14px 16px', borderRadius: 12, border: '2px solid #f9731630',
+                  background: '#f9731620', color: '#fff', cursor: 'pointer', marginBottom: 10,
+                  display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left'
+                }}>
+                  <div style={{ width: 40, height: 40, borderRadius: 10, background: '#f9731640', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>📶</div>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 14, color: '#f97316' }}>Stairs (Bidirectional)</div>
+                    <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>Creates a 3D stair connection</div>
+                  </div>
+                </button>
+                <button onClick={() => savePendingPath('both', 'elevator')} style={{
+                  width: '100%', padding: '14px 16px', borderRadius: 12, border: '2px solid #6366f130',
+                  background: '#6366f120', color: '#fff', cursor: 'pointer', marginBottom: 10,
+                  display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left'
+                }}>
+                  <div style={{ width: 40, height: 40, borderRadius: 10, background: '#6366f140', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>🛗</div>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 14, color: '#6366f1' }}>Elevator (Bidirectional)</div>
+                    <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>Creates a 3D elevator connection</div>
+                  </div>
+                </button>
+              </>
+            ) : (
+              <>
+                <button onClick={() => savePendingPath('outgoing')} style={{
+                  width: '100%', padding: '14px 16px', borderRadius: 12, border: '2px solid #3b82f630',
+                  background: '#1a2235', color: '#fff', cursor: 'pointer', marginBottom: 10,
+                  display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left'
+                }}>
+                  <div style={{ width: 40, height: 40, borderRadius: 10, background: '#3b82f620', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <span style={{ fontSize: 20 }}>→</span>
+                  </div>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 14, color: '#3b82f6' }}>Outgoing (A → B)</div>
+                    <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>One-way from start to end node</div>
+                  </div>
+                </button>
 
-            {/* Outgoing: A → B */}
-            <button onClick={() => savePendingPath('outgoing')} style={{
-              width: '100%', padding: '14px 16px', borderRadius: 12, border: '2px solid #3b82f630',
-              background: '#1a2235', color: '#fff', cursor: 'pointer', marginBottom: 10,
-              display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left'
-            }}>
-              <div style={{ width: 40, height: 40, borderRadius: 10, background: '#3b82f620', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <span style={{ fontSize: 20 }}>→</span>
-              </div>
-              <div>
-                <div style={{ fontWeight: 700, fontSize: 14, color: '#3b82f6' }}>Outgoing (A → B)</div>
-                <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>One-way from start to end node</div>
-              </div>
-            </button>
+                <button onClick={() => savePendingPath('incoming')} style={{
+                  width: '100%', padding: '14px 16px', borderRadius: 12, border: '2px solid #f59e0b30',
+                  background: '#1a2235', color: '#fff', cursor: 'pointer', marginBottom: 10,
+                  display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left'
+                }}>
+                  <div style={{ width: 40, height: 40, borderRadius: 10, background: '#f59e0b20', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <span style={{ fontSize: 20 }}>←</span>
+                  </div>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 14, color: '#f59e0b' }}>Incoming (B → A)</div>
+                    <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>One-way from end to start node</div>
+                  </div>
+                </button>
 
-            {/* Incoming: B → A */}
-            <button onClick={() => savePendingPath('incoming')} style={{
-              width: '100%', padding: '14px 16px', borderRadius: 12, border: '2px solid #f59e0b30',
-              background: '#1a2235', color: '#fff', cursor: 'pointer', marginBottom: 10,
-              display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left'
-            }}>
-              <div style={{ width: 40, height: 40, borderRadius: 10, background: '#f59e0b20', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <span style={{ fontSize: 20 }}>←</span>
-              </div>
-              <div>
-                <div style={{ fontWeight: 700, fontSize: 14, color: '#f59e0b' }}>Incoming (B → A)</div>
-                <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>One-way from end to start node</div>
-              </div>
-            </button>
-
-            {/* Both: A ↔ B */}
-            <button onClick={() => savePendingPath('both')} style={{
-              width: '100%', padding: '14px 16px', borderRadius: 12, border: '2px solid #22c55e30',
-              background: '#1a2235', color: '#fff', cursor: 'pointer', marginBottom: 10,
-              display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left'
-            }}>
-              <div style={{ width: 40, height: 40, borderRadius: 10, background: '#22c55e20', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <span style={{ fontSize: 20 }}>↔</span>
-              </div>
-              <div>
-                <div style={{ fontWeight: 700, fontSize: 14, color: '#22c55e' }}>Both Ways (A ↔ B)</div>
-                <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>Bidirectional, two-way traffic</div>
-              </div>
-            </button>
-
+                <button onClick={() => savePendingPath('both')} style={{
+                  width: '100%', padding: '14px 16px', borderRadius: 12, border: '2px solid #22c55e30',
+                  background: '#1a2235', color: '#fff', cursor: 'pointer', marginBottom: 10,
+                  display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left'
+                }}>
+                  <div style={{ width: 40, height: 40, borderRadius: 10, background: '#22c55e20', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <span style={{ fontSize: 20 }}>↔</span>
+                  </div>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 14, color: '#22c55e' }}>Both Ways (A ↔ B)</div>
+                    <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>Bidirectional, two-way traffic</div>
+                  </div>
+                </button>
+              </>
+            )}
             <button onClick={() => setPendingPath(null)} style={{
               width: '100%', padding: 10, borderRadius: 10, background: 'transparent',
               color: '#64748b', border: '1px solid #1e2d40', cursor: 'pointer', marginTop: 6, fontWeight: 600, fontSize: 13

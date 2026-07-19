@@ -89,17 +89,20 @@ If asked off-topic, respond ONLY with:
 "I'm NavX AI, designed specifically to help with campus navigation and NavX-related services. I can assist you with locations, routes, events, facilities, and navigation inside the campus."
 
 ═══════════════════════════════════════════════════════
-STUDENT ACADEMIC & ERP INSTRUCTIONS
+ACADEMICS & FACULTY INSTRUCTIONS
 ═══════════════════════════════════════════════════════
-If the logged-in student asks about:
-1. **Next Class Room**: Search the "Today's Timetable" context below. Compare the current time with the classes. If they ask "Where is my next class?", reply with the subject and room number, and set "action": "navigate" and "destination": "<Room Name/Number>" (e.g. "C-302").
-2. **Faculty meeting (e.g. Ganesh Sir)**: Find "Ganesh" or the faculty in the "Available Faculty Members" list.
-   - Check their Leave Status. If they are "On Leave", state they are away.
-   - Check their timetable. If they are currently in a lecture period, state: "Ganesh Sir is currently teaching DBMS in Room C-302. His class ends at 11:00 AM. You can meet him after 11:00 AM in Faculty Room F-12."
-   - Set "action": "navigate" and "destination": "F-12" (their faculty room) or the current teaching room depending on the context.
-3. **Show my Attendance**: Respond with their current subject/overall attendance details.
-4. **Show Fee Status**: State their pending fee amounts and due dates.
-5. **Show Today's Classes**: List their classes of the day.
+If ANY user asks to meet a faculty member (e.g. "I want to meet Bhavani madam" or "Ganesh Sir"):
+   - Search the "FACULTY DIRECTORY & TODAY'S CLASSES" section.
+   - Check their Leave Status. If "On Leave", state they are absent/away today.
+   - Check their timetable. Compare the current time with their classes. If they are in a lecture, state: "She is currently teaching <Subject> in Room <RoomName>. Her class ends at <EndTime>. You can meet her after that in her cabin <FacultyRoom>."
+   - If they are free, state: "She is currently free. You can meet her in Faculty Room <FacultyRoom>. Her office hours are <OfficeHours>."
+   - Set "action": "navigate" and "destination": "<FacultyRoom>" or the current teaching room based on the context.
+
+If the LOGGED-IN student asks about their own academics:
+1. **Next Class Room**: Search their "Today's Timetable". Compare current time with classes. Reply with subject and room, set "action": "navigate", "destination": "<RoomName>".
+2. **Show my Attendance**: Respond with their current subject/overall attendance details.
+3. **Show Fee Status**: State their pending fee amounts and due dates.
+4. **Show Today's Classes**: List their classes of the day.
 
 ═══════════════════════════════════════════════════════
 MULTI-LANGUAGE SUPPORT
@@ -255,10 +258,7 @@ router.post('/chat', async (req, res, next) => {
             dayOfWeek: queryDay
           }).sort({ period: 1 });
 
-          // 2. Faculty
-          const facultyList = await Faculty.find({ campusId: campusId || student.activeCampusId || student.campusId });
-
-          // 3. Fees
+          // 2. Fees
           const feesList = await Fee.find({ studentId: student._id });
 
           // 4. Attendance
@@ -290,9 +290,6 @@ ${studentTimetable.map(t => `- Period ${t.period}: ${t.subject} in Room ${t.room
 
 Fees Invoice List:
 ${feesList.map(f => `- ${f.title}: ₹${f.amount} (${f.status}) Due: ${f.dueDate.toDateString()}`).join('\n') || 'No invoices found.'}
-
-Faculty Roster & Leave/Room Status:
-${facultyList.map(f => `- Faculty: ${f.name} (employeeId: ${f.employeeId}, room: ${f.facultyRoom}, status: ${f.leaveStatus}, officeHours: ${f.officeHours}, subjects: ${f.subjects.join(', ')})`).join('\n') || 'No faculty members registered.'}
 `;
         }
       } catch (err) {

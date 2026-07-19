@@ -300,9 +300,9 @@ router.get('/dashboard', authenticateStudent, async (req, res, next) => {
 
     const campusId = await getStudentCampusId(student);
 
-    // Get live attendance % from DB
+    // Get live attendance % from DB (only if real logs exist)
     const attendanceLogs = await Attendance.find({ studentId: student._id });
-    let attendancePercent = student.attendancePercent || 85;
+    let attendancePercent = null;
     if (attendanceLogs.length > 0) {
       const presents = attendanceLogs.filter(a => a.status === 'Present').length;
       attendancePercent = Math.round((presents / attendanceLogs.length) * 1000) / 10;
@@ -312,8 +312,8 @@ router.get('/dashboard', authenticateStudent, async (req, res, next) => {
     const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     const currentDay = days[new Date().getDay()];
     
-    // Fallback to Monday if it is Sunday/Saturday for demo purposes
-    const queryDay = (currentDay === 'Sunday' || currentDay === 'Saturday') ? 'Monday' : currentDay;
+    // Use the actual current day — no fake fallback on weekends
+    const queryDay = currentDay;
 
     const semVariants = getSemesterVariants(student.semester);
     const timetable = await Timetable.find({
@@ -367,10 +367,7 @@ router.get('/dashboard', authenticateStudent, async (req, res, next) => {
       nextClass = processedTimetable[0];
     }
 
-    // Get pending fees status
-    const pendingFees = await Fee.find({ studentId: student._id, status: 'Pending' });
-    const pendingAmount = pendingFees.reduce((sum, f) => sum + f.amount, 0);
-    const feeStatus = pendingAmount > 0 ? `Pending: ₹${pendingAmount}` : 'Paid';
+
 
     // Get Announcements
     const announcements = await Announcement.find({ campusId }).sort({ createdAt: -1 }).limit(3);
@@ -379,13 +376,14 @@ router.get('/dashboard', authenticateStudent, async (req, res, next) => {
       success: true,
       student: {
         id: student._id,
+        fullName: student.fullName,
         username: student.username,
         rollNumber: student.rollNumber,
+        collegeId: student.collegeId,
         department: student.department,
         semester: student.semester,
         section: student.section,
         academicStatus: student.academicStatus,
-        feeStatus,
         attendancePercent
       },
       nextClass,

@@ -7,6 +7,8 @@ import { ThemeContext } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import api from '../api';
 import { SHADOWS } from '../theme/designSystem';
+import { LinearGradient } from 'expo-linear-gradient';
+import AnimatedPressable from '../components/AnimatedPressable';
 
 export default function ProfileScreen({ navigation }) {
   const { colors } = useContext(ThemeContext);
@@ -74,7 +76,8 @@ export default function ProfileScreen({ navigation }) {
   };
 
   const s = StyleSheet.create({
-    container: { flex: 1, backgroundColor: colors.background, padding: 20 },
+    container: { flex: 1, backgroundColor: '#ffffff' },
+    content: { padding: 20 },
     header: { flexDirection: 'row', alignItems: 'center', marginBottom: 24, marginTop: 40 },
     backBtn: {
       width: 40, height: 40, borderRadius: 12, backgroundColor: colors.card,
@@ -113,30 +116,38 @@ export default function ProfileScreen({ navigation }) {
       paddingVertical: 16, alignItems: 'center', marginTop: 30,
       ...SHADOWS.primary()
     },
-    saveBtnText: { color: '#fff', fontSize: 16, fontWeight: '800' }
+    saveBtnText: { color: '#fff', fontSize: 16, fontWeight: '800' },
+    readOnlyInput: { backgroundColor: colors.background, opacity: 0.8 }
   });
 
   return (
-    <ScrollView style={s.container} showsVerticalScrollIndicator={false}>
-      <View style={s.header}>
-        <TouchableOpacity style={s.backBtn} onPress={() => navigation.goBack()}>
-          <Ionicons name="chevron-back" size={24} color={colors.text} />
-        </TouchableOpacity>
-        <Text style={s.title}>Edit Profile</Text>
-      </View>
+    <View style={s.container}>
+      <LinearGradient
+        colors={['rgba(139, 92, 246, 0.22)', 'rgba(99, 102, 241, 0.10)', 'rgba(255, 255, 255, 0)']}
+        style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 380 }}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+      />
+      <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
+        <View style={s.header}>
+          <AnimatedPressable style={s.backBtn} onPress={() => navigation.goBack()}>
+            <Ionicons name="chevron-back" size={24} color={colors.text} />
+          </AnimatedPressable>
+          <Text style={s.title}>Profile</Text>
+        </View>
 
-      <View style={s.avatarContainer}>
-        <TouchableOpacity style={s.avatarWrapper} onPress={pickImage} disabled={loading}>
-          {profileImage ? (
-            <Image source={{ uri: profileImage }} style={s.avatarImg} />
-          ) : (
-            <Ionicons name="person" size={60} color={colors.primary} />
-          )}
-          <View style={s.editBadge}>
-            <Ionicons name="camera" size={18} color="#fff" />
-          </View>
-        </TouchableOpacity>
-      </View>
+        <View style={s.avatarContainer}>
+          <AnimatedPressable style={s.avatarWrapper} onPress={pickImage} disabled={loading}>
+            {profileImage ? (
+              <Image source={{ uri: profileImage }} style={s.avatarImg} />
+            ) : (
+              <Ionicons name="person" size={60} color={colors.primary} />
+            )}
+            <View style={s.editBadge}>
+              <Ionicons name="camera" size={18} color="#fff" />
+            </View>
+          </AnimatedPressable>
+        </View>
 
       <View style={s.inputGroup}>
         <Text style={s.label}>FULL NAME</Text>
@@ -151,7 +162,7 @@ export default function ProfileScreen({ navigation }) {
       </View>
 
       <View style={s.inputGroup}>
-        <Text style={s.label}>MOBILE NUMBER (OPTIONAL)</Text>
+        <Text style={s.label}>MOBILE NUMBER</Text>
         <TextInput
           style={s.input}
           value={mobileNumber}
@@ -163,13 +174,63 @@ export default function ProfileScreen({ navigation }) {
         />
       </View>
 
-      <TouchableOpacity style={s.saveBtn} onPress={handleSave} disabled={loading}>
+      {user?.role === 'student' && (
+        <>
+          <View style={s.inputGroup}>
+            <Text style={s.label}>COLLEGE EMAIL</Text>
+            <TextInput
+              style={[s.input, s.readOnlyInput]}
+              value={user?.collegeEmail || ''}
+              editable={false}
+            />
+          </View>
+
+          <View style={s.inputGroup}>
+            <Text style={s.label}>COLLEGE ID (ROLL NUMBER)</Text>
+            <TextInput
+              style={[s.input, s.readOnlyInput]}
+              value={user?.collegeId || user?.rollNumber || ''}
+              editable={false}
+            />
+          </View>
+
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <View style={[s.inputGroup, { flex: 1 }]}>
+              <Text style={s.label}>DEPARTMENT</Text>
+              <TextInput
+                style={[s.input, s.readOnlyInput]}
+                value={user?.department || ''}
+                editable={false}
+              />
+            </View>
+            <View style={[s.inputGroup, { flex: 0.6 }]}>
+              <Text style={s.label}>SEM</Text>
+              <TextInput
+                style={[s.input, s.readOnlyInput]}
+                value={user?.semester || ''}
+                editable={false}
+              />
+            </View>
+            <View style={[s.inputGroup, { flex: 0.6 }]}>
+              <Text style={s.label}>SEC</Text>
+              <TextInput
+                style={[s.input, s.readOnlyInput]}
+                value={user?.section || ''}
+                editable={false}
+              />
+            </View>
+          </View>
+        </>
+      )}
+
+      <AnimatedPressable style={s.saveBtn} onPress={handleSave} disabled={loading}>
         {loading ? (
           <ActivityIndicator color="#fff" />
         ) : (
           <Text style={s.saveBtnText}>Save Profile</Text>
         )}
-      </TouchableOpacity>
-    </ScrollView>
+      </AnimatedPressable>
+      </ScrollView>
+    </View>
   );
 }

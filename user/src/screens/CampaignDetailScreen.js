@@ -9,6 +9,7 @@ import { useGeofence } from "../context/GeofenceContext";
 import { getSubCampaigns, SOCKET_URL } from "../api";
 import { SHADOWS, RADIUS } from "../theme/designSystem";
 import AnimatedPressable from "../components/AnimatedPressable";
+import { LinearGradient } from 'expo-linear-gradient';
 
 const { width: SW } = Dimensions.get("window");
 
@@ -145,7 +146,13 @@ export default function CampaignDetailScreen({ route, navigation }) {
   });
 
   return (
-    <View style={s.container}>
+    <View style={[s.container, { backgroundColor: '#ffffff' }]}>
+      <LinearGradient
+        colors={['rgba(139, 92, 246, 0.22)', 'rgba(99, 102, 241, 0.10)', 'rgba(255, 255, 255, 0)']}
+        style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 380 }}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+      />
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 60 }}
