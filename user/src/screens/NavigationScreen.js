@@ -246,11 +246,15 @@ window.updateGeoJSON = function(data, floorId) {
         ],
         'fill-extrusion-height': [
           'case',
+          ['has', 'height'], ['get', 'height'],
           ['==', ['get', 'type'], 'block'], 0.5,
-          ['==', ['get', 'type'], 'room'], 3,
-          2
+          3
         ],
-        'fill-extrusion-base': 0,
+        'fill-extrusion-base': [
+          'case',
+          ['has', 'min_height'], ['get', 'min_height'],
+          0
+        ],
         'fill-extrusion-opacity': [
           'case',
           ['==', ['get', 'id'], '${targetRoom?._id || ''}'], 0.8,

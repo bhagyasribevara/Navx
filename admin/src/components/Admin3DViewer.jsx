@@ -47,6 +47,7 @@ export default function Admin3DViewer({ blocks, floors, rooms, nodes, paths, cam
     mapboxgl.accessToken = tokenMatch ? tokenMatch[1] : 'YOUR_TOKEN_HERE';
 
     const center = campus?.location ? [campus.location.lng, campus.location.lat] : [83.6629, 18.4665];
+    let prevView = { bearing: -17.6, pitch: 60, zoom: 18 };
 
     map.current = new mapboxgl.Map({
       container: mapContainer.current,
@@ -58,10 +59,111 @@ export default function Admin3DViewer({ blocks, floors, rooms, nodes, paths, cam
       antialias: true
     });
 
+    // Save camera views only when altered manually by the user
+    map.current.on('moveend', (e) => {
+      if (e.originalEvent && map.current) {
+        const currentP = map.current.getPitch();
+        if (currentP > 5) {
+          prevView = {
+            bearing: map.current.getBearing(),
+            pitch: currentP,
+            zoom: map.current.getZoom()
+          };
+        }
+      }
+    });
+
+    map.current.on('pitch', () => {
+      if (!map.current) return;
+      const pitch = map.current.getPitch();
+      if (map.current.getLayer('campus-polygons-fill')) {
+        map.current.setPaintProperty('campus-polygons-fill', 'fill-opacity', pitch === 0 ? 0.6 : 0.1);
+      }
+      if (map.current.getLayer('campus-polygons-line')) {
+        map.current.setPaintProperty('campus-polygons-line', 'line-opacity', pitch === 0 ? 0.8 : 0.2);
+      }
+    });
+
     map.current.on('load', () => {
       // Add Mapbox Navigation Controls for easy rotation and zooming
       map.current.addControl(new mapboxgl.NavigationControl({ visualizePitch: true }), 'top-right');
       map.current.addControl(new mapboxgl.FullscreenControl(), 'top-right');
+
+      // Custom compass toggle behavior to prevent pitch resetting to 0 (flat 2D)
+      setTimeout(() => {
+        const compassBtn = mapContainer.current?.querySelector('.mapboxgl-ctrl-compass');
+        if (compassBtn && map.current) {
+          compassBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+
+            if (!map.current) return;
+
+            const currentBearing = map.current.getBearing();
+            const currentPitch = map.current.getPitch();
+
+            // If we are currently not aligned to North perspective, transition to North perspective (pitch 60)
+            // so that 3D rooms & steps layouts remain visible
+            if (Math.abs(currentBearing) > 0.5 || Math.abs(currentPitch - 60) > 0.5) {
+              map.current.easeTo({
+                bearing: 0,
+                pitch: 60,
+                duration: 800
+              });
+            } else {
+              // Toggle back to the previous perspective camera angle
+              map.current.easeTo({
+                bearing: prevView.bearing,
+                pitch: prevView.pitch,
+                zoom: prevView.zoom,
+                duration: 800
+              });
+            }
+          }, true);
+
+          // Add custom Top View button below compass in the same control group widget
+          const parentGroup = compassBtn.parentNode;
+          if (parentGroup) {
+            const topViewBtn = document.createElement('button');
+            topViewBtn.className = 'mapboxgl-ctrl-icon mapboxgl-ctrl-topview';
+            topViewBtn.type = 'button';
+            topViewBtn.title = 'Top-down Flat 2D View';
+            topViewBtn.style.display = 'flex';
+            topViewBtn.style.alignItems = 'center';
+            topViewBtn.style.justifyContent = 'center';
+            topViewBtn.style.width = '29px';
+            topViewBtn.style.height = '29px';
+            topViewBtn.style.border = 'none';
+            topViewBtn.style.background = 'none';
+            topViewBtn.style.cursor = 'pointer';
+            
+            topViewBtn.innerHTML = `
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="color: #4b5563;">
+                <rect x="3" y="3" width="18" height="18" rx="3"/>
+                <line x1="3" y1="9" x2="21" y2="9"/>
+                <line x1="3" y1="15" x2="21" y2="15"/>
+                <line x1="9" y1="3" x2="9" y2="21"/>
+                <line x1="15" y1="3" x2="15" y2="21"/>
+              </svg>
+            `;
+            
+            topViewBtn.addEventListener('click', (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              if (map.current) {
+                map.current.easeTo({
+                  bearing: 0,
+                  pitch: 0,
+                  duration: 800
+                });
+              }
+            });
+            
+            parentGroup.appendChild(topViewBtn);
+          }
+        }
+      }, 100);
 
       // 3D Buildings from Mapbox Streets
       map.current.addLayer({
@@ -392,6 +494,31 @@ export default function Admin3DViewer({ blocks, floors, rooms, nodes, paths, cam
       polySource.setData(polyData);
     } else {
       map.current.addSource('campus-polygons', { type: 'geojson', data: polyData });
+
+      // Add Flat 2D Fill Layer for 2D/Top View rendering
+      map.current.addLayer({
+        id: 'campus-polygons-fill',
+        type: 'fill',
+        source: 'campus-polygons',
+        paint: {
+          'fill-color': ['get', 'color'],
+          'fill-opacity': map.current.getPitch() === 0 ? 0.6 : 0.1
+        }
+      });
+
+      // Add Flat 2D Outline Border Layer
+      map.current.addLayer({
+        id: 'campus-polygons-line',
+        type: 'line',
+        source: 'campus-polygons',
+        paint: {
+          'line-color': '#1f2937',
+          'line-width': 1.5,
+          'line-opacity': map.current.getPitch() === 0 ? 0.8 : 0.2
+        }
+      });
+
+      // Add 3D Extrusion Layer
       map.current.addLayer({
         id: 'campus-polygons-layer',
         type: 'fill-extrusion',

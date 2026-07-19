@@ -86,8 +86,8 @@ window.updateGeoJSON = function(data, floorId) {
 
   // Filter features to show blocks and map layers
   const features = data.features.filter(f => {
-    // Hide paths, nodes, rooms
-    if (f.properties.type === 'path' || f.properties.type === 'node' || f.properties.type === 'room') return false;
+    // Hide paths, nodes
+    if (f.properties.type === 'path' || f.properties.type === 'node') return false;
     // Hide parking areas by default
     if (f.properties.category === 'parking' || (f.properties.name && f.properties.name.toLowerCase().includes('parking'))) return false;
     return true;
@@ -102,20 +102,24 @@ window.updateGeoJSON = function(data, floorId) {
       data: data
     });
 
-    // 3D Extrusion layer for campus blocks
+    // 3D Extrusion layer for campus blocks, rooms, and stairs
     map.addLayer({
       'id': 'campus-polygons',
       'type': 'fill-extrusion',
       'source': 'campus-data',
       'paint': {
         'fill-extrusion-color': ['coalesce', ['get', 'color'], '#3b82f6'],
-        // Base block height is 15m, else default to 2m
         'fill-extrusion-height': [
           'case',
-          ['==', ['get', 'type'], 'block'], 15,
-          2
+          ['has', 'height'], ['get', 'height'],
+          ['==', ['get', 'type'], 'block'], 2,
+          3
         ],
-        'fill-extrusion-base': 0,
+        'fill-extrusion-base': [
+          'case',
+          ['has', 'min_height'], ['get', 'min_height'],
+          0
+        ],
         'fill-extrusion-opacity': 0.8
       }
     });

@@ -285,12 +285,20 @@ router.post('/qr/:campusId/verify', async (req, res, next) => {
 router.get('/geojson/:id', async (req, res, next) => {
   try {
     const campusId = req.params.id;
-    const [blocks, rooms, paths, mapLayers] = await Promise.all([
+    const Floor = require('../models/Floor');
+    const NavNode = require('../models/NavNode');
+    const [blocks, rooms, paths, mapLayers, floors, navNodes] = await Promise.all([
       Block.find({ campusId, isActive: true }),
       Room.find({ campusId, isActive: true }),
       NavPath.find({ campusId, isActive: true }).populate('nodeA').populate('nodeB'),
-      MapLayer.find({ campusId, isActive: true })
+      MapLayer.find({ campusId, isActive: true }),
+      Floor.find({ campusId }),
+      NavNode.find({ campusId, isActive: true })
     ]);
+
+    // Build a lookup map: floorId -> level
+    const floorLevelMap = {};
+    floors.forEach(f => { floorLevelMap[f._id.toString()] = f.level; });
 
     const features = [];
 
@@ -305,36 +313,173 @@ router.get('/geojson/:id', async (req, res, next) => {
         features.push({
           type: 'Feature',
           geometry: { type: 'Polygon', coordinates: [coords] },
-          properties: { id: b._id, name: b.name, type: 'block', category: b.domain, color: b.shape.fill || '#64748b' }
+          properties: { id: b._id, name: b.name, type: 'block', category: b.domain, color: b.shape.fill || '#64748b', min_height: 0, height: 2 }
         });
       }
     });
 
-    // Convert Rooms to GeoJSON Polygons
+    // Convert Rooms to GeoJSON Polygons (with floor-level elevation)
     rooms.forEach(r => {
       if (r.shape && r.shape.points && r.shape.points.length >= 3) {
-        const coords = r.shape.points.map(p => [p.y, p.x]);
-        // Close the polygon
-        if (coords[0][0] !== coords[coords.length - 1][0] || coords[0][1] !== coords[coords.length - 1][1]) {
-          coords.push([...coords[0]]);
+        const floorIdStr = r.floorId ? r.floorId.toString() : '';
+        const level = floorLevelMap[floorIdStr] !== undefined ? floorLevelMap[floorIdStr] : 0;
+
+        // Handle stairs rooms with step generation
+        if (r.type === 'stairs' && r.stairsConfig && r.shape.points.length >= 4) {
+          const pts = r.shape.points;
+          const p1 = pts[0], p2 = pts[1], p3 = pts[2], p4 = pts[3];
+
+          const len12 = Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
+          const len23 = Math.sqrt(Math.pow(p2.x - p3.x, 2) + Math.pow(p2.y - p3.y, 2));
+          const len34 = Math.sqrt(Math.pow(p3.x - p4.x, 2) + Math.pow(p3.y - p4.y, 2));
+          const len41 = Math.sqrt(Math.pow(p4.x - p1.x, 2) + Math.pow(p4.y - p1.y, 2));
+
+          const config = r.stairsConfig;
+          const N = config.stepCount || 15;
+          const scale = config.stairWidthScale !== undefined ? config.stairWidthScale : 1.0;
+          const direction = config.stairDirection || 'auto';
+          const invert = config.invertSlope || false;
+
+          let is1to3 = true;
+          if (direction === 'auto') {
+            is1to3 = (len23 + len41) >= (len12 + len34);
+          } else if (direction === 'transverse') {
+            is1to3 = false;
+          }
+
+          const startFloorId = (config.startFloorId ? config.startFloorId.toString() : floorIdStr);
+          const endFloorId = config.endFloorId ? config.endFloorId.toString() : null;
+          const floorBaseStart = floorLevelMap[startFloorId] !== undefined ? floorLevelMap[startFloorId] * 3.5 : level * 3.5;
+          const floorBaseEnd = endFloorId && floorLevelMap[endFloorId] !== undefined ? floorLevelMap[endFloorId] * 3.5 : floorBaseStart + 3.5;
+          const heightDiff = floorBaseEnd - floorBaseStart;
+
+          const startPct = config.startHeightPct !== undefined ? config.startHeightPct / 100 : 0.0;
+          const endPct = config.endHeightPct !== undefined ? config.endHeightPct / 100 : 1.0;
+          const zStart = floorBaseStart + startPct * heightDiff;
+          const zEnd = floorBaseStart + endPct * heightDiff;
+
+          for (let i = 0; i < N; i++) {
+            const tStart = i / N;
+            const tEnd = (i + 1) / N;
+            let c1, c2, c3, c4;
+
+            if (is1to3) {
+              const xSL = p1.x + (p4.x - p1.x) * tStart;
+              const ySL = p1.y + (p4.y - p1.y) * tStart;
+              const xSR = p2.x + (p3.x - p2.x) * tStart;
+              const ySR = p2.y + (p3.y - p2.y) * tStart;
+              const xEL = p1.x + (p4.x - p1.x) * tEnd;
+              const yEL = p1.y + (p4.y - p1.y) * tEnd;
+              const xER = p2.x + (p3.x - p2.x) * tEnd;
+              const yER = p2.y + (p3.y - p2.y) * tEnd;
+
+              const xSC = (xSL + xSR) / 2, ySC = (ySL + ySR) / 2;
+              const xEC = (xEL + xER) / 2, yEC = (yEL + yER) / 2;
+
+              c1 = [ySC + (ySL - ySC) * scale, xSC + (xSL - xSC) * scale];
+              c2 = [ySC + (ySR - ySC) * scale, xSC + (xSR - xSC) * scale];
+              c3 = [yEC + (yER - yEC) * scale, xEC + (xER - xEC) * scale];
+              c4 = [yEC + (yEL - yEC) * scale, xEC + (xEL - xEC) * scale];
+            } else {
+              const xSB = p1.x + (p2.x - p1.x) * tStart;
+              const ySB = p1.y + (p2.y - p1.y) * tStart;
+              const xST = p4.x + (p3.x - p4.x) * tStart;
+              const yST = p4.y + (p3.y - p4.y) * tStart;
+              const xEB = p1.x + (p2.x - p1.x) * tEnd;
+              const yEB = p1.y + (p2.y - p1.y) * tEnd;
+              const xET = p4.x + (p3.x - p4.x) * tEnd;
+              const yET = p4.y + (p3.y - p4.y) * tEnd;
+
+              const xSC = (xSB + xST) / 2, ySC = (ySB + yST) / 2;
+              const xEC = (xEB + xET) / 2, yEC = (yEB + yET) / 2;
+
+              c1 = [ySC + (ySB - ySC) * scale, xSC + (xSB - xSC) * scale];
+              c2 = [yEC + (yEB - yEC) * scale, xEC + (xEB - xEC) * scale];
+              c3 = [yEC + (yET - yEC) * scale, xEC + (xET - xEC) * scale];
+              c4 = [ySC + (yST - ySC) * scale, xSC + (xST - xSC) * scale];
+            }
+
+            const stepMinH = invert
+              ? zEnd - (i * (zEnd - zStart)) / N
+              : zStart + (i * (zEnd - zStart)) / N;
+            const stepMaxH = invert
+              ? zEnd - ((i + 1) * (zEnd - zStart)) / N
+              : zStart + ((i + 1) * (zEnd - zStart)) / N;
+
+            const hMin = Math.min(stepMinH, stepMaxH);
+            const hMax = Math.max(stepMinH, stepMaxH);
+
+            features.push({
+              type: 'Feature',
+              geometry: { type: 'Polygon', coordinates: [[c1, c2, c3, c4, c1]] },
+              properties: {
+                id: r._id + '_step_' + i, name: r.name, type: 'room', category: 'stairs',
+                floorId: r.floorId, color: r.color || '#f97316',
+                min_height: hMin, height: hMax + 0.05, isStairs: true
+              }
+            });
+          }
+        } else {
+          // Regular room
+          const minH = level * 3.5;
+          const h = minH + 3.0;
+          const coords = r.shape.points.map(p => [p.y, p.x]);
+          if (coords[0][0] !== coords[coords.length - 1][0] || coords[0][1] !== coords[coords.length - 1][1]) {
+            coords.push([...coords[0]]);
+          }
+          features.push({
+            type: 'Feature',
+            geometry: { type: 'Polygon', coordinates: [coords] },
+            properties: {
+              id: r._id, name: r.name, type: 'room', category: r.type, floorId: r.floorId,
+              color: r.color || r.shape.fill || '#3b82f6',
+              min_height: minH, height: h
+            }
+          });
         }
-        features.push({
-          type: 'Feature',
-          geometry: { type: 'Polygon', coordinates: [coords] },
-          properties: { id: r._id, name: r.name, type: 'room', category: r.type, floorId: r.floorId }
-        });
       }
     });
 
-    // Convert NavPaths to GeoJSON LineStrings
+    // Convert NavPaths to GeoJSON LineStrings (with 3D elevation)
     paths.forEach(p => {
       if (p.nodeA && p.nodeB) {
+        const getNodeLevel = (node) => {
+          if (node.floorLevel !== undefined && node.floorLevel !== null) return node.floorLevel;
+          if (node.floorId) {
+            const fid = typeof node.floorId === 'object' ? node.floorId._id?.toString() : node.floorId.toString();
+            if (floorLevelMap[fid] !== undefined) return floorLevelMap[fid];
+          }
+          return 0;
+        };
+        const levelA = getNodeLevel(p.nodeA);
+        const levelB = getNodeLevel(p.nodeB);
+        const hA = levelA * 3.5 + 0.5;
+        const hB = levelB * 3.5 + 0.5;
+
         features.push({
           type: 'Feature',
-          geometry: { type: 'LineString', coordinates: [[p.nodeA.y, p.nodeA.x], [p.nodeB.y, p.nodeB.x]] },
+          geometry: { type: 'LineString', coordinates: [[p.nodeA.y, p.nodeA.x, hA], [p.nodeB.y, p.nodeB.x, hB]] },
           properties: { id: p._id, name: 'Path', type: 'path', bidirectional: p.bidirectional, floorId: p.floorId }
         });
       }
+    });
+
+    // Convert NavNodes to GeoJSON Points (with 3D elevation)
+    navNodes.forEach(n => {
+      const getLevel = () => {
+        if (n.floorLevel !== undefined && n.floorLevel !== null) return n.floorLevel;
+        if (n.floorId) {
+          const fid = typeof n.floorId === 'object' ? n.floorId._id?.toString() : n.floorId.toString();
+          if (floorLevelMap[fid] !== undefined) return floorLevelMap[fid];
+        }
+        return 0;
+      };
+      const h = getLevel() * 3.5 + 0.5;
+      features.push({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [n.y, n.x, h] },
+        properties: { id: n._id, type: 'node', label: n.label, nodeType: n.type, floorId: n.floorId, blockId: n.blockId }
+      });
     });
 
     // Convert custom MapLayers to GeoJSON
