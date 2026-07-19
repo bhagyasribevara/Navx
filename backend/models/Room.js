@@ -46,6 +46,20 @@ const roomSchema = new mongoose.Schema({
   amenities: [String],
   accessible: { type: Boolean, default: true },
   excludedFloors: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Floor' }],
+  stairsConfig: {
+    startFloorId: { type: mongoose.Schema.Types.ObjectId, ref: 'Floor' },
+    endFloorId: { type: mongoose.Schema.Types.ObjectId, ref: 'Floor' },
+    stepCount: { type: Number, default: 15 },
+    stairWidth: { type: Number, default: 2.0 },
+    stairWidthScale: { type: Number, default: 1.0 },
+    stairDirection: { type: String, enum: ['auto', 'longitudinal', 'transverse'], default: 'auto' },
+    invertSlope: { type: Boolean, default: false },
+    startHeightPct: { type: Number, default: 0 },
+    endHeightPct: { type: Number, default: 100 },
+    riseHeight: { type: Number, default: 0.18 },
+    treadDepth: { type: Number, default: 0.30 },
+    stairType: { type: String, enum: ['straight', 'L-shape'], default: 'straight' }
+  },
   isActive: { type: Boolean, default: true }
 }, { timestamps: true });
 

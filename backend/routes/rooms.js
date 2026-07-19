@@ -6,15 +6,8 @@ const { authenticateJWT, optionalAuthenticateJWT, enforceCampusIsolation } = req
 router.get('/', optionalAuthenticateJWT, enforceCampusIsolation, async (req, res, next) => {
   try {
     const filter = { isActive: true };
-    if (req.query.floorId && req.query.blockId) {
-      filter.$or = [
-        { floorId: req.query.floorId },
-        { blockId: req.query.blockId, type: { $in: ['stairs', 'elevator'] }, excludedFloors: { $nin: [req.query.floorId] } }
-      ];
-    } else {
-      if (req.query.floorId) filter.floorId = req.query.floorId;
-      if (req.query.blockId) filter.blockId = req.query.blockId;
-    }
+    if (req.query.floorId) filter.floorId = req.query.floorId;
+    if (req.query.blockId) filter.blockId = req.query.blockId;
     if (req.query.campusId) filter.campusId = req.query.campusId;
     if (req.query.type) filter.type = req.query.type;
     const rooms = await Room.find(filter)
@@ -101,6 +94,12 @@ router.put('/:id', authenticateJWT, enforceCampusIsolation, async (req, res, nex
     const room = await Room.findByIdAndUpdate(req.params.id, req.body, { new: true });
     console.log(`[UPDATE ROOM] Saved shape:`, JSON.stringify(room.shape));
     if (!room) return res.status(404).json({ error: 'Room not found' });
+    
+    // Auto-sync stairs navigation nodes/paths
+    if (room.type === 'stairs' && room.stairsConfig) {
+      await syncStairsNavigation(room);
+    }
+    
     res.json(room);
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -110,12 +109,127 @@ router.put('/:id', authenticateJWT, enforceCampusIsolation, async (req, res, nex
 // DELETE room
 router.delete('/:id', authenticateJWT, enforceCampusIsolation, async (req, res, next) => {
   try {
-    await Room.findByIdAndUpdate(req.params.id, { isActive: false });
+    const room = await Room.findByIdAndUpdate(req.params.id, { isActive: false });
+    
+    // Deactivate associated navigation nodes and paths
+    const NavNode = require('../models/NavNode');
+    const NavPath = require('../models/NavPath');
+    const nodes = await NavNode.find({ roomId: req.params.id });
+    const nodeIds = nodes.map(n => n._id);
+    await NavNode.updateMany({ roomId: req.params.id }, { isActive: false });
+    await NavPath.updateMany({ $or: [{ nodeA: { $in: nodeIds } }, { nodeB: { $in: nodeIds } }] }, { isActive: false });
+
     res.json({ message: 'Room deleted' });
   } catch (err) {
     next(err);
   }
 });
+
+async function syncStairsNavigation(room) {
+  try {
+    if (room.type !== 'stairs' || !room.stairsConfig || !room.stairsConfig.startFloorId || !room.stairsConfig.endFloorId) {
+      return;
+    }
+    const pts = room.shape?.points;
+    if (!pts || pts.length < 4) return;
+
+    const NavNode = require('../models/NavNode');
+    const NavPath = require('../models/NavPath');
+    const Floor = require('../models/Floor');
+
+    // Calculate midpoints of opposite sides to find bottom and top center coords
+    const m1 = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
+    const m2 = { x: (pts[1].x + pts[2].x) / 2, y: (pts[1].y + pts[2].y) / 2 };
+    const m3 = { x: (pts[2].x + pts[3].x) / 2, y: (pts[2].y + pts[3].y) / 2 };
+    const m4 = { x: (pts[3].x + (pts[4] || pts[0]).x) / 2, y: (pts[3].y + (pts[4] || pts[0]).y) / 2 };
+
+    const d13 = Math.sqrt(Math.pow(m1.x - m3.x, 2) + Math.pow(m1.y - m3.y, 2));
+    const d24 = Math.sqrt(Math.pow(m2.x - m4.x, 2) + Math.pow(m2.y - m4.y, 2));
+
+    let startPoint, endPoint;
+    if (d13 >= d24) {
+      startPoint = m1;
+      endPoint = m3;
+    } else {
+      startPoint = m2;
+      endPoint = m4;
+    }
+
+    // Find or create bottom node
+    let nodeA = await NavNode.findOne({ roomId: room._id, floorId: room.stairsConfig.startFloorId, isActive: true });
+    if (!nodeA) {
+      nodeA = new NavNode({
+        floorId: room.stairsConfig.startFloorId,
+        blockId: room.blockId,
+        campusId: room.campusId,
+        type: 'stairs',
+        roomId: room._id,
+        label: `${room.name} (Bottom)`
+      });
+    }
+    nodeA.x = startPoint.x;
+    nodeA.y = startPoint.y;
+    await nodeA.save();
+
+    // Find or create top node
+    let nodeB = await NavNode.findOne({ roomId: room._id, floorId: room.stairsConfig.endFloorId, isActive: true });
+    if (!nodeB) {
+      nodeB = new NavNode({
+        floorId: room.stairsConfig.endFloorId,
+        blockId: room.blockId,
+        campusId: room.campusId,
+        type: 'stairs',
+        roomId: room._id,
+        label: `${room.name} (Top)`
+      });
+    }
+    nodeB.x = endPoint.x;
+    nodeB.y = endPoint.y;
+    await nodeB.save();
+
+    // Link floor connections
+    nodeA.connectedFloorNodeId = nodeB._id;
+    nodeA.connectedFloorId = nodeB.floorId;
+    await nodeA.save();
+
+    nodeB.connectedFloorNodeId = nodeA._id;
+    nodeB.connectedFloorId = nodeA.floorId;
+    await nodeB.save();
+
+    // Calculate 3D distance
+    const dx = (nodeA.x - nodeB.x) * 111320;
+    const dy = (nodeA.y - nodeB.y) * 111320 * Math.cos(nodeA.x * Math.PI / 180);
+    const horizDist = Math.sqrt(dx * dx + dy * dy);
+
+    const startFloorObj = await Floor.findById(nodeA.floorId);
+    const endFloorObj = await Floor.findById(nodeB.floorId);
+    const heightDiff = Math.abs((startFloorObj?.level || 0) - (endFloorObj?.level || 0)) * 3.5;
+    const distance = Math.round(Math.sqrt(horizDist * horizDist + heightDiff * heightDiff));
+
+    // Find or create cross-floor navigation path
+    let path = await NavPath.findOne({
+      $or: [
+        { nodeA: nodeA._id, nodeB: nodeB._id },
+        { nodeA: nodeB._id, nodeB: nodeA._id }
+      ],
+      isActive: true
+    });
+    if (!path) {
+      path = new NavPath({
+        campusId: room.campusId,
+        nodeA: nodeA._id,
+        nodeB: nodeB._id,
+        type: 'stairs',
+        bidirectional: true
+      });
+    }
+    path.distance = distance || 1;
+    path.floorId = null; // null for multi-floor path
+    await path.save();
+  } catch (err) {
+    console.error('Error synchronizing stairs navigation:', err);
+  }
+}
 
 // DELETE stairs/elevator from a specific floor (adds floor to excludedFloors)
 router.delete('/:id/floor/:floorId', authenticateJWT, enforceCampusIsolation, async (req, res, next) => {

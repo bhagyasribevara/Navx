@@ -985,7 +985,15 @@ export default function GuidedMapBuilder() {
     if (!activeRoom) return;
     setSaving(true);
     try {
-      await updateRoom(activeRoom._id, { name: activeRoom.name, type: activeRoom.type, shape: activeRoom.shape });
+      const updateData = { 
+        name: activeRoom.name, 
+        type: activeRoom.type, 
+        shape: activeRoom.shape 
+      };
+      if (activeRoom.type === 'stairs' && activeRoom.stairsConfig) {
+        updateData.stairsConfig = activeRoom.stairsConfig;
+      }
+      await updateRoom(activeRoom._id, updateData);
       toast.success('Room updated'); 
       setIsRoomDirty(false);
       loadFloorData(activeFloor._id);
@@ -994,6 +1002,26 @@ export default function GuidedMapBuilder() {
   };
 
   const handlePropChange = (key, val) => setActiveRoom(p => ({ ...p, [key]: val }));
+
+  const handleStairsConfigChange = (key, val) => {
+    setActiveRoom(p => {
+      const updated = {
+        ...p,
+        stairsConfig: {
+          ...(p.stairsConfig || {
+            startFloorId: p.floorId?._id || p.floorId,
+            endFloorId: '',
+            stepCount: 15,
+            stairWidth: 2.0,
+            stairType: 'straight'
+          }),
+          [key]: val
+        }
+      };
+      setRooms(prev => prev.map(r => r._id === p._id ? updated : r));
+      return updated;
+    });
+  };
 
   // Load excluded floors when a stairs/elevator room is selected
   const loadExcludedFloors = async (roomId) => {
@@ -1321,7 +1349,12 @@ export default function GuidedMapBuilder() {
             nodes={Array.from(new Map([...allNodes, ...nodes, ...mainNodes].map(n => [n._id, n])).values())} 
             paths={Array.from(new Map([...paths, ...mainPaths].map(p => [p._id, p])).values())} 
             campus={campus}
+            activeFloor={activeFloor}
             mapboxUrl={import.meta.env.VITE_MAPBOX_URL}
+            onRefresh={() => {
+              if (activeFloor) loadFloorData(activeFloor._id);
+              loadMainPathway();
+            }}
           />
         )}
       </div>
@@ -1509,8 +1542,141 @@ export default function GuidedMapBuilder() {
                       {(VENUE_ROOM_TYPES[venueType] || VENUE_ROOM_TYPES.campus).map(t => <option key={t} value={t}>{t.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}</option>)}
                     </select>
                   </div>
+
+                  {activeRoom.type === 'stairs' && (
+                    <div style={{ marginTop: 20, padding: 16, background: '#1a2235', borderRadius: 12, border: '1px solid #f9731630', textAlign: 'left' }}>
+                      <h4 style={{ margin: '0 0 14px', fontSize: 13, color: '#f97316', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <FiLayers /> 3D Stairs Configuration
+                      </h4>
+                      
+                      <div style={S.formGroup}>
+                        <label style={S.label}>Start Floor (Bottom)</label>
+                        <select 
+                          style={S.input} 
+                          value={activeRoom.stairsConfig?.startFloorId || activeRoom.floorId?._id || activeRoom.floorId || ''} 
+                          onChange={e => handleStairsConfigChange('startFloorId', e.target.value)}
+                        >
+                          <option value="">Select Floor</option>
+                          {floors.map(f => <option key={f._id} value={f._id}>{f.name}</option>)}
+                        </select>
+                      </div>
+
+                      <div style={S.formGroup}>
+                        <label style={S.label}>End Floor (Top)</label>
+                        <select 
+                          style={S.input} 
+                          value={activeRoom.stairsConfig?.endFloorId || ''} 
+                          onChange={e => handleStairsConfigChange('endFloorId', e.target.value)}
+                        >
+                          <option value="">Select Floor</option>
+                          {floors.map(f => <option key={f._id} value={f._id}>{f.name}</option>)}
+                        </select>
+                      </div>
+
+                      <div style={S.formGroup}>
+                        <label style={{ ...S.label, display: 'flex', justifyContent: 'space-between' }}>
+                          <span>Number of Steps</span>
+                          <span style={{ color: '#f97316', fontWeight: 700 }}>{activeRoom.stairsConfig?.stepCount || 15}</span>
+                        </label>
+                        <input 
+                          type="range" 
+                          min="5" 
+                          max="30" 
+                          style={{ width: '100%', accentColor: '#f97316' }} 
+                          value={activeRoom.stairsConfig?.stepCount || 15} 
+                          onChange={e => handleStairsConfigChange('stepCount', parseInt(e.target.value))} 
+                        />
+                      </div>
+
+                      <div style={S.formGroup}>
+                        <label style={{ ...S.label, display: 'flex', justifyContent: 'space-between' }}>
+                          <span>Width Scale</span>
+                          <span style={{ color: '#f97316', fontWeight: 700 }}>{Math.round((activeRoom.stairsConfig?.stairWidthScale !== undefined ? activeRoom.stairsConfig.stairWidthScale : 1.0) * 100)}%</span>
+                        </label>
+                        <input 
+                          type="range" 
+                          min="0.2" 
+                          max="1.0" 
+                          step="0.05"
+                          style={{ width: '100%', accentColor: '#f97316' }} 
+                          value={activeRoom.stairsConfig?.stairWidthScale !== undefined ? activeRoom.stairsConfig.stairWidthScale : 1.0} 
+                          onChange={e => handleStairsConfigChange('stairWidthScale', parseFloat(e.target.value))} 
+                        />
+                      </div>
+
+                      <div style={S.formGroup}>
+                        <label style={S.label}>Stair Direction / Flow</label>
+                        <select 
+                          style={S.input} 
+                          value={activeRoom.stairsConfig?.stairDirection || 'auto'} 
+                          onChange={e => handleStairsConfigChange('stairDirection', e.target.value)}
+                        >
+                          <option value="auto">Automatic (based on shape)</option>
+                          <option value="longitudinal">Along Length (Side 1 to 3)</option>
+                          <option value="transverse">Along Width (Side 4 to 2)</option>
+                        </select>
+                      </div>
+
+                      <div style={{ ...S.formGroup, display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 16 }}>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: '#94a3b8' }}>Invert Slope (Flip Up/Down)</span>
+                        <button
+                          onClick={(e) => {
+                            e.preventDefault();
+                            handleStairsConfigChange('invertSlope', !(activeRoom.stairsConfig?.invertSlope || false));
+                          }}
+                          style={{
+                            padding: '6px 16px',
+                            borderRadius: 8,
+                            border: 'none',
+                            cursor: 'pointer',
+                            fontWeight: 700,
+                            fontSize: 12,
+                            background: activeRoom.stairsConfig?.invertSlope ? '#f97316' : '#1a2235',
+                            color: '#fff',
+                            border: '1px solid #f9731640',
+                            transition: 'all 0.2s'
+                          }}
+                        >
+                          {activeRoom.stairsConfig?.invertSlope ? 'Inverted (Reversed)' : 'Normal'}
+                        </button>
+                      </div>
+
+                      <div style={{ ...S.formGroup, marginTop: 16 }}>
+                        <label style={{ ...S.label, display: 'flex', justifyContent: 'space-between' }}>
+                          <span>Vertical Start Height</span>
+                          <span style={{ color: '#f97316', fontWeight: 700 }}>{activeRoom.stairsConfig?.startHeightPct !== undefined ? activeRoom.stairsConfig.startHeightPct : 0}%</span>
+                        </label>
+                        <input 
+                          type="range" 
+                          min="0" 
+                          max="100" 
+                          step="5"
+                          style={{ width: '100%', accentColor: '#f97316' }} 
+                          value={activeRoom.stairsConfig?.startHeightPct !== undefined ? activeRoom.stairsConfig.startHeightPct : 0} 
+                          onChange={e => handleStairsConfigChange('startHeightPct', parseInt(e.target.value))} 
+                        />
+                      </div>
+
+                      <div style={S.formGroup}>
+                        <label style={{ ...S.label, display: 'flex', justifyContent: 'space-between' }}>
+                          <span>Vertical End Height</span>
+                          <span style={{ color: '#f97316', fontWeight: 700 }}>{activeRoom.stairsConfig?.endHeightPct !== undefined ? activeRoom.stairsConfig.endHeightPct : 100}%</span>
+                        </label>
+                        <input 
+                          type="range" 
+                          min="0" 
+                          max="100" 
+                          step="5"
+                          style={{ width: '100%', accentColor: '#f97316' }} 
+                          value={activeRoom.stairsConfig?.endHeightPct !== undefined ? activeRoom.stairsConfig.endHeightPct : 100} 
+                          onChange={e => handleStairsConfigChange('endHeightPct', parseInt(e.target.value))} 
+                        />
+                      </div>
+                    </div>
+                  )}
+
                   <div style={{ display: 'flex', gap: 10, marginTop: 24 }}>
-                    <button style={{ ...S.primaryBtn, marginTop: 0, flex: 1, background: '#1a2235', color: '#ef4444', border: '1px solid #ef444450' }} onClick={(e) => { e.preventDefault(); if (window.confirm('Delete from all floors?')) deleteRoom(activeRoom._id).then(() => { setActiveRoom(null); loadFloorData(activeFloor._id); }); }}>Delete All</button>
+                    <button style={{ ...S.primaryBtn, marginTop: 0, flex: 1, background: '#1a2235', color: '#ef4444', border: '1px solid #ef444450' }} onClick={(e) => { e.preventDefault(); if (window.confirm('Delete Room?')) deleteRoom(activeRoom._id).then(() => { setActiveRoom(null); loadFloorData(activeFloor._id); }); }}>Delete Room</button>
                     <button style={{ ...S.successBtn, marginTop: 0, flex: 2 }} onClick={updateRoomProps} disabled={saving}>{saving ? 'Saving...' : 'Save Room'}</button>
                   </div>
 

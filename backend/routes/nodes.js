@@ -6,18 +6,11 @@ const { authenticateJWT, optionalAuthenticateJWT, enforceCampusIsolation } = req
 router.get('/', optionalAuthenticateJWT, enforceCampusIsolation, async (req, res, next) => {
   try {
     const filter = { isActive: true };
-    if (req.query.floorId && req.query.floorId !== 'null' && req.query.blockId) {
-      filter.$or = [
-        { floorId: req.query.floorId },
-        { blockId: req.query.blockId, type: { $in: ['stairs', 'elevator'] } }
-      ];
-    } else {
-      if (req.query.floorId) {
-        filter.floorId = req.query.floorId === 'null' ? { $eq: null } : req.query.floorId;
-      }
-      if (req.query.campusId) filter.campusId = req.query.campusId;
-      if (req.query.blockId) filter.blockId = req.query.blockId;
+    if (req.query.floorId) {
+      filter.floorId = req.query.floorId === 'null' ? { $eq: null } : req.query.floorId;
     }
+    if (req.query.campusId) filter.campusId = req.query.campusId;
+    if (req.query.blockId) filter.blockId = req.query.blockId;
     const nodes = await NavNode.find(filter);
     res.json(nodes);
   } catch (err) {

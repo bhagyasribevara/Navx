@@ -104,6 +104,16 @@ api.interceptors.response.use(
         return Promise.reject(refreshError);
       }
     }
+
+    // Force logout and redirect on any unhandled 401 (e.g. invalid signature, revoked session, or no token)
+    if (error.response?.status === 401) {
+      localStorage.removeItem("navx_admin");
+      localStorage.removeItem("navx_token");
+      if (window.location.pathname !== "/") {
+        window.location.href = "/";
+      }
+    }
+
     return Promise.reject(error);
   }
 );

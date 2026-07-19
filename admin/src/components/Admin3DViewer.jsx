@@ -2,14 +2,34 @@ import React, { useEffect, useRef, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { FiX, FiSave, FiLayers, FiInfo } from 'react-icons/fi';
-import { updateNode, updatePath } from '../api';
+import { updateNode, updatePath, createNode, createPath, deleteNode, deletePath } from '../api';
 
-export default function Admin3DViewer({ blocks, floors, rooms, nodes, paths, campus, mapboxUrl }) {
+export default function Admin3DViewer({ blocks, floors, rooms, nodes, paths, campus, activeFloor, mapboxUrl, onRefresh }) {
   const mapContainer = useRef(null);
   const map = useRef(null);
   const [selectedEntity, setSelectedEntity] = useState(null); // { type: 'node' | 'path', data: {...} }
   const [elevationLevel, setElevationLevel] = useState(0);
   const [selectedBlockId, setSelectedBlockId] = useState(null);
+
+  const [drawMode, setDrawMode] = useState('select'); // 'select' | 'addNode' | 'addPath'
+  const [pathStartNode, setPathStartNode] = useState(null);
+  const [targetFloorId, setTargetFloorId] = useState(activeFloor?._id || (floors[0]?._id || ''));
+
+  const drawModeRef = useRef(drawMode);
+  const pathStartNodeRef = useRef(pathStartNode);
+  const targetFloorIdRef = useRef(targetFloorId);
+  const selectedBlockIdRef = useRef(selectedBlockId);
+  const campusRef = useRef(campus);
+
+  useEffect(() => { drawModeRef.current = drawMode; }, [drawMode]);
+  useEffect(() => { pathStartNodeRef.current = pathStartNode; }, [pathStartNode]);
+  useEffect(() => { targetFloorIdRef.current = targetFloorId; }, [targetFloorId]);
+  useEffect(() => { selectedBlockIdRef.current = selectedBlockId; }, [selectedBlockId]);
+  useEffect(() => { campusRef.current = campus; }, [campus]);
+
+  useEffect(() => {
+    if (activeFloor) setTargetFloorId(activeFloor._id);
+  }, [activeFloor]);
 
   const getNodeLevel = (n) => {
     if (n.floorLevel !== undefined) return n.floorLevel;
@@ -63,35 +83,105 @@ export default function Admin3DViewer({ blocks, floors, rooms, nodes, paths, cam
     });
 
     // Handle clicks on map
-    map.current.on('click', (e) => {
+    map.current.on('click', async (e) => {
+      const mode = drawModeRef.current;
+      
+      // If we are adding a node, click on any empty space or floor polygon to create a node
+      if (mode === 'addNode') {
+        const floorId = targetFloorIdRef.current;
+        if (!floorId) {
+          alert('Please select a target floor in the top toolbar first!');
+          return;
+        }
+        const latlng = e.lngLat;
+        try {
+          const floorsList = floors;
+          const selectedFloor = floorsList.find(f => f._id === floorId);
+          
+          await createNode({
+            floorId,
+            blockId: selectedBlockIdRef.current || (selectedFloor ? selectedFloor.blockId : null),
+            campusId: campusRef.current?._id,
+            x: latlng.lat,
+            y: latlng.lng,
+            type: 'waypoint',
+            label: 'Node'
+          });
+          
+          if (onRefresh) onRefresh();
+        } catch (err) {
+          console.error("Failed to create node in 3D:", err);
+          alert("Failed to create node.");
+        }
+        return;
+      }
+
+      // Query features clicked
       const features = map.current.queryRenderedFeatures(e.point, {
         layers: ['nodes-layer', 'paths-layer', 'campus-polygons-layer']
       });
 
       if (features.length > 0) {
-        const nodeOrPath = features.find(f => f.layer.id === 'nodes-layer' || f.layer.id === 'paths-layer');
-        if (nodeOrPath) {
-          try {
-            const props = JSON.parse(nodeOrPath.properties.rawData);
-            setSelectedEntity({ type: nodeOrPath.layer.id === 'nodes-layer' ? 'node' : 'path', data: props });
-            if (nodeOrPath.layer.id === 'nodes-layer') {
-              setElevationLevel(getNodeLevel(props));
+        const nodeFeat = features.find(f => f.layer.id === 'nodes-layer');
+        const pathFeat = features.find(f => f.layer.id === 'paths-layer');
+        const polyFeat = features.find(f => f.layer.id === 'campus-polygons-layer');
+
+        if (nodeFeat) {
+          const props = JSON.parse(nodeFeat.properties.rawData);
+          
+          if (mode === 'addPath') {
+            const startNode = pathStartNodeRef.current;
+            if (!startNode) {
+              setPathStartNode(props);
+            } else {
+              if (startNode._id === props._id) {
+                alert("Start and destination node cannot be the same!");
+                return;
+              }
+              try {
+                const isCrossFloor = startNode.floorId !== props.floorId;
+                const assignedFloor = isCrossFloor ? null : (startNode.floorId?._id || startNode.floorId);
+                
+                await createPath({
+                  nodeA: startNode._id,
+                  nodeB: props._id,
+                  floorId: assignedFloor,
+                  campusId: campusRef.current?._id,
+                  bidirectional: true,
+                  type: isCrossFloor ? 'stairs' : 'hallway'
+                });
+                
+                setPathStartNode(null);
+                if (onRefresh) onRefresh();
+              } catch (err) {
+                console.error("Failed to create path in 3D:", err);
+                alert("Failed to create path.");
+              }
             }
-          } catch(err) {
-            console.error("Error parsing feature data", err);
+          } else {
+            // Select mode
+            setSelectedEntity({ type: 'node', data: props });
+            setElevationLevel(getNodeLevel(props));
           }
-        } else {
-          const poly = features.find(f => f.layer.id === 'campus-polygons-layer');
-          if (poly) {
-            if (poly.properties.isBlock || poly.properties.isRoom) {
-               setSelectedBlockId(poly.properties.blockId);
-            }
+        } else if (pathFeat && mode === 'select') {
+          const props = JSON.parse(pathFeat.properties.rawData);
+          setSelectedEntity({ type: 'path', data: props });
+        } else if (polyFeat) {
+          if (polyFeat.properties.isBlock || polyFeat.properties.isRoom) {
+            setSelectedBlockId(polyFeat.properties.blockId);
+          }
+          if (mode === 'select') {
             setSelectedEntity(null);
           }
         }
       } else {
-        setSelectedEntity(null);
-        setSelectedBlockId(null);
+        if (mode === 'select') {
+          setSelectedEntity(null);
+          setSelectedBlockId(null);
+        }
+        if (mode === 'addPath') {
+          setPathStartNode(null);
+        }
       }
     });
 
@@ -110,7 +200,7 @@ export default function Admin3DViewer({ blocks, floors, rooms, nodes, paths, cam
     if (map.current && map.current.isStyleLoaded()) {
       renderCampusData();
     }
-  }, [blocks, floors, rooms, nodes, paths, selectedBlockId]);
+  }, [blocks, floors, rooms, nodes, paths, selectedBlockId, selectedEntity, pathStartNode]);
 
   const renderCampusData = () => {
     if (!map.current) return;
@@ -140,21 +230,158 @@ export default function Admin3DViewer({ blocks, floors, rooms, nodes, paths, cam
     // Prepare rooms
     rooms.forEach(r => {
       if (r.shape && r.shape.points && r.shape.points.length > 0) {
-        const floor = floors.find(f => f._id === (r.floorId?._id || r.floorId));
-        const level = floor ? floor.level : 0;
-        const minH = level * 3.5;
-        const h = minH + 3.0; // Room height
-        
-        const coords = r.shape.points.map(p => [p.y, p.x]);
-        coords.push([r.shape.points[0].y, r.shape.points[0].x]);
-        
         const rBlockId = (r.blockId && r.blockId._id) ? r.blockId._id : r.blockId;
-        
-        roomFeatures.push({
-          type: 'Feature',
-          properties: { isRoom: true, blockId: rBlockId || '', color: r.color || '#3b82f6', min_height: minH, height: h },
-          geometry: { type: 'Polygon', coordinates: [coords] }
-        });
+
+        if (r.type === 'stairs' && r.stairsConfig && r.shape.points.length >= 4) {
+          const pts = r.shape.points;
+          const p1 = pts[0];
+          const p2 = pts[1];
+          const p3 = pts[2];
+          const p4 = pts[3];
+
+          // Calculate lengths of sides to determine orientation
+          const len12 = Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
+          const len23 = Math.sqrt(Math.pow(p2.x - p3.x, 2) + Math.pow(p2.y - p3.y, 2));
+          const len34 = Math.sqrt(Math.pow(p3.x - p4.x, 2) + Math.pow(p3.y - p4.y, 2));
+          const len41 = Math.sqrt(Math.pow(p4.x - p1.x, 2) + Math.pow(p4.y - p1.y, 2));
+
+          const config = r.stairsConfig;
+          const N = config.stepCount || 15;
+          const scale = config.stairWidthScale !== undefined ? config.stairWidthScale : 1.0;
+          const direction = config.stairDirection || 'auto';
+          const invert = config.invertSlope || false;
+
+          // Determine step orientation
+          let is1to3 = true;
+          if (direction === 'auto') {
+            is1to3 = (len23 + len41) >= (len12 + len34);
+          } else if (direction === 'transverse') {
+            is1to3 = false;
+          } // if longitudinal, is1to3 is true
+
+          const startFloor = floors.find(f => f._id === (config.startFloorId?._id || config.startFloorId || r.floorId?._id || r.floorId));
+          const endFloor = floors.find(f => f._id === (config.endFloorId?._id || config.endFloorId));
+
+          const floorBaseStart = startFloor ? startFloor.level * 3.5 : 0;
+          const floorBaseEnd = endFloor ? endFloor.level * 3.5 : floorBaseStart + 3.5;
+          const heightDiff = floorBaseEnd - floorBaseStart;
+
+          const startPct = config.startHeightPct !== undefined ? config.startHeightPct / 100 : 0.0;
+          const endPct = config.endHeightPct !== undefined ? config.endHeightPct / 100 : 1.0;
+
+          const zStart = floorBaseStart + startPct * heightDiff;
+          const zEnd = floorBaseStart + endPct * heightDiff;
+
+          for (let i = 0; i < N; i++) {
+            const tStart = i / N;
+            const tEnd = (i + 1) / N;
+
+            let c1, c2, c3, c4;
+
+            if (is1to3) {
+              // Interpolate along Side 4 (1 -> 4) and Side 2 (2 -> 3)
+              const xStartLeft = p1.x + (p4.x - p1.x) * tStart;
+              const yStartLeft = p1.y + (p4.y - p1.y) * tStart;
+              const xStartRight = p2.x + (p3.x - p2.x) * tStart;
+              const yStartRight = p2.y + (p3.y - p2.y) * tStart;
+
+              const xEndLeft = p1.x + (p4.x - p1.x) * tEnd;
+              const yEndLeft = p1.y + (p4.y - p1.y) * tEnd;
+              const xEndRight = p2.x + (p3.x - p2.x) * tEnd;
+              const yEndRight = p2.y + (p3.y - p2.y) * tEnd;
+
+              // Scale coordinates towards center of the stairs
+              const xStartCenter = (xStartLeft + xStartRight) / 2;
+              const yStartCenter = (yStartLeft + yStartRight) / 2;
+              const xEndCenter = (xEndLeft + xEndRight) / 2;
+              const yEndCenter = (yEndLeft + yEndRight) / 2;
+
+              const xSL = xStartCenter + (xStartLeft - xStartCenter) * scale;
+              const ySL = yStartCenter + (yStartLeft - yStartCenter) * scale;
+              const xSR = xStartCenter + (xStartRight - xStartCenter) * scale;
+              const ySR = yStartCenter + (yStartRight - yStartCenter) * scale;
+
+              const xEL = xEndCenter + (xEndLeft - xEndCenter) * scale;
+              const yEL = yEndCenter + (yEndLeft - yEndCenter) * scale;
+              const xER = xEndCenter + (xEndRight - xEndCenter) * scale;
+              const yER = yEndCenter + (yEndRight - yEndCenter) * scale;
+
+              c1 = [ySL, xSL];
+              c2 = [ySR, xSR];
+              c3 = [yER, xER];
+              c4 = [yEL, xEL];
+            } else {
+              // Interpolate along Side 1 (1 -> 2) and Side 3 (4 -> 3)
+              const xStartBottom = p1.x + (p2.x - p1.x) * tStart;
+              const yStartBottom = p1.y + (p2.y - p1.y) * tStart;
+              const xStartTop = p4.x + (p3.x - p4.x) * tStart;
+              const yStartTop = p4.y + (p3.y - p4.y) * tStart;
+
+              const xEndBottom = p1.x + (p2.x - p1.x) * tEnd;
+              const yEndBottom = p1.y + (p2.y - p1.y) * tEnd;
+              const xEndTop = p4.x + (p3.x - p4.x) * tEnd;
+              const yEndTop = p4.y + (p3.y - p4.y) * tEnd;
+
+              // Scale coordinates towards center of the stairs
+              const xStartCenter = (xStartBottom + xStartTop) / 2;
+              const yStartCenter = (yStartBottom + yStartTop) / 2;
+              const xEndCenter = (xEndBottom + xEndTop) / 2;
+              const yEndCenter = (yEndBottom + yEndTop) / 2;
+
+              const xSB = xStartCenter + (xStartBottom - xStartCenter) * scale;
+              const ySB = yStartCenter + (yStartBottom - yStartCenter) * scale;
+              const xST = xStartCenter + (xStartTop - xStartCenter) * scale;
+              const yST = yStartCenter + (yStartTop - yStartCenter) * scale;
+
+              const xEB = xEndCenter + (xEndBottom - xEndCenter) * scale;
+              const yEB = yEndCenter + (yEndBottom - yEndCenter) * scale;
+              const xET = xEndCenter + (xEndTop - xEndCenter) * scale;
+              const yET = yEndCenter + (yEndTop - yEndCenter) * scale;
+
+              c1 = [ySB, xSB];
+              c2 = [yEB, xEB];
+              c3 = [yET, xET];
+              c4 = [yST, xST];
+            }
+
+            const stepMinH = invert 
+              ? zEnd - (i * (zEnd - zStart)) / N 
+              : zStart + (i * (zEnd - zStart)) / N;
+            const stepMaxH = invert 
+              ? zEnd - ((i + 1) * (zEnd - zStart)) / N 
+              : zStart + ((i + 1) * (zEnd - zStart)) / N;
+
+            const hMin = Math.min(stepMinH, stepMaxH);
+            const hMax = Math.max(stepMinH, stepMaxH);
+
+            roomFeatures.push({
+              type: 'Feature',
+              properties: { 
+                isRoom: true, 
+                isStairs: true, 
+                blockId: rBlockId || '', 
+                color: r.color || '#f97316', 
+                min_height: hMin, 
+                height: hMax + 0.05 
+              },
+              geometry: { type: 'Polygon', coordinates: [[c1, c2, c3, c4, c1]] }
+            });
+          }
+        } else {
+          const floor = floors.find(f => f._id === (r.floorId?._id || r.floorId));
+          const level = floor ? floor.level : 0;
+          const minH = level * 3.5;
+          const h = minH + 3.0; // Room height
+
+          const coords = r.shape.points.map(p => [p.y, p.x]);
+          coords.push([r.shape.points[0].y, r.shape.points[0].x]);
+
+          roomFeatures.push({
+            type: 'Feature',
+            properties: { isRoom: true, blockId: rBlockId || '', color: r.color || '#3b82f6', min_height: minH, height: h },
+            geometry: { type: 'Polygon', coordinates: [coords] }
+          });
+        }
       }
     });
 
@@ -196,7 +423,7 @@ export default function Admin3DViewer({ blocks, floors, rooms, nodes, paths, cam
         
         pathFeatures.push({
           type: 'Feature',
-          properties: { rawData: JSON.stringify(p) },
+          properties: { id: p._id, rawData: JSON.stringify(p) },
           geometry: {
             type: 'LineString',
             coordinates: [
@@ -212,6 +439,12 @@ export default function Admin3DViewer({ blocks, floors, rooms, nodes, paths, cam
     const pathsData = { type: 'FeatureCollection', features: pathFeatures };
     if (pathsSource) {
       pathsSource.setData(pathsData);
+      map.current.setPaintProperty('paths-layer', 'line-color', [
+        'case',
+        ['==', ['get', 'id'], selectedEntity?.data?._id || ''],
+        '#3b82f6',
+        '#c084fc'
+      ]);
     } else {
       map.current.addSource('campus-paths', { type: 'geojson', data: pathsData });
       map.current.addLayer({
@@ -219,7 +452,15 @@ export default function Admin3DViewer({ blocks, floors, rooms, nodes, paths, cam
         type: 'line',
         source: 'campus-paths',
         layout: { 'line-join': 'round', 'line-cap': 'round' },
-        paint: { 'line-color': '#c084fc', 'line-width': 6 }
+        paint: {
+          'line-color': [
+            'case',
+            ['==', ['get', 'id'], selectedEntity?.data?._id || ''],
+            '#3b82f6',
+            '#c084fc'
+          ],
+          'line-width': 6
+        }
       });
     }
 
@@ -232,7 +473,7 @@ export default function Admin3DViewer({ blocks, floors, rooms, nodes, paths, cam
       
       nodeFeatures.push({
         type: 'Feature',
-        properties: { rawData: JSON.stringify(n) },
+        properties: { id: n._id, rawData: JSON.stringify(n) },
         geometry: {
           type: 'Point',
           coordinates: [n.y, n.x, h]
@@ -244,6 +485,14 @@ export default function Admin3DViewer({ blocks, floors, rooms, nodes, paths, cam
     const nodesData = { type: 'FeatureCollection', features: nodeFeatures };
     if (nodesSource) {
       nodesSource.setData(nodesData);
+      map.current.setPaintProperty('nodes-layer', 'circle-color', [
+        'case',
+        ['==', ['get', 'id'], pathStartNode?._id || ''],
+        '#eab308',
+        ['==', ['get', 'id'], selectedEntity?.data?._id || ''],
+        '#3b82f6',
+        '#22c55e'
+      ]);
     } else {
       map.current.addSource('campus-nodes', { type: 'geojson', data: nodesData });
       map.current.addLayer({
@@ -251,8 +500,15 @@ export default function Admin3DViewer({ blocks, floors, rooms, nodes, paths, cam
         type: 'circle',
         source: 'campus-nodes',
         paint: {
-          'circle-radius': 6,
-          'circle-color': '#22c55e',
+          'circle-radius': 8,
+          'circle-color': [
+            'case',
+            ['==', ['get', 'id'], pathStartNode?._id || ''],
+            '#eab308',
+            ['==', ['get', 'id'], selectedEntity?.data?._id || ''],
+            '#3b82f6',
+            '#22c55e'
+          ],
           'circle-stroke-width': 2,
           'circle-stroke-color': '#ffffff'
         }
@@ -279,18 +535,124 @@ export default function Admin3DViewer({ blocks, floors, rooms, nodes, paths, cam
     }
   };
 
+  const handleDeleteEntity = async () => {
+    if (!selectedEntity) return;
+    if (!window.confirm(`Are you sure you want to delete this ${selectedEntity.type}?`)) return;
+    try {
+      if (selectedEntity.type === 'node') {
+        await deleteNode(selectedEntity.data._id);
+      } else {
+        await deletePath(selectedEntity.data._id);
+      }
+      setSelectedEntity(null);
+      alert(`${selectedEntity.type === 'node' ? 'Node' : 'Path'} deleted!`);
+      if (onRefresh) onRefresh();
+    } catch (err) {
+      console.error(err);
+      alert("Failed to delete entity.");
+    }
+  };
+
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       <div ref={mapContainer} style={{ width: '100%', height: '100%' }} />
+
+      {/* 3D Editor Toolbar Overlay */}
+      <div style={{
+        position: 'absolute',
+        bottom: 20,
+        left: '50%',
+        transform: 'translateX(-50%)',
+        zIndex: 10,
+        background: 'rgba(17,24,39,0.9)',
+        backdropFilter: 'blur(10px)',
+        padding: '10px 16px',
+        borderRadius: '12px',
+        border: '1px solid #374151',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '12px',
+        color: 'white'
+      }}>
+        <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#9ca3af' }}>3D Editor:</span>
+        
+        <button
+          onClick={(e) => { e.preventDefault(); setDrawMode('select'); setPathStartNode(null); }}
+          style={{
+            background: drawMode === 'select' ? '#3b82f6' : 'rgba(255,255,255,0.08)',
+            color: 'white', border: 'none', borderRadius: '6px', padding: '6px 12px', cursor: 'pointer', fontWeight: 600, fontSize: '12px', transition: 'all 0.2s'
+          }}
+        >
+          🖱️ Select
+        </button>
+
+        <button
+          onClick={(e) => { e.preventDefault(); setDrawMode('addNode'); setPathStartNode(null); }}
+          style={{
+            background: drawMode === 'addNode' ? '#22c55e' : 'rgba(255,255,255,0.08)',
+            color: 'white', border: 'none', borderRadius: '6px', padding: '6px 12px', cursor: 'pointer', fontWeight: 600, fontSize: '12px', transition: 'all 0.2s'
+          }}
+        >
+          📍 Add Node
+        </button>
+
+        <button
+          onClick={(e) => { e.preventDefault(); setDrawMode('addPath'); setPathStartNode(null); }}
+          style={{
+            background: drawMode === 'addPath' ? '#c084fc' : 'rgba(255,255,255,0.08)',
+            color: 'white', border: 'none', borderRadius: '6px', padding: '6px 12px', cursor: 'pointer', fontWeight: 600, fontSize: '12px', transition: 'all 0.2s'
+          }}
+        >
+          ⛓️ Add Path
+        </button>
+        
+        {drawMode === 'addNode' && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', borderLeft: '1px solid #4b5563', paddingLeft: '12px' }}>
+            <span style={{ fontSize: '11px', color: '#9ca3af' }}>Target Floor:</span>
+            <select
+              value={targetFloorId}
+              onChange={(e) => setTargetFloorId(e.target.value)}
+              style={{ background: '#111827', color: 'white', border: '1px solid #4b5563', borderRadius: '6px', padding: '4px 8px', fontSize: '12px' }}
+            >
+              <option value="">Select Floor</option>
+              {floors.map(f => <option key={f._id} value={f._id}>{f.name} (L{f.level})</option>)}
+            </select>
+          </div>
+        )}
+      </div>
+
+      {/* Dynamic Path Connection Prompt */}
+      {drawMode === 'addPath' && pathStartNode && (
+        <div style={{
+          position: 'absolute',
+          bottom: 80,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 10,
+          background: 'rgba(234,179,8,0.95)',
+          color: '#1e1b4b',
+          padding: '8px 16px',
+          borderRadius: '8px',
+          fontWeight: 700,
+          fontSize: '12px',
+          border: '1px solid #ca8a04',
+          boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px'
+        }}>
+          <span>Connecting from: {pathStartNode.label || `Node at level ${getNodeLevel(pathStartNode)}`}. Click destination node.</span>
+          <button onClick={() => setPathStartNode(null)} style={{ background: '#78350f', color: 'white', border: 'none', borderRadius: 4, padding: '2px 6px', fontSize: '10px', cursor: 'pointer' }}>Cancel</button>
+        </div>
+      )}
       
       {/* HUD / Overlay */}
       <div style={{ position: 'absolute', top: 20, left: 20, zIndex: 10, background: 'rgba(17,24,39,0.85)', backdropFilter: 'blur(10px)', padding: '16px', borderRadius: '12px', border: '1px solid #374151', color: 'white', maxWidth: '320px' }}>
         <h3 style={{ margin: '0 0 8px 0', fontSize: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <FiLayers color="#3b82f6" /> 3D Elevation Viewer
+          <FiLayers color="#3b82f6" /> 3D Editor HUD
         </h3>
         <p style={{ margin: 0, fontSize: '12px', color: '#9ca3af', lineHeight: 1.5 }}>
-          <strong>Easy Stairs Setup:</strong> Nodes are automatically placed at the correct height based on their floor. 
-          To draw stairs, simply use 2D Mode to draw a path connecting a node on Floor 1 to a node on Floor 2!
+          Specify navigation nodes and paths directly in 3D. Add nodes to correct floor elevations and click start/end nodes to draw vertical stairs paths.
         </p>
 
         {selectedEntity ? (
@@ -305,7 +667,7 @@ export default function Admin3DViewer({ blocks, floors, rooms, nodes, paths, cam
             </div>
 
             {selectedEntity.type === 'node' && (
-              <div>
+              <div style={{ marginBottom: '12px' }}>
                 <label style={{ display: 'block', fontSize: '12px', marginBottom: '4px', color: '#9ca3af' }}>
                   Floor Level (Manual Override)
                 </label>
@@ -325,15 +687,37 @@ export default function Admin3DViewer({ blocks, floors, rooms, nodes, paths, cam
               </div>
             )}
             {selectedEntity.type === 'path' && (
-              <div style={{ fontSize: '12px', color: '#d1d5db' }}>
+              <div style={{ fontSize: '12px', color: '#d1d5db', marginBottom: '12px' }}>
                 <p>This is a connection between two nodes.</p>
                 <p>If they are on different floors, the path will auto-incline in 3D!</p>
               </div>
             )}
+
+            <button
+              onClick={handleDeleteEntity}
+              style={{
+                width: '100%',
+                padding: '8px',
+                borderRadius: '6px',
+                border: 'none',
+                background: '#ef4444',
+                color: 'white',
+                fontWeight: 700,
+                fontSize: '13px',
+                cursor: 'pointer',
+                transition: 'background 0.2s',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px'
+              }}
+            >
+              🗑️ Delete {selectedEntity.type === 'node' ? 'Node' : 'Path'}
+            </button>
           </div>
         ) : (
           <div style={{ marginTop: '16px', padding: '12px', borderRadius: '8px', border: '1px dashed #4b5563', textAlign: 'center', fontSize: '12px', color: '#9ca3af' }}>
-            No node selected.
+            No node or path selected. Click one to edit or delete.
           </div>
         )}
       </div>
