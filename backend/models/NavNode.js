@@ -17,7 +17,6 @@ const navNodeSchema = new mongoose.Schema({
   connectedFloorNodeId: { type: mongoose.Schema.Types.ObjectId, ref: 'NavNode', default: null },
   connectedFloorId: { type: mongoose.Schema.Types.ObjectId, ref: 'Floor', default: null },
   accessible: { type: Boolean, default: true },
-  floorLevel: { type: Number, default: null },
   isActive: { type: Boolean, default: true }
 }, { timestamps: true });
 

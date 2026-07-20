@@ -7,7 +7,7 @@ import 'leaflet/dist/leaflet.css';
 import '@geoman-io/leaflet-geoman-free';
 import '@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css';
 import { FiArrowLeft, FiPlus, FiTrash2, FiMap, FiLayers, FiSquare, FiNavigation, FiCheck, FiSettings, FiMove, FiInfo, FiCopy, FiRefreshCw, FiArrowRight, FiArrowLeftCircle, FiRepeat, FiMousePointer, FiUploadCloud, FiCrosshair, FiEdit2 } from 'react-icons/fi';
-import { getBlocks, createBlock, updateBlock, deleteBlock, getFloors, getAllFloorsByCampus, createFloor, deleteFloor, getRooms, createRoom, updateRoom, deleteRoom, deleteStairsFromFloor, restoreStairsToFloor, getExcludedFloors, getNodes, createNode, getPaths, createPath, deletePath, updatePath, getCampus, updateCampus, getAllCampusNodes, getAllCampusPaths, getAllRoomsByCampus, getAllPathsByCampus, getMapLayers, createMapLayer, updateMapLayer, deleteMapLayer, publishMap } from '../api';
+import { getBlocks, createBlock, updateBlock, deleteBlock, getFloors, createFloor, deleteFloor, getRooms, createRoom, updateRoom, deleteRoom, deleteStairsFromFloor, restoreStairsToFloor, getExcludedFloors, getNodes, createNode, getPaths, createPath, deletePath, updatePath, getCampus, updateCampus, getAllCampusNodes, getAllCampusPaths, getMapLayers, createMapLayer, updateMapLayer, deleteMapLayer, publishMap } from '../api';
 import Admin3DViewer from '../components/Admin3DViewer';
 
 const GMRIT = [18.4665, 83.6629];
@@ -437,25 +437,6 @@ export default function GuidedMapBuilder() {
   
   // 3D Admin Viewer State
   const [is3DMode, setIs3DMode] = useState(false);
-  const [allFloors, setAllFloors] = useState([]);
-  const [allRooms, setAllRooms] = useState([]);
-  const [allPaths, setAllPaths] = useState([]);
-
-  // Load complete campus data for 3D mode (all blocks, all floors, all rooms, all paths)
-  const load3DData = async () => {
-    try {
-      const [floorsRes, roomsRes, nodesRes, pathsRes] = await Promise.all([
-        getAllFloorsByCampus(campusId),
-        getAllRoomsByCampus(campusId),
-        import('../api').then(m => m.default.get(`/nodes?campusId=${campusId}`)),
-        getAllPathsByCampus(campusId)
-      ]);
-      setAllFloors(floorsRes.data || []);
-      setAllRooms(roomsRes.data || []);
-      setAllNodes(nodesRes.data || []);
-      setAllPaths(pathsRes.data || []);
-    } catch (e) { console.warn('Failed to load 3D data', e); }
-  };
 
   useEffect(() => {
     if (!isAuthorized) return;
@@ -1132,7 +1113,7 @@ export default function GuidedMapBuilder() {
               <FiLayers size={14} color="#3b82f6" /> View Mode
             </h4>
             <button 
-              onClick={() => { const next = !is3DMode; setIs3DMode(next); if (next) load3DData(); }}
+              onClick={() => setIs3DMode(!is3DMode)}
               style={{
                 width: '100%', padding: '10px 14px', borderRadius: 8, 
                 background: is3DMode ? '#3b82f6' : '#111827', 
@@ -1363,15 +1344,14 @@ export default function GuidedMapBuilder() {
         ) : (
           <Admin3DViewer 
             blocks={blocks} 
-            floors={allFloors.length > 0 ? allFloors : floors} 
-            rooms={allRooms.length > 0 ? allRooms : rooms} 
+            floors={floors} 
+            rooms={rooms} 
             nodes={Array.from(new Map([...allNodes, ...nodes, ...mainNodes].map(n => [n._id, n])).values())} 
-            paths={Array.from(new Map([...allPaths, ...paths, ...mainPaths].map(p => [p._id, p])).values())} 
+            paths={Array.from(new Map([...paths, ...mainPaths].map(p => [p._id, p])).values())} 
             campus={campus}
             activeFloor={activeFloor}
             mapboxUrl={import.meta.env.VITE_MAPBOX_URL}
             onRefresh={() => {
-              load3DData();
               if (activeFloor) loadFloorData(activeFloor._id);
               loadMainPathway();
             }}

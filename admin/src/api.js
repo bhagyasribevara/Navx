@@ -148,7 +148,6 @@ export const deleteBlock = (id) => api.delete(`/blocks/${id}`);
 
 // Floors
 export const getFloors = (blockId, campusId) => api.get(`/floors?blockId=${blockId}${campusId ? `&campusId=${campusId}` : ''}`);
-export const getAllFloorsByCampus = (campusId) => api.get(`/floors?campusId=${campusId}`);
 export const createFloor = (data) => api.post("/floors", data);
 export const updateFloor = (id, data) => api.put(`/floors/${id}`, data);
 export const deleteFloor = (id) => api.delete(`/floors/${id}`);
@@ -173,7 +172,6 @@ export const deleteNode = (id) => api.delete(`/nodes/${id}`);
 // Nav Paths
 export const getPaths = (floorId) => api.get(`/paths?floorId=${floorId}`);
 export const getAllCampusPaths = (campusId) => api.get(`/paths?campusId=${campusId}&floorId=null`);
-export const getAllPathsByCampus = (campusId) => api.get(`/paths?campusId=${campusId}`);
 export const createPath = (data) => api.post("/paths", data);
 export const updatePath = (id, data) => api.put(`/paths/${id}`, data);
 export const deletePath = (id) => api.delete(`/paths/${id}`);
