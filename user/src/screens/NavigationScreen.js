@@ -31,8 +31,8 @@ const formatSpeech = (text) => {
 const toRad = d => d * Math.PI / 180;
 function haversine(lat1, lon1, lat2, lon2) {
   const dLat = toRad(lat2 - lat1), dLon = toRad(lon2 - lon1);
-  const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
-  return EARTH_R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return EARTH_R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 const AVG_STRIDE = 0.72;   // meters per step
 const WALK_SPEED = 1.2;    // m/s fallback
@@ -53,13 +53,13 @@ function getClosestPointOnSegment(px, py, x1, y1, x2, y2) {
 
 function snapPositionToRoute(pos, path, currentStep) {
   if (!pos || !path || path.length === 0) return pos;
-  
+
   const startNode = path[currentStep];
   const endNode = path[Math.min(currentStep + 1, path.length - 1)];
   if (!startNode || !endNode) return pos;
 
   const snapped = getClosestPointOnSegment(pos.x, pos.y, startNode.x, startNode.y, endNode.x, endNode.y);
-  
+
   // Calculate distance between raw and snapped in meters
   const dist = haversine(pos.x, pos.y, snapped.x, snapped.y);
   if (dist < 15) { // within 15 meters
@@ -97,7 +97,7 @@ async function fetchStreetRoute(lat1, lon1, lat2, lon2) {
 
 function buildNavMapHTML(geoJSONData, pathPoints, initialPos, targetRoom, mapboxUrl, floors) {
   const center = initialPos ? [initialPos.x, initialPos.y] : (pathPoints?.length ? [pathPoints[0].x, pathPoints[0].y] : [18.4665, 83.6629]);
-  
+
   const destX = targetRoom?.shape?.points?.[0]?.x || targetRoom?.shape?.x;
   const destY = targetRoom?.shape?.points?.[0]?.y || targetRoom?.shape?.y;
 
@@ -120,7 +120,7 @@ function buildNavMapHTML(geoJSONData, pathPoints, initialPos, targetRoom, mapbox
   const targetFloorId = targetRoom?.floorId
     ? (typeof targetRoom.floorId === 'object' ? targetRoom.floorId._id : targetRoom.floorId)
     : '';
-  
+
   return `<!DOCTYPE html>
 <html><head>
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
@@ -506,7 +506,7 @@ export default function NavigationScreen({ navigation, route }) {
   // Keep routeData in a stable ref for startNavigation to avoid stale state
   const routeDataStableRef = useRef(routeData);
   const mapboxUrl = getCachedConfigValue("EXPO_PUBLIC_MAPBOX_URL", "https://api.mapbox.com/styles/v1/mapbox/streets-v11/tiles/256/{z}/{x}/{y}@2x?access_token=pk.eyJ1IjoidmVua2F0YS1rcmlzaG5hIiwiYSI6ImNtZnYycHN0bTAzY28yanFxeG4wOXVsenAifQ.w1yd6XuvWvarYj33rP1LkA");
-  
+
   const mapHtml = React.useMemo(() => {
     if (!geoJSONData) return "";
     return buildNavMapHTML(geoJSONData, routeData?.path, initialUserPosRef.current, targetRoom, mapboxUrl, mapData?.floors);
@@ -591,7 +591,7 @@ export default function NavigationScreen({ navigation, route }) {
           recent.unshift(targetRoom);
           if (recent.length > 5) recent = recent.slice(0, 5);
           AsyncStorage.setItem("navx_recent", JSON.stringify(recent));
-        }).catch(() => {});
+        }).catch(() => { });
       }
 
       setError(null);
@@ -617,7 +617,7 @@ export default function NavigationScreen({ navigation, route }) {
               usedQR = true;
             }
           }
-        } catch (e) {}
+        } catch (e) { }
       }
 
       if (!usedQR) {
@@ -701,11 +701,11 @@ export default function NavigationScreen({ navigation, route }) {
             // Fallback to straight line
             result.path.unshift({ nodeId: 'user_start', x: uLat, y: uLng, floorId: targetRoom?.floorId || null, type: 'user' });
           }
-          
+
           result.distance += distToFirst;
           const segSteps = Math.max(1, Math.round(distToFirst / AVG_STRIDE));
           const segEta = Math.round(distToFirst / WALK_SPEED);
-          
+
           if (result.directions?.length > 0) {
             result.directions.unshift({
               step: 0,
@@ -779,9 +779,9 @@ export default function NavigationScreen({ navigation, route }) {
 
   // ── Voice announcement guard refs (prevent repeated announcements)
   const preTurnAnnouncedRef = useRef(-1);  // last step for which 10m pre-turn was announced
-  const destReminder50Ref   = useRef(false);
-  const destReminder20Ref   = useRef(false);
-  const offRouteCountRef    = useRef(0);
+  const destReminder50Ref = useRef(false);
+  const destReminder20Ref = useRef(false);
+  const offRouteCountRef = useRef(0);
 
   useEffect(() => {
     let locationWatcher;
@@ -796,16 +796,16 @@ export default function NavigationScreen({ navigation, route }) {
         stepDetector.current?.processAccelerometer(d.x, d.y, d.z);
       });
       Accelerometer.setUpdateInterval(100);
-      
+
       mag = Magnetometer.addListener(d => {
         // Tilt-compensated compass logic
         const gY = Math.min(1, Math.abs(accelYRef.current || 0));
         const mForward = d.y * (1 - gY) + (-d.z) * gY;
-        
+
         const h = Math.atan2(mForward, d.x) * (180 / Math.PI);
         const trueBearing = h - 90;
         const normalizedH = (trueBearing + 360) % 360;
-        
+
         posEngine.updateHeading(normalizedH);
         if (webViewRef.current) {
           webViewRef.current.injectJavaScript(`
@@ -826,14 +826,14 @@ export default function NavigationScreen({ navigation, route }) {
             const lat = loc.coords.latitude;
             const lng = loc.coords.longitude;
             const accuracy = loc.coords.accuracy || 15;
-            
+
             // Feed raw GPS coordinate into our sensor fusion engine
             posEngine.processGPSUpdate(lat, lng, accuracy);
-            
+
             const rData = routeDataRef.current;
             const cStep = currentStepRef.current;
             const isArrived = arrivedRef.current;
-            
+
             // Fused, smoothed position coordinates
             let activeLat = posEngine.position.x;
             let activeLng = posEngine.position.y;
@@ -853,15 +853,15 @@ export default function NavigationScreen({ navigation, route }) {
 
                 setLiveStepDist(Math.round(distToNextNodeMeters * 10) / 10);
 
-                const remainingPathMeters = rData.directions?.slice(cStep + 1).reduce((s,d)=>s+(d.distance||0), 0) || 0;
+                const remainingPathMeters = rData.directions?.slice(cStep + 1).reduce((s, d) => s + (d.distance || 0), 0) || 0;
                 setLiveDistance(Math.max(0, Math.round((distToNextNodeMeters + remainingPathMeters) * 10) / 10));
 
                 // ── PRE-TURN ANNOUNCEMENT at 10m before the turn
                 if (voiceEnabled && distToNextNodeMeters <= 10 && preTurnAnnouncedRef.current !== cStep) {
                   const upcoming = rData.directions?.[cStep];
                   if (upcoming && (upcoming.instruction?.toLowerCase().includes('left') ||
-                                   upcoming.instruction?.toLowerCase().includes('right') ||
-                                   upcoming.instruction?.toLowerCase().includes('turn'))) {
+                    upcoming.instruction?.toLowerCase().includes('right') ||
+                    upcoming.instruction?.toLowerCase().includes('turn'))) {
                     preTurnAnnouncedRef.current = cStep;
                     Speech.speak(
                       formatSpeech(`In ${Math.round(distToNextNodeMeters)} meters, ${upcoming.instruction}`),
@@ -915,9 +915,9 @@ export default function NavigationScreen({ navigation, route }) {
         ])
       ).start();
 
-      return () => { 
-        if (accel) accel.remove(); 
-        if (mag) mag.remove(); 
+      return () => {
+        if (accel) accel.remove();
+        if (mag) mag.remove();
         if (locationWatcher) locationWatcher.remove();
       };
     }
@@ -935,11 +935,11 @@ export default function NavigationScreen({ navigation, route }) {
       const targetNode = routeData.path[currentStep + 1] || routeData.path[currentStep];
       if (targetNode) {
         const distInMeters = haversine(userPos.x, userPos.y, targetNode.x, targetNode.y);
-        
+
         // Dynamic threshold: 8m for short segments, 12m for long ones
         const segLen = routeData.directions?.[currentStep]?.distance || 20;
         const threshold = Math.min(12, Math.max(8, segLen * 0.4));
-        
+
         if (distInMeters < threshold) {
           if (currentStep < (routeData.directions?.length || 1) - 1) {
             const nextStep = currentStep + 1;
@@ -1020,11 +1020,11 @@ export default function NavigationScreen({ navigation, route }) {
       if (result.path && result.path.length > 0) {
         // Just directly connect GPS to the new route without OSRM fallback to prevent dual paths
         result.path.unshift({ nodeId: 'user_start', x: lat, y: lng, floorId: targetRoom?.floorId || null, type: 'user' });
-        
+
         setRouteData(result);
         routeDataStableRef.current = result;
         setCurrentStep(0);
-        
+
         // Reset floor tracking for new route
         setTotalFloorTransitions(result.totalFloorTransitions || 0);
         setCompletedFloorTransitions(0);
@@ -1048,10 +1048,10 @@ export default function NavigationScreen({ navigation, route }) {
     try {
       setError(null);
       setArrived(false);
-      
+
       if (!routeDataStableRef.current) {
-         // If preview failed, try again
-         await previewRoute();
+        // If preview failed, try again
+        await previewRoute();
       }
 
       const activeRouteData = routeDataStableRef.current;
@@ -1070,7 +1070,7 @@ export default function NavigationScreen({ navigation, route }) {
           const prefix = activeRouteData.routeType === 'nearest_reachable'
             ? `No direct path found. Navigating to the nearest accessible point near ${destinationName}. `
             : `Starting navigation to ${destinationName}. `;
-          
+
           // Inform user about floor changes ahead
           const floorChangeNote = (activeRouteData.totalFloorTransitions || 0) > 0
             ? `This route includes ${activeRouteData.totalFloorTransitions} floor ${activeRouteData.totalFloorTransitions === 1 ? 'change' : 'changes'}. `
@@ -1286,7 +1286,7 @@ export default function NavigationScreen({ navigation, route }) {
               <View style={s.metric}>
                 <Text style={s.metricValue}>{(() => {
                   const secs = isNavigating
-                    ? (routeData.directions?.slice(currentStep).reduce((s,d) => s + (d.eta||0), 0) || Math.round(liveDistance / WALK_SPEED))
+                    ? (routeData.directions?.slice(currentStep).reduce((s, d) => s + (d.eta || 0), 0) || Math.round(liveDistance / WALK_SPEED))
                     : (routeData.eta || Math.round(routeData.distance / WALK_SPEED));
                   return secs >= 60 ? Math.ceil(secs / 60) + "'" : secs + "s";
                 })()}</Text>
@@ -1294,7 +1294,7 @@ export default function NavigationScreen({ navigation, route }) {
               </View>
               <View style={s.metric}>
                 <Text style={s.metricValue}>{isNavigating
-                  ? (routeData.directions?.slice(currentStep).reduce((s,d) => s + (d.steps || Math.round((d.distance||0)/AVG_STRIDE)), 0) || Math.round(liveDistance / AVG_STRIDE))
+                  ? (routeData.directions?.slice(currentStep).reduce((s, d) => s + (d.steps || Math.round((d.distance || 0) / AVG_STRIDE)), 0) || Math.round(liveDistance / AVG_STRIDE))
                   : (routeData.totalSteps || Math.round(routeData.distance / AVG_STRIDE))
                 }</Text>
                 <Text style={s.metricLabel}>Steps Count</Text>
