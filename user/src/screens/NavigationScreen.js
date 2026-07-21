@@ -99,16 +99,23 @@ function buildNavMapHTML(geoJSONData, pathPoints, initialPos, targetRoom, mapbox
   const center = initialPos ? [initialPos.x, initialPos.y] : (pathPoints?.length ? [pathPoints[0].x, pathPoints[0].y] : [18.4665, 83.6629]);
   
   const destX = targetRoom?.shape?.points?.[0]?.x || targetRoom?.shape?.x;
-  const destY = targetRoom?.shape?.points?.[0]?.y || targetRoom?.shape?.y;  const pathCoordinates = pathPoints ? pathPoints.map(p => {
+  const destY = targetRoom?.shape?.points?.[0]?.y || targetRoom?.shape?.y;
+
+  // Collect all floor IDs the route passes through for multi-floor visibility
+  const routeFloorIds = new Set();
+  const pathCoordinates = pathPoints ? pathPoints.map(p => {
     let level = p.floorLevel;
     if (level === undefined && floors) {
       const f = floors.find(fl => fl._id.toString() === (p.floorId?._id || p.floorId)?.toString());
       if (f && f.level !== undefined) level = f.level;
     }
+    const fid = p.floorId?._id || p.floorId;
+    if (fid) routeFloorIds.add(fid.toString());
     // Base height for each floor is 3.5m. We add 0.5 to lift it slightly off the ground.
     const h = (level || 0) * 3.5 + 0.5;
     return `[${p.y}, ${p.x}, ${h}]`;
   }).join(',') : '';
+  const routeFloorIdsJSON = JSON.stringify([...routeFloorIds]);
 
   const targetFloorId = targetRoom?.floorId
     ? (typeof targetRoom.floorId === 'object' ? targetRoom.floorId._id : targetRoom.floorId)
@@ -238,11 +245,14 @@ map.on('load', () => {
 
   ${geoJSONData ? `window.updateGeoJSON(${JSON.stringify(geoJSONData)}, '${targetFloorId || ''}');` : ''}
 
+  // Store route floor IDs for multi-floor visibility
+  window._routeFloorIds = ${routeFloorIdsJSON || '[]'};
+
   // Draw Route Path
   ${pathCoordinates ? `
     var routePoints = [${pathCoordinates}];
-    var mainFeatures = generate3DRouteFeatures(routePoints, 0.0000003, 0.03);
-    var bgFeatures = generate3DRouteFeatures(routePoints, 0.0000008, 0.04);
+    var mainFeatures = generate3DRouteFeatures(routePoints, 0.0000005, 0.04);
+    var bgFeatures = generate3DRouteFeatures(routePoints, 0.0000012, 0.06);
 
     map.addSource('route', {
       'type': 'geojson',
@@ -259,29 +269,43 @@ map.on('load', () => {
       }
     });
 
+    // Glow halo — soft violet aura around path
     map.addLayer({
       'id': 'route-bg',
       'type': 'fill-extrusion',
       'source': 'route-bg-source',
       'paint': {
-        'fill-extrusion-color': '#c084fc',
+        'fill-extrusion-color': '#6d28d9',
         'fill-extrusion-height': ['get', 'height'],
         'fill-extrusion-base': ['get', 'min_height'],
-        'fill-extrusion-opacity': 0.25
+        'fill-extrusion-opacity': 0.6
       }
     });
 
+    // Core path — dark bold violet
     map.addLayer({
       'id': 'route-line',
       'type': 'fill-extrusion',
       'source': 'route',
       'paint': {
-        'fill-extrusion-color': '#8b5cf6',
+        'fill-extrusion-color': '#4c1d95',
         'fill-extrusion-height': ['get', 'height'],
         'fill-extrusion-base': ['get', 'min_height'],
-        'fill-extrusion-opacity': 0.95
+        'fill-extrusion-opacity': 1.0
       }
     });
+
+    // Subtle pulse animation on the glow
+    var glowDir = 1;
+    var glowOpacity = 0.6;
+    setInterval(function() {
+      glowOpacity += glowDir * 0.008;
+      if (glowOpacity >= 0.8) glowDir = -1;
+      if (glowOpacity <= 0.4) glowDir = 1;
+      try {
+        map.setPaintProperty('route-bg', 'fill-extrusion-opacity', glowOpacity);
+      } catch(e) {}
+    }, 60);
   ` : ''}
 });
 
@@ -294,7 +318,13 @@ window.updateGeoJSON = function(data, floorId) {
       if (f.properties.id !== '${targetRoom?._id || ''}') return false;
     }
     if (f.properties.type === 'room' && f.properties.floorId) {
-      if (floorId && f.properties.floorId !== floorId) return false;
+      // Always show stairs features regardless of floor — they span multiple floors
+      if (f.properties.category === 'stairs' || f.properties.isStairs) { /* keep stairs visible */ }
+      // Show rooms on ALL floors the route passes through (so user sees ground + 1st floor etc)
+      else if (floorId && f.properties.floorId !== floorId) {
+        var routeFloors = window._routeFloorIds || [];
+        if (routeFloors.indexOf(f.properties.floorId) === -1) return false;
+      }
     }
     return true;
   });
@@ -308,10 +338,12 @@ window.updateGeoJSON = function(data, floorId) {
       data: data
     });
 
+    // Buildings and regular rooms — semi-transparent so path shows through
     map.addLayer({
       'id': 'campus-polygons',
       'type': 'fill-extrusion',
       'source': 'campus-data',
+      'filter': ['!=', ['get', 'category'], 'stairs'],
       'paint': {
         'fill-extrusion-color': [
           'case',
@@ -332,8 +364,22 @@ window.updateGeoJSON = function(data, floorId) {
         'fill-extrusion-opacity': [
           'case',
           ['==', ['get', 'id'], '${targetRoom?._id || ''}'], 0.8,
-          0.4
+          0.35
         ]
+      }
+    });
+
+    // Stairs layer — rendered separately with orange color at high opacity (matches admin)
+    map.addLayer({
+      'id': 'campus-stairs',
+      'type': 'fill-extrusion',
+      'source': 'campus-data',
+      'filter': ['==', ['get', 'category'], 'stairs'],
+      'paint': {
+        'fill-extrusion-color': ['coalesce', ['get', 'color'], '#f97316'],
+        'fill-extrusion-height': ['get', 'height'],
+        'fill-extrusion-base': ['get', 'min_height'],
+        'fill-extrusion-opacity': 0.9
       }
     });
 
