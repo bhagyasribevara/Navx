@@ -13,6 +13,7 @@ const navNodeSchema = new mongoose.Schema({
   },
   label: { type: String, default: '' },
   roomId: { type: mongoose.Schema.Types.ObjectId, ref: 'Room', default: null },
+  floorLevel: { type: Number, default: null },
   // For multi-floor connections
   connectedFloorNodeId: { type: mongoose.Schema.Types.ObjectId, ref: 'NavNode', default: null },
   connectedFloorId: { type: mongoose.Schema.Types.ObjectId, ref: 'Floor', default: null },

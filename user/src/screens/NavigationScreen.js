@@ -162,6 +162,63 @@ var map = new mapboxgl.Map({
   attributionControl: false
 });
 
+function generate3DRouteFeatures(coords, width, thickness) {
+  var features = [];
+  for (var j = 0; j < coords.length - 1; j++) {
+    var pA = coords[j];
+    var pB = coords[j+1];
+
+    var ay = pA[0], ax = pA[1], ah = pA[2];
+    var by = pB[0], bx = pB[1], bh = pB[2];
+
+    var dy = by - ay;
+    var dx = bx - ax;
+    var length = Math.sqrt(dy * dy + dx * dx);
+    if (length === 0) continue;
+
+    var uy = dy / length;
+    var ux = dx / length;
+
+    var ny = -ux;
+    var nx = uy;
+
+    var N = 10;
+    for (var i = 0; i < N; i++) {
+      var tStart = i / N;
+      var tEnd = (i + 1) / N;
+
+      var yStart = ay + dy * tStart;
+      var xStart = ax + dx * tStart;
+      var yEnd = ay + dy * tEnd;
+      var xEnd = ax + dx * tEnd;
+
+      var c1 = [yStart + ny * width, xStart + nx * width];
+      var c2 = [yStart - ny * width, xStart - nx * width];
+      var c3 = [yEnd - ny * width, xEnd - nx * width];
+      var c4 = [yEnd + ny * width, xEnd + nx * width];
+
+      var hStart = ah + (bh - ah) * tStart;
+      var hEnd = ah + (bh - ah) * tEnd;
+
+      var minH = Math.min(hStart, hEnd);
+      var maxH = Math.max(hStart, hEnd);
+
+      features.push({
+        type: 'Feature',
+        properties: {
+          min_height: minH - thickness / 2,
+          height: maxH + thickness / 2
+        },
+        geometry: {
+          type: 'Polygon',
+          coordinates: [[c1, c2, c3, c4, c1]]
+        }
+      });
+    }
+  }
+  return features;
+}
+
 map.on('load', () => {
   // 3D Buildings from Mapbox Streets
   map.addLayer({
@@ -183,30 +240,47 @@ map.on('load', () => {
 
   // Draw Route Path
   ${pathCoordinates ? `
+    var routePoints = [${pathCoordinates}];
+    var mainFeatures = generate3DRouteFeatures(routePoints, 0.0000003, 0.03);
+    var bgFeatures = generate3DRouteFeatures(routePoints, 0.0000008, 0.04);
+
     map.addSource('route', {
       'type': 'geojson',
       'data': {
-        'type': 'Feature',
-        'properties': {},
-        'geometry': {
-          'type': 'LineString',
-          'coordinates': [${pathCoordinates}]
-        }
+        'type': 'FeatureCollection',
+        'features': mainFeatures
       }
     });
+    map.addSource('route-bg-source', {
+      'type': 'geojson',
+      'data': {
+        'type': 'FeatureCollection',
+        'features': bgFeatures
+      }
+    });
+
     map.addLayer({
       'id': 'route-bg',
-      'type': 'line',
-      'source': 'route',
-      'layout': { 'line-join': 'round', 'line-cap': 'round' },
-      'paint': { 'line-color': '#c084fc', 'line-width': 18, 'line-opacity': 0.25 }
+      'type': 'fill-extrusion',
+      'source': 'route-bg-source',
+      'paint': {
+        'fill-extrusion-color': '#c084fc',
+        'fill-extrusion-height': ['get', 'height'],
+        'fill-extrusion-base': ['get', 'min_height'],
+        'fill-extrusion-opacity': 0.25
+      }
     });
+
     map.addLayer({
       'id': 'route-line',
-      'type': 'line',
+      'type': 'fill-extrusion',
       'source': 'route',
-      'layout': { 'line-join': 'round', 'line-cap': 'round' },
-      'paint': { 'line-color': '#8b5cf6', 'line-width': 6 }
+      'paint': {
+        'fill-extrusion-color': '#8b5cf6',
+        'fill-extrusion-height': ['get', 'height'],
+        'fill-extrusion-base': ['get', 'min_height'],
+        'fill-extrusion-opacity': 0.95
+      }
     });
   ` : ''}
 });

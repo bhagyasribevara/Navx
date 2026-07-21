@@ -4,6 +4,14 @@ import 'mapbox-gl/dist/mapbox-gl.css';
 import { FiX, FiSave, FiLayers, FiInfo } from 'react-icons/fi';
 import { updateNode, updatePath, createNode, createPath, deleteNode, deletePath } from '../api';
 
+const generateNodePolygon = (center, radiusDeg) => {
+  return [
+    [center.y - radiusDeg, center.x - radiusDeg], [center.y + radiusDeg, center.x - radiusDeg],
+    [center.y + radiusDeg, center.x + radiusDeg], [center.y - radiusDeg, center.x + radiusDeg],
+    [center.y - radiusDeg, center.x - radiusDeg]
+  ];
+};
+
 export default function Admin3DViewer({ blocks, floors, rooms, nodes, paths, campus, activeFloor, mapboxUrl, onRefresh }) {
   const mapContainer = useRef(null);
   const map = useRef(null);
@@ -32,7 +40,7 @@ export default function Admin3DViewer({ blocks, floors, rooms, nodes, paths, cam
   }, [activeFloor]);
 
   const getNodeLevel = (n) => {
-    if (n.floorLevel !== undefined) return n.floorLevel;
+    if (n.floorLevel !== undefined && n.floorLevel !== null) return n.floorLevel;
     if (n.floorId) {
       const fId = typeof n.floorId === 'object' ? n.floorId._id : n.floorId;
       const floor = floors.find(f => f._id === fId);
@@ -307,6 +315,18 @@ export default function Admin3DViewer({ blocks, floors, rooms, nodes, paths, cam
   const renderCampusData = () => {
     if (!map.current) return;
 
+    const isNodeOnSelectedFloor = (n) => {
+      const nFloorId = n.floorId ? (typeof n.floorId === 'object' ? n.floorId._id : n.floorId) : null;
+      if (nFloorId) {
+        return nFloorId === targetFloorId;
+      } else {
+        const nLevel = getNodeLevel(n);
+        const selectedFloorObj = floors.find(f => f._id === targetFloorId);
+        const selectedLevel = selectedFloorObj ? selectedFloorObj.level : 0;
+        return nLevel === selectedLevel;
+      }
+    };
+
     const blockFeatures = [];
     const roomFeatures = [];
     
@@ -532,7 +552,7 @@ export default function Admin3DViewer({ blocks, floors, rooms, nodes, paths, cam
       });
     }
 
-    // Prepare Paths (3D Lines)
+    // Prepare Paths (Elevated/Inclined 3D Paths using fill-extrusion segments)
     const pathFeatures = [];
     paths.forEach(p => {
       const a = nodes.find(n => n._id === p.nodeA);
@@ -542,23 +562,66 @@ export default function Admin3DViewer({ blocks, floors, rooms, nodes, paths, cam
         const bVisible = !b.blockId || b.blockId === selectedBlockId;
         if (!aVisible || !bVisible) return;
 
+        const aOnFloor = isNodeOnSelectedFloor(a);
+        const bOnFloor = isNodeOnSelectedFloor(b);
+        if (!aOnFloor && !bOnFloor) return;
+
         let levelA = getNodeLevel(a);
         let levelB = getNodeLevel(b);
         
         const hA = levelA * 3.5 + 0.5;
         const hB = levelB * 3.5 + 0.5;
-        
-        pathFeatures.push({
-          type: 'Feature',
-          properties: { id: p._id, rawData: JSON.stringify(p) },
-          geometry: {
-            type: 'LineString',
-            coordinates: [
-              [a.y, a.x, hA],
-              [b.y, b.x, hB]
-            ]
+
+        const dy = b.y - a.y;
+        const dx = b.x - a.x;
+        const length = Math.sqrt(dy * dy + dx * dx);
+        if (length > 0) {
+          const uy = dy / length;
+          const ux = dx / length;
+
+          const ny = -ux;
+          const nx = uy;
+
+          // Maintain a very narrow path line width to avoid cluttering the layout
+          const width = 0.0000003; 
+          const thickness = 0.03;
+          const N = 15; // segment the path to create a smooth incline in 3D
+
+          for (let i = 0; i < N; i++) {
+            const tStart = i / N;
+            const tEnd = (i + 1) / N;
+
+            const yStart = a.y + dy * tStart;
+            const xStart = a.x + dx * tStart;
+            const yEnd = a.y + dy * tEnd;
+            const xEnd = a.x + dx * tEnd;
+
+            const p1 = [yStart + ny * width, xStart + nx * width];
+            const p2 = [yStart - ny * width, xStart - nx * width];
+            const p3 = [yEnd - ny * width, xEnd - nx * width];
+            const p4 = [yEnd + ny * width, xEnd + nx * width];
+
+            const hStart = hA + (hB - hA) * tStart;
+            const hEnd = hA + (hB - hA) * tEnd;
+
+            const minH = Math.min(hStart, hEnd);
+            const maxH = Math.max(hStart, hEnd);
+
+            pathFeatures.push({
+              type: 'Feature',
+              properties: {
+                id: p._id,
+                rawData: JSON.stringify(p),
+                min_height: minH - thickness / 2,
+                height: maxH + thickness / 2
+              },
+              geometry: {
+                type: 'Polygon',
+                coordinates: [[p1, p2, p3, p4, p1]]
+              }
+            });
           }
-        });
+        }
       }
     });
 
@@ -566,7 +629,7 @@ export default function Admin3DViewer({ blocks, floors, rooms, nodes, paths, cam
     const pathsData = { type: 'FeatureCollection', features: pathFeatures };
     if (pathsSource) {
       pathsSource.setData(pathsData);
-      map.current.setPaintProperty('paths-layer', 'line-color', [
+      map.current.setPaintProperty('paths-layer', 'fill-extrusion-color', [
         'case',
         ['==', ['get', 'id'], selectedEntity?.data?._id || ''],
         '#3b82f6',
@@ -576,34 +639,46 @@ export default function Admin3DViewer({ blocks, floors, rooms, nodes, paths, cam
       map.current.addSource('campus-paths', { type: 'geojson', data: pathsData });
       map.current.addLayer({
         id: 'paths-layer',
-        type: 'line',
+        type: 'fill-extrusion',
         source: 'campus-paths',
-        layout: { 'line-join': 'round', 'line-cap': 'round' },
         paint: {
-          'line-color': [
+          'fill-extrusion-color': [
             'case',
             ['==', ['get', 'id'], selectedEntity?.data?._id || ''],
             '#3b82f6',
             '#c084fc'
           ],
-          'line-width': 6
+          'fill-extrusion-height': ['get', 'height'],
+          'fill-extrusion-base': ['get', 'min_height'],
+          'fill-extrusion-opacity': 0.95
         }
       });
     }
 
-    // Prepare Nodes
+    // Prepare Nodes (Small 3D suspended discs using fill-extrusion)
     const nodeFeatures = [];
     nodes.forEach(n => {
       if (n.blockId && n.blockId !== selectedBlockId) return;
+      if (!isNodeOnSelectedFloor(n)) return;
 
       const h = getNodeLevel(n) * 3.5 + 0.5;
+      const isStartNode = pathStartNode?._id === n._id;
+      const isSelected = selectedEntity?.data?._id === n._id;
+      
+      const radius = (isStartNode || isSelected) ? 0.0000018 : 0.0000012;
+      const poly = generateNodePolygon(n, radius);
       
       nodeFeatures.push({
         type: 'Feature',
-        properties: { id: n._id, rawData: JSON.stringify(n) },
+        properties: {
+          id: n._id,
+          rawData: JSON.stringify(n),
+          min_height: h,
+          height: h + 0.04
+        },
         geometry: {
-          type: 'Point',
-          coordinates: [n.y, n.x, h]
+          type: 'Polygon',
+          coordinates: [poly]
         }
       });
     });
@@ -612,7 +687,7 @@ export default function Admin3DViewer({ blocks, floors, rooms, nodes, paths, cam
     const nodesData = { type: 'FeatureCollection', features: nodeFeatures };
     if (nodesSource) {
       nodesSource.setData(nodesData);
-      map.current.setPaintProperty('nodes-layer', 'circle-color', [
+      map.current.setPaintProperty('nodes-layer', 'fill-extrusion-color', [
         'case',
         ['==', ['get', 'id'], pathStartNode?._id || ''],
         '#eab308',
@@ -624,11 +699,10 @@ export default function Admin3DViewer({ blocks, floors, rooms, nodes, paths, cam
       map.current.addSource('campus-nodes', { type: 'geojson', data: nodesData });
       map.current.addLayer({
         id: 'nodes-layer',
-        type: 'circle',
+        type: 'fill-extrusion',
         source: 'campus-nodes',
         paint: {
-          'circle-radius': 8,
-          'circle-color': [
+          'fill-extrusion-color': [
             'case',
             ['==', ['get', 'id'], pathStartNode?._id || ''],
             '#eab308',
@@ -636,8 +710,9 @@ export default function Admin3DViewer({ blocks, floors, rooms, nodes, paths, cam
             '#3b82f6',
             '#22c55e'
           ],
-          'circle-stroke-width': 2,
-          'circle-stroke-color': '#ffffff'
+          'fill-extrusion-height': ['get', 'height'],
+          'fill-extrusion-base': ['get', 'min_height'],
+          'fill-extrusion-opacity': 0.95
         }
       });
     }
@@ -646,12 +721,12 @@ export default function Admin3DViewer({ blocks, floors, rooms, nodes, paths, cam
   const handleSaveElevation = async () => {
     if (!selectedEntity || selectedEntity.type !== 'node') return;
     try {
-      await updateNode(selectedEntity.data._id, { floorLevel: parseInt(elevationLevel) });
+      await updateNode(selectedEntity.data._id, { floorLevel: parseFloat(elevationLevel) });
       
       // Update local state in viewer so we see it immediately
       const nodeObj = nodes.find(n => n._id === selectedEntity.data._id);
       if (nodeObj) {
-        nodeObj.floorLevel = parseInt(elevationLevel);
+        nodeObj.floorLevel = parseFloat(elevationLevel);
         renderCampusData();
       }
       
