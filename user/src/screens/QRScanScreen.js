@@ -278,7 +278,7 @@ export default function QRScanScreen({ navigation }) {
             {/* Header Row */}
             <View style={s.campusCardHeader}>
               <View style={s.campusIconWrap}>
-                <Ionicons name="city" size={18} color="#8B5CF6" />
+                <Ionicons name="business" size={18} color="#8B5CF6" />
               </View>
               <Text style={s.campusCardTitle}>
                 Campus Detected <Ionicons name="checkmark-circle" size={16} color="#22C55E" />
@@ -318,7 +318,7 @@ export default function QRScanScreen({ navigation }) {
                     <Text style={s.metaStatText}>Floors: {result.floors || 6}</Text>
                   </View>
                   <View style={s.metaStatItem}>
-                    <Ionicons name="door-open-outline" size={13} color="#94A3B8" />
+                    <Ionicons name="grid-outline" size={13} color="#94A3B8" />
                     <Text style={s.metaStatText}>Rooms: {result.rooms || 142}</Text>
                   </View>
                 </View>
@@ -341,7 +341,7 @@ export default function QRScanScreen({ navigation }) {
 
               <TouchableOpacity 
                 style={s.quickNavBtn} 
-                onPress={() => navigation.navigate("ARScreen", { campusId: result._id })}
+                onPress={() => navigation.navigate("AR", { campusId: result._id })}
                 activeOpacity={0.8}
               >
                 <Ionicons name="cube-outline" size={18} color="#8B5CF6" />
@@ -350,7 +350,7 @@ export default function QRScanScreen({ navigation }) {
 
               <TouchableOpacity 
                 style={s.quickNavBtn} 
-                onPress={() => navigation.navigate("SearchScreen")}
+                onPress={() => navigation.navigate("Search")}
                 activeOpacity={0.8}
               >
                 <Ionicons name="hardware-chip-outline" size={18} color="#8B5CF6" />
@@ -369,7 +369,7 @@ export default function QRScanScreen({ navigation }) {
           <Text style={s.tabTextActive}>Scan</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={s.tabItem} onPress={() => navigation.navigate("FavoritesScreen")} activeOpacity={0.8}>
+        <TouchableOpacity style={s.tabItem} onPress={() => navigation.navigate("Favorites")} activeOpacity={0.8}>
           <Ionicons name="time-outline" size={20} color="#94A3B8" />
           <Text style={s.tabText}>History</Text>
         </TouchableOpacity>
@@ -379,7 +379,7 @@ export default function QRScanScreen({ navigation }) {
           <Text style={s.tabText}>Campuses</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={s.tabItem} onPress={() => navigation.navigate("ProfileScreen")} activeOpacity={0.8}>
+        <TouchableOpacity style={s.tabItem} onPress={() => navigation.navigate("Profile")} activeOpacity={0.8}>
           <Ionicons name="person-outline" size={20} color="#94A3B8" />
           <Text style={s.tabText}>Profile</Text>
         </TouchableOpacity>

@@ -188,21 +188,24 @@ window.setMapMode = function(mode) {
     map.easeTo({ pitch: 60, bearing: -17.6, duration: 600 });
   }
 
-  // Hide custom block shapes, steps, and 3D layers in 2D mode for clean 2D map tile
-  var blockAnd3DLayers = [
-    'campus-2d-fill', 'campus-2d-line', 'campus-2d-paths', 'campus-2d-nodes',
-    'campus-polygons', 'campus-stairs', '3d-buildings', 'route-bg', 'route-line', 'campus-labels'
-  ];
+  // Hide 3D extrusions in 2D mode, show 2D fill & stroke in 2D mode
+  var only3DLayers = ['campus-polygons', 'campus-stairs', '3d-buildings', 'route-bg', 'route-line'];
+  var only2DLayers = ['campus-2d-fill', 'campus-2d-line', 'nav-route-2d-line', 'campus-2d-paths', 'campus-2d-nodes'];
 
-  blockAnd3DLayers.forEach(function(id) {
+  only3DLayers.forEach(function(id) {
     if (map.getLayer(id)) {
       map.setLayoutProperty(id, 'visibility', is2D ? 'none' : 'visible');
     }
   });
 
-  // Keep active 2D navigation route visible if navigation is active
-  if (map.getLayer('nav-route-2d-line')) {
-    map.setLayoutProperty('nav-route-2d-line', 'visibility', is2D ? 'visible' : 'none');
+  only2DLayers.forEach(function(id) {
+    if (map.getLayer(id)) {
+      map.setLayoutProperty(id, 'visibility', is2D ? 'visible' : 'none');
+    }
+  });
+
+  if (map.getLayer('campus-labels')) {
+    map.setLayoutProperty('campus-labels', 'visibility', 'visible');
   }
 };
 
@@ -382,6 +385,7 @@ window.renderGeoJSONLayers = function(data, floorId) {
         'line-opacity': 0.85
       }
     });
+  }
   // ── 3. 2D NAVIGATION ACTIVE ROUTE LINE ──
   ${pathCoordinates ? `
     if (!map.getLayer('nav-route-2d-line')) {
@@ -627,8 +631,8 @@ export default function NavigationScreen({ navigation, route }) {
   const mapboxUrl = getCachedConfigValue("EXPO_PUBLIC_MAPBOX_URL", "https://api.mapbox.com/styles/v1/mapbox/streets-v11/tiles/256/{z}/{x}/{y}@2x?access_token=pk.eyJ1IjoidmVua2F0YS1rcmlzaG5hIiwiYSI6ImNtZnYycHN0bTAzY28yanFxeG4wOXVsenAifQ.w1yd6XuvWvarYj33rP1LkA");
 
   const mapHtml = React.useMemo(() => {
-    if (!geoJSONData) return "";
-    return buildNavMapHTML(geoJSONData, routeData?.path, initialUserPosRef.current, targetRoom, mapboxUrl, mapData?.floors, mapMode);
+    const geoDataToUse = geoJSONData || { type: 'FeatureCollection', features: [] };
+    return buildNavMapHTML(geoDataToUse, routeData?.path, initialUserPosRef.current, targetRoom, mapboxUrl, mapData?.floors, mapMode);
   }, [geoJSONData, routeData, targetRoom, mapboxUrl, mapData?.floors, mapMode]);
 
   // Inject updated GeoJSON when it changes without reloading WebView

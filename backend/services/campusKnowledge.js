@@ -237,9 +237,18 @@ async function buildContextString(campusId) {
   // Faculty Directory & Schedule
   if (ctx.faculties && ctx.faculties.length > 0) {
     text += `\nFACULTY DIRECTORY & TODAY'S CLASSES:\n`;
+    const norm = str => (str || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
     for (const fac of ctx.faculties) {
       text += `  • ${fac.name} (${fac.department}) | Room: ${fac.facultyRoom} | Status: ${fac.leaveStatus} | Office Hours: ${fac.officeHours}\n`;
-      const facClasses = ctx.todayTimetable.filter(t => t.facultyId === fac.id || (t.facultyName && t.facultyName.includes(fac.name)));
+      const facClasses = ctx.todayTimetable.filter(t => {
+        if (t.facultyId && t.facultyId.toString() === fac.id.toString()) return true;
+        if (!t.facultyName) return false;
+        const n1 = norm(fac.name);
+        const n2 = norm(t.facultyName);
+        return n1.includes(n2) || n2.includes(n1) || (n1.length > 5 && n2.includes(n1.substring(0, 7)));
+      });
+
       if (facClasses.length > 0) {
         text += `    Classes today: ${facClasses.sort((a,b)=>a.period-b.period).map(c => `P${c.period} ${c.subject} in ${c.roomName} (${c.startTime}-${c.endTime})`).join(', ')}\n`;
       } else {

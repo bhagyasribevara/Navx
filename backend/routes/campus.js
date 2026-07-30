@@ -14,10 +14,11 @@ const { authenticateJWT, enforceCampusIsolation } = require('../utils/auth');
 // GET all campuses (Phase 13: Scalability - public)
 router.get('/', async (req, res, next) => {
   try {
-    const campuses = await Campus.find({ isActive: true, status: 'active' }).sort({ createdAt: 1 });
-    res.json(campuses);
+    const campuses = await Campus.find({ isActive: { $ne: false }, status: { $ne: 'disabled' } }).sort({ createdAt: 1 });
+    res.json(campuses || []);
   } catch (err) {
-    next(err);
+    console.error('Error fetching campuses:', err);
+    res.json([]);
   }
 });
 

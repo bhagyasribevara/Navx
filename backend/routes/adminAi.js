@@ -6,6 +6,67 @@ const Floor = require('../models/Floor');
 const Room = require('../models/Room');
 const Faculty = require('../models/Faculty');
 const Timetable = require('../models/Timetable');
+const Campaign = require('../models/Campaign');
+
+// ─── Helpers: NLP Parsers for Copilot Admin Actions ───────────────────────
+function parseSingleDate(str) {
+  if (!str) return new Date();
+  const parts = str.trim().split(/[-/\.]/);
+  if (parts.length === 3) {
+    let day = parseInt(parts[0], 10);
+    let month = parseInt(parts[1], 10);
+    let year = parseInt(parts[2], 10);
+    if (year < 100) year += 2000;
+    if (day > 12 && month <= 12) {
+      return new Date(Date.UTC(year, month - 1, day));
+    } else if (month > 12 && day <= 12) {
+      return new Date(Date.UTC(year, day - 1, month));
+    } else {
+      return new Date(Date.UTC(year, month - 1, day));
+    }
+  }
+  const parsed = new Date(str);
+  return isNaN(parsed.getTime()) ? new Date() : parsed;
+}
+
+function parseDates(text) {
+  const rangeMatch = text.match(/(\d{1,2}[-/\.]\d{1,2}[-/\.]\d{2,4})\s*(?:to|-|until|through)\s*(\d{1,2}[-/\.]\d{1,2}[-/\.]\d{2,4})/i);
+  if (rangeMatch) {
+    return {
+      startDate: parseSingleDate(rangeMatch[1]),
+      endDate: parseSingleDate(rangeMatch[2]),
+      raw: `${rangeMatch[1]} to ${rangeMatch[2]}`
+    };
+  }
+  const singleMatch = text.match(/(\d{1,2}[-/\.]\d{1,2}[-/\.]\d{2,4})/);
+  if (singleMatch) {
+    const d = parseSingleDate(singleMatch[1]);
+    return { startDate: d, endDate: d, raw: singleMatch[1] };
+  }
+  return { startDate: new Date(), endDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), raw: 'Immediate' };
+}
+
+function parseCampaignTitle(text) {
+  const nameMatch = text.match(/(?:with name|name|named|title|titled)\s+["']?([^"'\n,]+?)(?=["']?\s+(?:held|on|at|from|to|between|starting|$))/i);
+  if (nameMatch && nameMatch[1].trim()) {
+    return nameMatch[1].trim();
+  }
+  const quoteMatch = text.match(/["']([^"']+)["']/);
+  if (quoteMatch && quoteMatch[1].trim()) {
+    return quoteMatch[1].trim();
+  }
+  let cleaned = text.replace(/(?:create|add|new|make)\s+(?:a\s+)?(?:campaign|event|announcement)\s+(?:with\s+)?(?:name\s+)?/i, '');
+  cleaned = cleaned.split(/(?:held|on|at|from|to|between|starting|\d{1,2}[-/\.]\d{1,2}[-/\.]\d{2,4})/i)[0];
+  return cleaned.trim() || 'Campus Event';
+}
+
+function parseLocation(text) {
+  const locMatch = text.match(/(?:at|location|venue|place|in)\s+([^.\n,]+)/i);
+  if (locMatch && locMatch[1].trim()) {
+    return locMatch[1].trim().replace(/^(?:the|a)\s+/i, '');
+  }
+  return 'Main Campus Ground';
+}
 
 // ─── Helper: Fetch Campus Data Context ─────────────────────────────────────
 async function getCampusContext(campusId) {
@@ -127,10 +188,61 @@ RULES:
       }
     }
 
-    // ─── Intent-Based Smart Fallback / Enrichment ───────────────────────────
+    // ─── Intent-Based Smart Task Execution & Fallback ─────────────────────────
     if (!aiText) {
-      if (lowerMsg.includes('room') || lowerMsg.includes('add room') || lowerMsg.includes('block')) {
-        // Detect block name if mentioned
+      if (lowerMsg.includes('campaign') || lowerMsg.includes('event') || lowerMsg.includes('announcement') || lowerMsg.includes('training') || lowerMsg.includes('workshop')) {
+        const title = parseCampaignTitle(userMsg);
+        const dates = parseDates(userMsg);
+        const location = parseLocation(userMsg);
+
+        try {
+          const campaignDoc = new Campaign({
+            campusId: ctx.campusId,
+            title: title,
+            description: `Event location: ${location}. Date range: ${dates.raw}`,
+            category: 'event',
+            subCampaignType: 'event',
+            startDate: dates.startDate,
+            endDate: dates.endDate,
+            isActive: true
+          });
+          await campaignDoc.save();
+
+          const io = req.app.get('io');
+          if (io && ctx.campusId) {
+            io.to(ctx.campusId.toString()).emit('campaign_updated', {
+              action: 'created',
+              campusId: ctx.campusId,
+              campaignId: campaignDoc._id,
+              title: campaignDoc.title,
+            });
+          }
+
+          aiText = `### 🎉 Campaign Created & Published!
+
+I have created and published the campaign for **${ctx.campusName}**:
+
+- 📌 **Campaign Title:** ${title}
+- 📅 **Schedule:** ${dates.raw}
+- 📍 **Location:** ${location}
+- 🆔 **Database ID:** \`${campaignDoc._id}\`
+
+✅ **Status:** Saved to MongoDB and active on campus updates feed for both Mobile Users and Admin Dashboard!`;
+
+          proposedAction = {
+            type: 'OPEN_CAMPAIGNS',
+            payload: {
+              target: 'Campaigns',
+              title: title,
+              action: 'View All Campaigns'
+            }
+          };
+        } catch (err) {
+          aiText = `### ⚠️ Failed to Create Campaign
+An error occurred while saving the campaign: ${err.message}`;
+        }
+
+      } else if (lowerMsg.includes('room') || lowerMsg.includes('add room') || lowerMsg.includes('block')) {
         const matchedBlock = ctx.blocks?.find(b => 
           lowerMsg.includes(b.name.toLowerCase()) || 
           lowerMsg.includes(b.code.toLowerCase()) ||
@@ -219,6 +331,7 @@ To manage class schedules:
 Hello! I am your AI Copilot for **${ctx.campusName}**.
 
 Here are key tasks I can assist you with:
+- 📢 **Create Campaigns & Events**: Tell me to create a campaign (e.g. *"create a campaign with name Army training held on 15-08-2026 to 19-08-2026 at main playground"*).
 - 🗺️ **Map & Room Editing**: Guidance on adding blocks, rooms, stairs, and drawing campus geofences.
 - 📱 **QR Codes & Entry**: Generating entrance QR codes and campus photos.
 - 👨‍🏫 **Faculties & Schedules**: Managing professor rosters, room assignments, and weekly timetables.

@@ -21,6 +21,123 @@ const { checkDomain, buildRefusalResponse } = require('../services/domainGuard')
 const { buildContextString, searchFacilities, getRoomsByType, getLiveMeetInfo, getEmergencyInfo } = require('../services/campusKnowledge');
 const { FAQ_ENTRIES, SUGGESTION_CHIPS, WELCOME_MESSAGES, ACTION_TYPES } = require('../services/aiConstants');
 
+// ─── Helpers: Time & Live Faculty Timetable Resolvers ─────────────────────
+function parseTimeToMinutes(timeStr) {
+  if (!timeStr) return null;
+  const match = timeStr.trim().match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
+  if (!match) return null;
+  let hours = parseInt(match[1], 10);
+  const minutes = parseInt(match[2], 10);
+  const ampm = match[3] ? match[3].toUpperCase() : null;
+
+  if (ampm === 'PM' && hours < 12) hours += 12;
+  if (ampm === 'AM' && hours === 12) hours = 0;
+
+  return hours * 60 + minutes;
+}
+
+function getISTCurrentTime() {
+  const now = new Date();
+  const options = { timeZone: 'Asia/Kolkata', hour12: false, hour: '2-digit', minute: '2-digit', weekday: 'long' };
+  const formatter = new Intl.DateTimeFormat('en-US', options);
+  const parts = formatter.formatToParts(now);
+  let dayOfWeek = '';
+  let hour = 0;
+  let minute = 0;
+  for (const part of parts) {
+    if (part.type === 'weekday') dayOfWeek = part.value;
+    if (part.type === 'hour') hour = parseInt(part.value, 10);
+    if (part.type === 'minute') minute = parseInt(part.value, 10);
+  }
+  return {
+    dayOfWeek,
+    currentMinutes: hour * 60 + minute,
+    formattedTime: `${hour % 12 || 12}:${String(minute).padStart(2, '0')} ${hour >= 12 ? 'PM' : 'AM'}`
+  };
+}
+
+function normalizeName(str) {
+  if (!str) return '';
+  return str.toLowerCase().replace(/^(?:dr|prof|mr|mrs|ms)\.?\s+/i, '').replace(/[^a-z0-9]/g, '');
+}
+
+async function resolveFacultyLiveSchedule(campusId, messageText) {
+  try {
+    if (!messageText) return null;
+    const cleanMsg = messageText.toLowerCase();
+
+    let faculties = [];
+    if (campusId) {
+      faculties = await Faculty.find({ campusId, status: { $ne: 'disabled' } }).lean();
+    }
+    if (!faculties || faculties.length === 0) {
+      faculties = await Faculty.find({ status: { $ne: 'disabled' } }).lean();
+    }
+    if (!faculties || faculties.length === 0) return null;
+
+    let matchedFaculty = null;
+    for (const fac of faculties) {
+      const normFac = normalizeName(fac.name);
+      const nameParts = fac.name.split(/\s+/).map(p => normalizeName(p)).filter(p => p.length > 3);
+
+      if (cleanMsg.includes(normFac) || normFac.includes(cleanMsg)) {
+        matchedFaculty = fac;
+        break;
+      }
+      for (const part of nameParts) {
+        if (cleanMsg.includes(part)) {
+          matchedFaculty = fac;
+          break;
+        }
+      }
+      if (matchedFaculty) break;
+    }
+
+    if (!matchedFaculty) return null;
+
+    const ist = getISTCurrentTime();
+    const queryDay = (ist.dayOfWeek === 'Sunday' || ist.dayOfWeek === 'Saturday') ? 'Monday' : ist.dayOfWeek;
+    const nowMins = ist.currentMinutes;
+
+    const lastNameClean = matchedFaculty.name.split(/\s+/).pop().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const ttEntries = await Timetable.find({
+      $or: [
+        { facultyId: matchedFaculty._id },
+        { facultyName: new RegExp(matchedFaculty.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') },
+        { facultyName: new RegExp(lastNameClean, 'i') }
+      ],
+      dayOfWeek: queryDay
+    }).sort({ period: 1 }).lean();
+
+    const processedClasses = ttEntries.map(t => {
+      const startMins = parseTimeToMinutes(t.startTime) ?? (8 * 60 + (t.period * 60));
+      const endMins = parseTimeToMinutes(t.endTime) ?? (startMins + 50);
+      return {
+        ...t,
+        startMins,
+        endMins
+      };
+    });
+
+    const currentClass = processedClasses.find(c => nowMins >= c.startMins && nowMins < c.endMins);
+    const upcomingClasses = processedClasses.filter(c => c.startMins > nowMins).sort((a, b) => a.startMins - b.startMins);
+
+    return {
+      faculty: matchedFaculty,
+      dayOfWeek: queryDay,
+      currentTime: ist.formattedTime,
+      isInClass: !!currentClass,
+      currentClass: currentClass || null,
+      upcomingClasses,
+      allClassesToday: processedClasses,
+      facultyRoom: matchedFaculty.facultyRoom || 'Staff Room'
+    };
+  } catch (err) {
+    console.error('[FacultyScheduleResolver Error]', err.message);
+    return null;
+  }
+}
+
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
 // ─── In-Memory Session Store ────────────────────────────────────────────────
@@ -225,7 +342,8 @@ router.post('/chat', async (req, res, next) => {
     // ─── Step 4: Check Gemini API Key ────────────────────────────────────
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey || apiKey === 'your_gemini_api_key_here') {
-      return res.json(buildFallbackResponse(message, language, intent, campusId));
+      const fallback = await buildFallbackResponse(message, language, intent, campusId);
+      return res.json(fallback);
     }
     console.log('[AI] Step 4 done');
 
@@ -321,6 +439,27 @@ ${feesList.map(f => `- ${f.title}: ₹${f.amount} (${f.status}) Due: ${f.dueDate
         extraContext += `\nMATCHING LOCATIONS for "${intent.extractedDestination}":\n${JSON.stringify(results, null, 2)}`;
       }
     }
+
+    // ─── Real-Time Faculty & Schedule Audit Injection ───────────────────────
+    const facultyAudit = await resolveFacultyLiveSchedule(campusId, message);
+    if (facultyAudit) {
+      const fac = facultyAudit.faculty;
+      extraContext += `\nREAL-TIME FACULTY TIMETABLE AUDIT (LIVE EVALUATION FOR CURRENT TIME):
+Faculty Name: ${fac.name} (${fac.department || 'Department'})
+Current Time: ${facultyAudit.currentTime} (${facultyAudit.dayOfWeek})
+Faculty Room / Staff Room: ${facultyAudit.facultyRoom}
+Leave Status: ${fac.leaveStatus || 'Active'}
+Office Hours: ${fac.officeHours || '9:00 AM - 5:00 PM'}
+
+CURRENT LIVE STATUS NOW (${facultyAudit.currentTime}): ${facultyAudit.isInClass ? '⚠️ IN CLASS / LAB RIGHT NOW' : '✅ FREE / IN STAFF ROOM RIGHT NOW'}
+${facultyAudit.isInClass ? `Active Lecture/Lab: "${facultyAudit.currentClass.subject}" in Room ${facultyAudit.currentClass.roomName} (${facultyAudit.currentClass.startTime} - ${facultyAudit.currentClass.endTime}, Section ${facultyAudit.currentClass.section || 'A'})` : `No class currently in session.`}
+${facultyAudit.upcomingClasses.length > 0 ? `Next Class Today: "${facultyAudit.upcomingClasses[0].subject}" in Room ${facultyAudit.upcomingClasses[0].roomName} at ${facultyAudit.upcomingClasses[0].startTime}` : `No further classes scheduled for today.`}
+
+MANDATORY RESPONSE RULES FOR THIS FACULTY QUERY:
+1. If ${fac.name} is IN CLASS right now: State clearly that ${fac.name} is currently teaching "${facultyAudit.currentClass.subject}" in Room ${facultyAudit.currentClass.roomName} until ${facultyAudit.currentClass.endTime}. State that after ${facultyAudit.currentClass.endTime}, they will be free in their cabin (${facultyAudit.facultyRoom}). Set "action": "navigate" and "destination": "${facultyAudit.currentClass.roomName}".
+2. If ${fac.name} is FREE right now: State clearly that ${fac.name} is currently free right now and can be met in ${facultyAudit.facultyRoom}.${facultyAudit.upcomingClasses.length > 0 ? ` Note that their next class starts at ${facultyAudit.upcomingClasses[0].startTime} in Room ${facultyAudit.upcomingClasses[0].roomName}.` : ''} Set "action": "navigate" and "destination": "${facultyAudit.facultyRoom}".
+`;
+    }
     console.log('[AI] Step 5b done');
 
     // ─── Step 6: Build System Prompt ─────────────────────────────────────
@@ -405,7 +544,7 @@ ${feesList.map(f => `- ${f.title}: ₹${f.amount} (${f.status}) Due: ${f.dueDate
   } catch (err) {
     console.error('[AI Chat Error]', err);
     try {
-      const fallbackResponse = buildFallbackResponse(message || '', language, intent, campusId);
+      const fallbackResponse = await buildFallbackResponse(message || '', language, intent, campusId);
       fallbackResponse.text = `[Fallback] ${fallbackResponse.text}`;
       res.json(fallbackResponse);
     } catch (fallbackErr) {
@@ -485,9 +624,48 @@ function getTimeGreeting() {
   return 'Good evening';
 }
 
-// ─── Helper: Fallback Response (no API key) ─────────────────────────────────
-function buildFallbackResponse(message, language, intent, campusId) {
+// ─── Helper: Fallback Response (no API key or fallback trigger) ──────────────
+async function buildFallbackResponse(message, language, intent, campusId, facultyAudit = null) {
   const lower = message.toLowerCase();
+
+  if (!facultyAudit && campusId) {
+    facultyAudit = await resolveFacultyLiveSchedule(campusId, message);
+  }
+
+  if (facultyAudit) {
+    const fac = facultyAudit.faculty;
+    if (fac.leaveStatus === 'On Leave') {
+      return {
+        text: `📅 **${fac.name}** is currently on leave today. You can check back during regular working hours or visit ${facultyAudit.facultyRoom}.`,
+        action: 'navigate',
+        destination: facultyAudit.facultyRoom,
+        suggestions: [`Navigate to ${facultyAudit.facultyRoom}`, `Search another faculty`],
+        language,
+      };
+    }
+
+    if (facultyAudit.isInClass && facultyAudit.currentClass) {
+      const cls = facultyAudit.currentClass;
+      return {
+        text: `🏫 **${fac.name}** is currently in class/lab teaching **${cls.subject}** in **Room ${cls.roomName}** (from ${cls.startTime} to ${cls.endTime}). She/He will be free after ${cls.endTime} in **${facultyAudit.facultyRoom}**.`,
+        action: 'navigate',
+        destination: cls.roomName || facultyAudit.facultyRoom,
+        suggestions: [`Navigate to Room ${cls.roomName}`, `Navigate to ${facultyAudit.facultyRoom}`, `View Timetable`],
+        language,
+      };
+    } else {
+      const nextClsNote = facultyAudit.upcomingClasses.length > 0
+        ? ` Her next class is **${facultyAudit.upcomingClasses[0].subject}** at ${facultyAudit.upcomingClasses[0].startTime} in Room ${facultyAudit.upcomingClasses[0].roomName}.`
+        : ' She has no further classes scheduled today.';
+      return {
+        text: `✅ **${fac.name}** is currently free right now. You can meet her in **${facultyAudit.facultyRoom}**.${nextClsNote}`,
+        action: 'navigate',
+        destination: facultyAudit.facultyRoom,
+        suggestions: [`Navigate to ${facultyAudit.facultyRoom}`, `View Office Hours`],
+        language,
+      };
+    }
+  }
 
   if (lower.includes('hello') || lower.includes('hi') || lower.includes('hey')) {
     return {
