@@ -79,21 +79,51 @@ var map = new mapboxgl.Map({
   attributionControl: false
 });
 
-map.on('load', () => {
-  map.addLayer({
-    'id': '3d-buildings',
-    'source': 'composite',
-    'source-layer': 'building',
-    'filter': ['==', 'extrude', 'true'],
-    'type': 'fill-extrusion',
-    'minzoom': 15,
-    'paint': {
-      'fill-extrusion-color': '#1f2937',
-      'fill-extrusion-height': ['get', 'height'],
-      'fill-extrusion-base': ['get', 'min_height'],
-      'fill-extrusion-opacity': 0.6
+var currentMapMode = '3D';
+var currentGeoData = null;
+var currentFloorId = '';
+
+window.setMapMode = function(mode) {
+  if (!map) return;
+  currentMapMode = mode;
+  var is2D = (mode === '2D');
+
+  if (is2D) {
+    map.easeTo({ pitch: 0, bearing: 0, duration: 600 });
+  } else {
+    map.easeTo({ pitch: 60, bearing: -17.6, duration: 600 });
+  }
+
+  // Hide custom block shapes, room polygons, nodes, and 3D layers in 2D mode for clean 2D map tile view
+  var blockAnd3DLayers = [
+    'campus-2d-fill', 'campus-2d-line', 'campus-2d-paths', 'campus-2d-nodes',
+    'campus-polygons', '3d-buildings', 'campus-labels'
+  ];
+
+  blockAnd3DLayers.forEach(function(id) {
+    if (map.getLayer(id)) {
+      map.setLayoutProperty(id, 'visibility', is2D ? 'none' : 'visible');
     }
   });
+};
+
+map.on('load', () => {
+  if (!map.getLayer('3d-buildings')) {
+    map.addLayer({
+      'id': '3d-buildings',
+      'source': 'composite',
+      'source-layer': 'building',
+      'filter': ['==', 'extrude', 'true'],
+      'type': 'fill-extrusion',
+      'minzoom': 15,
+      'paint': {
+        'fill-extrusion-color': '#1f2937',
+        'fill-extrusion-height': ['get', 'height'],
+        'fill-extrusion-base': ['get', 'min_height'],
+        'fill-extrusion-opacity': 0.6
+      }
+    });
+  }
 
   // Add source for dynamic route path
   map.addSource('meet-route', {
@@ -116,12 +146,24 @@ map.on('load', () => {
     'layout': { 'line-join': 'round', 'line-cap': 'round' },
     'paint': { 'line-color': '#8b5cf6', 'line-width': 6 }
   });
+
+  if (currentGeoData) {
+    window.renderGeoJSONLayers(currentGeoData, currentFloorId);
+  }
 });
 
 window.updateGeoJSON = function(data, floorId) {
-  if (!map.isStyleLoaded()) return;
+  currentGeoData = data;
+  currentFloorId = floorId;
+  window.renderGeoJSONLayers(data, floorId);
+};
 
-  const features = data.features.filter(f => {
+window.renderGeoJSONLayers = function(data, floorId) {
+  if (!map || !data || !data.features) return;
+
+  var is2D = (currentMapMode === '2D');
+
+  var polyFeatures = data.features.filter(function(f) {
     if (f.properties.type === 'path' || f.properties.type === 'node') return false;
     if (f.properties.category === 'parking' || (f.properties.name && f.properties.name.toLowerCase().includes('parking'))) return false;
     if (f.properties.type === 'room' && f.properties.floorId) {
@@ -129,17 +171,49 @@ window.updateGeoJSON = function(data, floorId) {
     }
     return true;
   });
-  data.features = features;
+
+  var polygonData = { type: 'FeatureCollection', features: polyFeatures };
 
   if (map.getSource('campus-data')) {
-    map.getSource('campus-data').setData(data);
+    map.getSource('campus-data').setData(polygonData);
   } else {
-    map.addSource('campus-data', { type: 'geojson', data: data });
+    map.addSource('campus-data', { type: 'geojson', data: polygonData });
+  }
 
+  // ── 1. FLAT 2D FILL LAYER ──
+  if (!map.getLayer('campus-2d-fill')) {
+    map.addLayer({
+      'id': 'campus-2d-fill',
+      'type': 'fill',
+      'source': 'campus-data',
+      'layout': { 'visibility': is2D ? 'visible' : 'none' },
+      'paint': {
+        'fill-color': ['coalesce', ['get', 'color'], '#3b82f6'],
+        'fill-opacity': 0.55
+      }
+    });
+  }
+
+  // ── 2. CRISP 2D OUTLINE ──
+  if (!map.getLayer('campus-2d-line')) {
+    map.addLayer({
+      'id': 'campus-2d-line',
+      'type': 'line',
+      'source': 'campus-data',
+      'layout': { 'visibility': is2D ? 'visible' : 'none' },
+      'paint': {
+        'line-color': ['coalesce', ['get', 'color'], '#1d4ed8'],
+        'line-width': 2.5,
+        'line-opacity': 0.85
+      }
+    });
+  // ── 3. 3D EXTRUSIONS ──
+  if (!map.getLayer('campus-polygons')) {
     map.addLayer({
       'id': 'campus-polygons',
       'type': 'fill-extrusion',
       'source': 'campus-data',
+      'layout': { 'visibility': is2D ? 'none' : 'visible' },
       'paint': {
         'fill-extrusion-color': ['coalesce', ['get', 'color'], '#64748b'],
         'fill-extrusion-height': [
@@ -152,11 +226,15 @@ window.updateGeoJSON = function(data, floorId) {
         'fill-extrusion-opacity': 0.7
       }
     });
+  }
 
+  // ── 6. LABELS ──
+  if (!map.getLayer('campus-labels')) {
     map.addLayer({
       'id': 'campus-labels',
       'type': 'symbol',
       'source': 'campus-data',
+      'filter': ['!=', ['get', 'type'], 'room'],
       'layout': {
         'text-field': ['get', 'name'],
         'text-size': 12,
@@ -164,12 +242,15 @@ window.updateGeoJSON = function(data, floorId) {
         'text-offset': [0, 1]
       },
       'paint': {
-        'text-color': '#ffffff',
-        'text-halo-color': 'rgba(10, 14, 23, 0.8)',
-        'text-halo-width': 2
+        'text-color': is2D ? '#0f172a' : '#ffffff',
+        'text-halo-color': is2D ? '#ffffff' : 'rgba(10, 14, 23, 0.8)',
+        'text-halo-width': 2.5
       }
     });
   }
+
+  // Ensure visibilities match current mode
+  window.setMapMode(currentMapMode);
 };
 
 const localIconEl = document.createElement('div');
@@ -269,9 +350,23 @@ export default function LiveMeetScreen({ route, navigation }) {
   const [mapData, setMapData] = useState(null);
   const [selectedFloor, setSelectedFloor] = useState(null);
   const [routePath, setRoutePath] = useState([]);
+  const [mapMode, setMapMode] = useState('3D');
   const webViewRef = useRef(null);
   const initialCenterRef = useRef(null);
   const webViewReady = useRef(false);
+
+  const toggleMapMode = (mode) => {
+    if (mode === mapMode) return;
+    setMapMode(mode);
+    if (webViewReady.current && webViewRef.current) {
+      webViewRef.current.injectJavaScript(`
+        if (typeof window.setMapMode === 'function') {
+          window.setMapMode('${mode}');
+        }
+        true;
+      `);
+    }
+  };
 
   // Keep refs for latest values so handleWebViewLoad doesn't use stale closures
   const currentPosRef = useRef(currentPos);
@@ -600,6 +695,23 @@ export default function LiveMeetScreen({ route, navigation }) {
           domStorageEnabled={true}
           onLoad={handleWebViewLoad}
         />
+        {/* 2D / 3D Map Mode Toggle Pill */}
+        <View style={s.mapModeToggleContainer}>
+          <TouchableOpacity
+            style={[s.mapModeBtn, mapMode === '2D' && s.mapModeBtnActive]}
+            onPress={() => toggleMapMode('2D')}
+            activeOpacity={0.8}
+          >
+            <Text style={[s.mapModeText, mapMode === '2D' && s.mapModeTextActive]}>2D</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[s.mapModeBtn, mapMode === '3D' && s.mapModeBtnActive]}
+            onPress={() => toggleMapMode('3D')}
+            activeOpacity={0.8}
+          >
+            <Text style={[s.mapModeText, mapMode === '3D' && s.mapModeTextActive]}>3D</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Floor Selector Widget */}
@@ -757,5 +869,35 @@ const s = StyleSheet.create({
   floorBtnText: {
     fontSize: 14,
     fontWeight: '800',
+  },
+  mapModeToggleContainer: {
+    position: 'absolute',
+    top: 70,
+    right: 20,
+    flexDirection: 'row',
+    backgroundColor: 'rgba(15, 23, 42, 0.85)',
+    borderRadius: 20,
+    padding: 3,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 6,
+    elevation: 8,
+    zIndex: 10,
+  },
+  mapModeBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  mapModeBtnActive: {
+    backgroundColor: '#3b82f6',
+  },
+  mapModeText: {
+    color: '#94a3b8',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  mapModeTextActive: {
+    color: '#ffffff',
   }
 });
