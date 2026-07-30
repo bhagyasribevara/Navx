@@ -14,8 +14,10 @@ import * as Location from 'expo-location';
 
 const { height: SH, width: SW } = Dimensions.get('window');
 
-function buildCampusMapHTML(geoJSONData, centerCoords, mapboxUrl) {
+function buildCampusMapHTML(geoJSONData, centerCoords, mapboxUrl, mapMode = '3D') {
   const center = centerCoords ? [centerCoords.x, centerCoords.y] : [18.4665, 83.6629];
+  const initialPitch = mapMode === '2D' ? 0 : 60;
+  const initialBearing = mapMode === '2D' ? 0 : -17.6;
   
   return `<!DOCTYPE html>
 <html><head>
@@ -50,63 +52,133 @@ function buildCampusMapHTML(geoJSONData, centerCoords, mapboxUrl) {
 const tokenMatch = '${mapboxUrl}'.match(/access_token=([^&]+)/);
 mapboxgl.accessToken = tokenMatch ? tokenMatch[1] : 'YOUR_TOKEN_HERE';
 
+var initialStyle = '${mapMode}' === '2D' ? 'mapbox://styles/mapbox/outdoors-v12' : 'mapbox://styles/mapbox/dark-v11';
+
 var map = new mapboxgl.Map({
   container: 'map',
-  style: 'mapbox://styles/mapbox/dark-v11', // Beautiful dark mapbox style
+  style: initialStyle,
   center: [${center[1]}, ${center[0]}], // [lng, lat]
   zoom: 17,
-  pitch: 60, // 3D tilt
-  bearing: -17.6, // Rotation
+  pitch: ${initialPitch},
+  bearing: ${initialBearing},
   antialias: true,
   attributionControl: false
 });
 
-map.on('load', () => {
-  // Add 3D buildings layer from Mapbox Streets
-  map.addLayer({
-    'id': '3d-buildings',
-    'source': 'composite',
-    'source-layer': 'building',
-    'filter': ['==', 'extrude', 'true'],
-    'type': 'fill-extrusion',
-    'minzoom': 15,
-    'paint': {
-      'fill-extrusion-color': '#1f2937',
-      'fill-extrusion-height': ['get', 'height'],
-      'fill-extrusion-base': ['get', 'min_height'],
-      'fill-extrusion-opacity': 0.6
+var currentMapMode = '${mapMode || "3D"}';
+var currentGeoData = ${geoJSONData ? JSON.stringify(geoJSONData) : 'null'};
+var currentFloorId = '${centerCoords?.floorId || ""}';
+
+window.setMapMode = function(mode) {
+  if (!map) return;
+  currentMapMode = mode;
+  var is2D = (mode === '2D');
+
+  if (is2D) {
+    map.easeTo({ pitch: 0, bearing: 0, duration: 600 });
+  } else {
+    map.easeTo({ pitch: 60, bearing: -17.6, duration: 600 });
+  }
+
+  // Hide all block shapes, room polygons, steps, nodes, and custom layers in 2D mode for a pure clean Mapbox map tile view
+  var customLayers = [
+    'campus-2d-fill', 'campus-2d-line', 'campus-2d-paths', 'campus-2d-nodes',
+    'campus-polygons', '3d-buildings', 'campus-labels'
+  ];
+
+  customLayers.forEach(function(id) {
+    if (map.getLayer(id)) {
+      map.setLayoutProperty(id, 'visibility', is2D ? 'none' : 'visible');
     }
   });
+};
 
-  ${geoJSONData ? `window.updateGeoJSON(${JSON.stringify(geoJSONData)}, '${centerCoords?.floorId || ''}');` : ''}
+map.on('load', () => {
+  // Add 3D buildings layer from Mapbox Streets
+  if (!map.getLayer('3d-buildings')) {
+    map.addLayer({
+      'id': '3d-buildings',
+      'source': 'composite',
+      'source-layer': 'building',
+      'filter': ['==', 'extrude', 'true'],
+      'type': 'fill-extrusion',
+      'minzoom': 15,
+      'paint': {
+        'fill-extrusion-color': '#1f2937',
+        'fill-extrusion-height': ['get', 'height'],
+        'fill-extrusion-base': ['get', 'min_height'],
+        'fill-extrusion-opacity': 0.6
+      }
+    });
+  }
+
+  if (currentGeoData) {
+    window.renderGeoJSONLayers(currentGeoData, currentFloorId);
+  }
 });
 
 window.updateGeoJSON = function(data, floorId) {
-  if (!map.isStyleLoaded()) return;
+  currentGeoData = data;
+  currentFloorId = floorId;
+  window.renderGeoJSONLayers(data, floorId);
+};
 
-  // Filter features to show blocks and map layers
-  const features = data.features.filter(f => {
-    // Hide paths, nodes
+window.renderGeoJSONLayers = function(data, floorId) {
+  if (!map || !data || !data.features) return;
+
+  var is2D = (currentMapMode === '2D');
+
+  // Filter polygon features
+  var polyFeatures = data.features.filter(function(f) {
     if (f.properties.type === 'path' || f.properties.type === 'node') return false;
-    // Hide parking areas by default
     if (f.properties.category === 'parking' || (f.properties.name && f.properties.name.toLowerCase().includes('parking'))) return false;
     return true;
   });
-  data.features = features;
+
+  var polygonData = { type: 'FeatureCollection', features: polyFeatures };
 
   if (map.getSource('campus-data')) {
-    map.getSource('campus-data').setData(data);
+    map.getSource('campus-data').setData(polygonData);
   } else {
-    map.addSource('campus-data', {
-      type: 'geojson',
-      data: data
-    });
+    map.addSource('campus-data', { type: 'geojson', data: polygonData });
+  }
 
-    // 3D Extrusion layer for campus blocks, rooms, and stairs
+  // ── 1. FLAT 2D FILL LAYER ──
+  if (!map.getLayer('campus-2d-fill')) {
+    map.addLayer({
+      'id': 'campus-2d-fill',
+      'type': 'fill',
+      'source': 'campus-data',
+      'layout': { 'visibility': is2D ? 'visible' : 'none' },
+      'paint': {
+        'fill-color': ['coalesce', ['get', 'color'], '#3b82f6'],
+        'fill-opacity': 0.55
+      }
+    });
+  }
+
+  // ── 2. CRISP 2D POLYGON OUTLINE ──
+  if (!map.getLayer('campus-2d-line')) {
+    map.addLayer({
+      'id': 'campus-2d-line',
+      'type': 'line',
+      'source': 'campus-data',
+      'layout': { 'visibility': is2D ? 'visible' : 'none' },
+      'paint': {
+        'line-color': ['coalesce', ['get', 'color'], '#1d4ed8'],
+        'line-width': 2.5,
+        'line-opacity': 0.85
+      }
+    });
+  }
+
+  // ── 5. 3D EXTRUSION LAYER FOR BLOCKS & ROOMS ──
+  if (!map.getLayer('campus-polygons')) {
     map.addLayer({
       'id': 'campus-polygons',
       'type': 'fill-extrusion',
       'source': 'campus-data',
+      'layout': { 'visibility': is2D ? 'none' : 'visible' },
       'paint': {
         'fill-extrusion-color': ['coalesce', ['get', 'color'], '#3b82f6'],
         'fill-extrusion-height': [
@@ -123,12 +195,15 @@ window.updateGeoJSON = function(data, floorId) {
         'fill-extrusion-opacity': 0.8
       }
     });
+  }
 
-    // Labels for blocks
+  // ── 6. LABELS FOR BLOCKS ──
+  if (!map.getLayer('campus-labels')) {
     map.addLayer({
       'id': 'campus-labels',
       'type': 'symbol',
       'source': 'campus-data',
+      'filter': ['!=', ['get', 'type'], 'room'],
       'layout': {
         'text-field': ['get', 'name'],
         'text-size': 12,
@@ -136,12 +211,15 @@ window.updateGeoJSON = function(data, floorId) {
         'text-offset': [0, 1]
       },
       'paint': {
-        'text-color': '#ffffff',
-        'text-halo-color': 'rgba(10, 14, 23, 0.8)',
-        'text-halo-width': 2
+        'text-color': is2D ? '#0f172a' : '#ffffff',
+        'text-halo-color': is2D ? '#ffffff' : 'rgba(10, 14, 23, 0.8)',
+        'text-halo-width': 2.5
       }
     });
   }
+
+  // Ensure visibilities match current state
+  window.setMapMode(currentMapMode);
 };
 
 const userIconEl = document.createElement('div');
@@ -167,7 +245,8 @@ window.updateUserPos = function(lat, lng, heading) {
 };
 
 window.panTo = function(lat, lng) {
-  map.flyTo({ center: [lng, lat], zoom: 19, duration: 1500 });
+  var currentPitch = map ? map.getPitch() : 60;
+  map.flyTo({ center: [lng, lat], zoom: 19, duration: 1500, pitch: currentPitch });
 };
 </script></body></html>`;
 }
@@ -199,10 +278,24 @@ export default function MapScreen({ navigation, route }) {
   const [userPos, setUserPos] = useState(null);
   const [heading, setHeading] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
+  const [mapMode, setMapMode] = useState('3D');
 
   const webViewRef = useRef(null);
   const socketRef = useRef(null);
   const panelHeightAnim = useRef(new Animated.Value(SH * 0.45)).current; // Bottom sheet height
+
+  const toggleMapMode = (mode) => {
+    if (mode === mapMode) return;
+    setMapMode(mode);
+    if (webViewRef.current) {
+      webViewRef.current.injectJavaScript(`
+        if (typeof window.setMapMode === 'function') {
+          window.setMapMode('${mode}');
+        }
+        true;
+      `);
+    }
+  };
 
   useEffect(() => {
     if (route.params?.campusId) {
@@ -415,12 +508,42 @@ export default function MapScreen({ navigation, route }) {
   const mapboxUrl = getCachedConfigValue("EXPO_PUBLIC_MAPBOX_URL", "https://api.mapbox.com/styles/v1/mapbox/streets-v11/tiles/256/{z}/{x}/{y}@2x?access_token=pk.eyJ1IjoidmVua2F0YS1rcmlzaG5hIiwiYSI6ImNtZnYycHN0bTAzY28yanFxeG4wOXVsenAifQ.w1yd6XuvWvarYj33rP1LkA");
   const mapHtml = useMemo(() => {
     const center = mapData?.blocks?.[0]?.shape?.points?.[0];
-    return buildCampusMapHTML(geoJSONData, center, mapboxUrl);
-  }, [geoJSONData, mapData, mapboxUrl]);
+    return buildCampusMapHTML(geoJSONData, center, mapboxUrl, mapMode);
+  }, [geoJSONData, mapData, mapboxUrl, mapMode]);
 
   const s = StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.bg },
     mapContainer: { flex: 1 },
+    mapModeToggleContainer: {
+      position: 'absolute',
+      top: 16,
+      right: 16,
+      flexDirection: 'row',
+      backgroundColor: 'rgba(15, 23, 42, 0.85)',
+      borderRadius: 20,
+      padding: 3,
+      borderWidth: 1,
+      borderColor: 'rgba(255, 255, 255, 0.15)',
+      shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 6,
+      elevation: 8,
+      zIndex: 10,
+    },
+    mapModeBtn: {
+      paddingHorizontal: 14,
+      paddingVertical: 6,
+      borderRadius: 16,
+    },
+    mapModeBtnActive: {
+      backgroundColor: colors.primary,
+    },
+    mapModeText: {
+      color: '#94a3b8',
+      fontSize: 12,
+      fontWeight: '700',
+    },
+    mapModeTextActive: {
+      color: '#ffffff',
+    },
     bottomSheet: {
       position: 'absolute',
       bottom: 0,
@@ -639,21 +762,40 @@ export default function MapScreen({ navigation, route }) {
       {/* 🗺 FULL SCREEN MAP */}
       <View style={s.mapContainer}>
         {geoJSONData ? (
-          <WebView
-            ref={webViewRef}
-            source={{ html: mapHtml }}
-            style={{ flex: 1, backgroundColor: '#0a0e17' }}
-            scrollEnabled={false}
-            bounces={false}
-            showsHorizontalScrollIndicator={false}
-            showsVerticalScrollIndicator={false}
-            originWhitelist={['*']}
-            javaScriptEnabled={true}
-            domStorageEnabled={true}
-            mixedContentMode="always"
-            allowsInlineMediaPlayback={true}
-            startInLoadingState={true}
-          />
+          <>
+            <WebView
+              ref={webViewRef}
+              source={{ html: mapHtml }}
+              style={{ flex: 1, backgroundColor: '#0a0e17' }}
+              scrollEnabled={false}
+              bounces={false}
+              showsHorizontalScrollIndicator={false}
+              showsVerticalScrollIndicator={false}
+              originWhitelist={['*']}
+              javaScriptEnabled={true}
+              domStorageEnabled={true}
+              mixedContentMode="always"
+              allowsInlineMediaPlayback={true}
+              startInLoadingState={true}
+            />
+            {/* 2D / 3D Map Mode Toggle Pill */}
+            <View style={s.mapModeToggleContainer}>
+              <TouchableOpacity
+                style={[s.mapModeBtn, mapMode === '2D' && s.mapModeBtnActive]}
+                onPress={() => toggleMapMode('2D')}
+                activeOpacity={0.8}
+              >
+                <Text style={[s.mapModeText, mapMode === '2D' && s.mapModeTextActive]}>2D</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[s.mapModeBtn, mapMode === '3D' && s.mapModeBtnActive]}
+                onPress={() => toggleMapMode('3D')}
+                activeOpacity={0.8}
+              >
+                <Text style={[s.mapModeText, mapMode === '3D' && s.mapModeTextActive]}>3D</Text>
+              </TouchableOpacity>
+            </View>
+          </>
         ) : (
           <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.bg }}>
             <Ionicons name="map-outline" size={60} color={colors.textMuted} style={{ marginBottom: 16 }} />

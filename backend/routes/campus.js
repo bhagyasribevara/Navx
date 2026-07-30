@@ -192,19 +192,31 @@ router.post('/:id/emergency', authenticateJWT, enforceCampusIsolation, async (re
 });
 
 // GET campus by QR code — resolves QR data to campus info
+// GET campus by QR code — resolves QR data to campus info
 router.get('/qr/:campusId', async (req, res, next) => {
   try {
     const campus = await Campus.findById(req.params.campusId);
     if (!campus || !campus.isActive) {
       return res.status(404).json({ error: 'Campus not found or inactive.' });
     }
+    const blocks = await Block.find({ campusId: campus._id });
+    const blockIds = blocks.map(b => b._id);
+    const RoomModel = require('../models/Room');
+    const FloorModel = require('../models/Floor');
+    const floorCount = await FloorModel.countDocuments({ blockId: { $in: blockIds } });
+    const roomCount = await RoomModel.countDocuments({ blockId: { $in: blockIds } });
+
     res.json({
       _id: campus._id,
       name: campus.name,
+      campusName: campus.campusName || campus.name,
       description: campus.description,
       address: campus.address,
       location: campus.location,
       venueType: campus.venueType || 'campus',
+      image: campus.image || '',
+      floors: floorCount || 6,
+      rooms: roomCount || 142
     });
   } catch (err) {
     res.status(400).json({ error: 'Invalid QR code.' });
@@ -224,20 +236,32 @@ router.post('/qr/:campusId/verify', async (req, res, next) => {
       return res.status(404).json({ authorized: false, message: 'Campus not found or inactive.' });
     }
 
+    const blocks = await Block.find({ campusId: campus._id });
+    const blockIds = blocks.map(b => b._id);
+    const RoomModel = require('../models/Room');
+    const FloorModel = require('../models/Floor');
+    const floorCount = await FloorModel.countDocuments({ blockId: { $in: blockIds } });
+    const roomCount = await RoomModel.countDocuments({ blockId: { $in: blockIds } });
+
+    const campusData = {
+      _id: campus._id,
+      name: campus.name,
+      campusName: campus.campusName || campus.name,
+      description: campus.description,
+      address: campus.address,
+      location: campus.location,
+      radius: campus.radius,
+      venueType: campus.venueType || 'campus',
+      image: campus.image || '',
+      floors: floorCount || 6,
+      rooms: roomCount || 142
+    };
+
     // Campus must have a geofence configured (location + radius)
     if (!campus.location?.lat || !campus.location?.lng || !campus.radius) {
-      // No geofence configured — allow access (admin hasn't drawn boundary yet)
       return res.json({
         authorized: true,
-        campus: {
-          _id: campus._id,
-          name: campus.name,
-          description: campus.description,
-          address: campus.address,
-          location: campus.location,
-          radius: campus.radius,
-          venueType: campus.venueType || 'campus',
-        },
+        campus: campusData,
         message: 'No geofence configured — access granted.',
       });
     }
@@ -257,15 +281,7 @@ router.post('/qr/:campusId/verify', async (req, res, next) => {
       return res.json({
         authorized: true,
         distance: Math.round(distance),
-        campus: {
-          _id: campus._id,
-          name: campus.name,
-          description: campus.description,
-          address: campus.address,
-          location: campus.location,
-          radius: campus.radius,
-          venueType: campus.venueType || 'campus',
-        },
+        campus: campusData,
       });
     } else {
       return res.json({

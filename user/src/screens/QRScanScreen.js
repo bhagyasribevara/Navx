@@ -1,7 +1,7 @@
 import React, { useState, useContext, useRef, useEffect } from "react";
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  Animated, Dimensions, Platform, ActivityIndicator
+  Animated, Dimensions, Platform, ActivityIndicator, Image, ScrollView
 } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { Ionicons } from "@expo/vector-icons";
@@ -10,16 +10,20 @@ import * as Location from "expo-location";
 import { ThemeContext } from "../context/ThemeContext";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useGeofence } from "../context/GeofenceContext";
-import { scanQRCode, getCampusByQR, verifyCampusGeofence } from "../api";
+import { scanQRCode, verifyCampusGeofence } from "../api";
 import { SHADOWS, RADIUS } from "../theme/designSystem";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import AnimatedPressable from "../components/AnimatedPressable";
+import { LinearGradient } from "expo-linear-gradient";
 
 const { width: SW, height: SH } = Dimensions.get("window");
-const FRAME = 240;
+const FRAME = 230;
+
+// Fallback high-quality campus image matching the mockup reference image
+const FALLBACK_CAMPUS_IMAGE = "https://images.unsplash.com/photo-1562774053-701939374585?q=80&w=600&auto=format&fit=crop";
 
 export default function QRScanScreen({ navigation }) {
-  const { colors } = useContext(ThemeContext);
+  const { colors, isDark, toggleTheme } = useContext(ThemeContext);
   const insets = useSafeAreaInsets();
   const { activateCampus } = useGeofence();
   const [permission, requestPermission] = useCameraPermissions();
@@ -28,7 +32,7 @@ export default function QRScanScreen({ navigation }) {
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [isCampusQR, setIsCampusQR] = useState(false);
-  const [geofenceDenied, setGeofenceDenied] = useState(null); // { distance, radius, campusName, message }
+  const [geofenceDenied, setGeofenceDenied] = useState(null);
 
   const scanLineAnim = useRef(new Animated.Value(0)).current;
   const successAnim = useRef(new Animated.Value(0)).current;
@@ -58,9 +62,8 @@ export default function QRScanScreen({ navigation }) {
     setScanning(false);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
-    // Success frame pulse
     Animated.sequence([
-      Animated.timing(frameAnim, { toValue: 1.08, duration: 150, useNativeDriver: true }),
+      Animated.timing(frameAnim, { toValue: 1.06, duration: 150, useNativeDriver: true }),
       Animated.timing(frameAnim, { toValue: 1, duration: 150, useNativeDriver: true }),
     ]).start();
     Animated.spring(successAnim, { toValue: 1, tension: 80, friction: 8, useNativeDriver: true }).start();
@@ -69,19 +72,14 @@ export default function QRScanScreen({ navigation }) {
       const trimmedData = data.trim();
       const lowerData = trimmedData.toLowerCase();
       if (lowerData.startsWith("navx://campus/")) {
-        // Handle case-insensitive split
         const prefixLength = "navx://campus/".length;
         const campusId = trimmedData.substring(prefixLength).trim();
 
-        console.log("Scanning campus QR:", campusId);
-
-        // ── Geofence verification ──────────────────────────────
-        // Step 1: Get user's current GPS location
         let userLat = null, userLng = null;
         try {
           const { status } = await Location.requestForegroundPermissionsAsync();
           if (status !== "granted") {
-            setError("Location permission is required to verify campus access. Please enable location services.");
+            setError("Location permission is required to verify campus access.");
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
             return;
           }
@@ -92,24 +90,18 @@ export default function QRScanScreen({ navigation }) {
           userLat = loc.coords.latitude;
           userLng = loc.coords.longitude;
         } catch (locErr) {
-          console.warn("Location fetch failed:", locErr);
-          setError("Unable to determine your location. Please ensure GPS is enabled and try again.");
+          setError("Unable to determine your location. Please enable GPS.");
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
           return;
         }
 
-        // Step 2: Verify geofence with backend
         const verifyResult = await verifyCampusGeofence(campusId, userLat, userLng);
-        console.log("Geofence verify response:", verifyResult);
-
         if (verifyResult.authorized) {
-          // Access granted — user is within campus boundary
           setResult(verifyResult.campus);
           setIsCampusQR(true);
           setGeofenceDenied(null);
           setError(null);
         } else {
-          // Access denied — user is outside campus boundary
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
           setGeofenceDenied({
             distance: verifyResult.distance,
@@ -120,29 +112,21 @@ export default function QRScanScreen({ navigation }) {
           setResult(null);
           setIsCampusQR(true);
           setError(null);
-          return;
         }
       } else {
-        console.log("Scanning standard QR:", trimmedData);
-        // Encode the data to prevent Express routing errors on URLs with slashes
         const qrData = await scanQRCode(encodeURIComponent(trimmedData));
-        console.log("Standard QR API response:", qrData);
-
         setResult(qrData);
         setIsCampusQR(false);
         setGeofenceDenied(null);
         setError(null);
       }
     } catch (err) {
-      console.error("QR Scan Error:", err?.response?.data || err.message || err);
       if (err?.code === 'ECONNABORTED' || err?.message?.includes('timeout')) {
-        setError("Server is waking up. Please wait a moment and try again.");
-      } else if (err?.message === 'Network Error' || !err?.response) {
-        setError("No internet connection. Please check your network.");
+        setError("Server timeout. Please try again.");
       } else if (err?.response?.status === 404) {
-        setError("QR not recognized. Try another code.");
+        setError("QR code not recognized.");
       } else {
-        setError("Something went wrong. Please try again.");
+        setError("Scan error. Please try again.");
       }
     }
   };
@@ -159,22 +143,19 @@ export default function QRScanScreen({ navigation }) {
 
   if (!permission?.granted) {
     return (
-      <View style={[s.center, { backgroundColor: colors.bg }]}>
-        <View style={{ width: 80, height: 80, borderRadius: 24, backgroundColor: colors.primary + "18", alignItems: "center", justifyContent: "center", marginBottom: 20 }}>
-          <Ionicons name="qr-code" size={38} color={colors.primary} />
+      <View style={[s.center, { backgroundColor: '#0F172A' }]}>
+        <View style={{ width: 80, height: 80, borderRadius: 24, backgroundColor: "rgba(124,58,237,0.18)", alignItems: "center", justifyContent: "center", marginBottom: 20 }}>
+          <Ionicons name="qr-code" size={38} color="#8B5CF6" />
         </View>
-        <Text style={{ color: colors.text, fontSize: 20, fontWeight: "800", marginBottom: 8 }}>Camera Required</Text>
-        <Text style={{ color: colors.textSec, textAlign: "center", fontSize: 14, paddingHorizontal: 40, lineHeight: 20 }}>
-          We need camera access to scan NavX QR codes placed around the building
+        <Text style={{ color: "#FFF", fontSize: 20, fontWeight: "800", marginBottom: 8 }}>Camera Required</Text>
+        <Text style={{ color: "#94A3B8", textAlign: "center", fontSize: 14, paddingHorizontal: 40, lineHeight: 20 }}>
+          We need camera access to scan NavX QR codes placed around the campus
         </Text>
         <AnimatedPressable
-          style={{ backgroundColor: colors.primary, paddingHorizontal: 32, paddingVertical: 14, borderRadius: RADIUS.md, marginTop: 24, ...SHADOWS.md }}
+          style={{ backgroundColor: "#7C3AED", paddingHorizontal: 32, paddingVertical: 14, borderRadius: RADIUS.md, marginTop: 24, ...SHADOWS.md }}
           onPress={requestPermission}
         >
-          <Text style={{ color: "#fff", fontWeight: "700", fontSize: 15 }}>Grant Permission</Text>
-        </AnimatedPressable>
-        <AnimatedPressable style={{ marginTop: 14 }} onPress={() => navigation.goBack()}>
-          <Text style={{ color: colors.textMuted, fontSize: 14 }}>Go Back</Text>
+          <Text style={{ color: "#FFF", fontWeight: "700", fontSize: 15 }}>Grant Permission</Text>
         </AnimatedPressable>
       </View>
     );
@@ -184,293 +165,562 @@ export default function QRScanScreen({ navigation }) {
 
   return (
     <Animated.View style={[s.container, { opacity: fadeAnim }]}>
+      {/* Background Camera Feed */}
       <CameraView
-        style={[StyleSheet.absoluteFill, { flex: 1 }]}
+        style={StyleSheet.absoluteFill}
         facing="back"
         onBarcodeScanned={scanned ? undefined : handleScan}
         barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
       />
 
-      {/* Dark overlay with transparent hole */}
-      <View style={s.overlay}>
-        {/* Top section - smaller flex pushes frame up */}
-        <View style={{ flex: 1, width: '100%', backgroundColor: "rgba(7,11,20,0.75)" }} />
+      {/* Dark Ambient Overlay */}
+      <View style={s.darkOverlay} />
+
+      <ScrollView contentContainerStyle={[s.scrollContent, { paddingTop: Math.max(insets.top, 16), paddingBottom: Math.max(insets.bottom, 24) }]} showsVerticalScrollIndicator={false}>
         
-        {/* Middle row */}
-        <View style={{ flexDirection: "row", width: '100%', height: FRAME }}>
-          <View style={{ flex: 1, backgroundColor: "rgba(7,11,20,0.75)" }} />
-          
-          {/* Scan frame */}
-          <Animated.View style={[s.scanFrame, { transform: [{ scale: frameAnim }] }]}>
-            {/* Corners */}
-            <View style={[s.corner, s.tl]} /><View style={[s.corner, s.tr]} />
-            <View style={[s.corner, s.bl]} /><View style={[s.corner, s.br]} />
-            {/* Scan line */}
-            {!scanned && (
-              <Animated.View style={[s.scanLine, { top: scanLineY }]} />
-            )}
-            {/* Success check */}
-            {scanned && !error && !geofenceDenied && (
-              <Animated.View style={[s.successOverlay, { transform: [{ scale: successAnim }], opacity: successAnim }]}>
-                <View style={s.successCheck}>
-                  <Ionicons name="checkmark" size={40} color="#fff" />
-                </View>
-              </Animated.View>
-            )}
-            {/* Geofence denied overlay */}
-            {scanned && geofenceDenied && (
-              <Animated.View style={[s.successOverlay, { backgroundColor: "rgba(239,68,68,0.35)" }, { transform: [{ scale: successAnim }], opacity: successAnim }]}>
-                <View style={[s.successCheck, { backgroundColor: "#ef4444" }]}>
-                  <Ionicons name="lock-closed" size={36} color="#fff" />
-                </View>
-              </Animated.View>
-            )}
-          </Animated.View>
-          
-          <View style={{ flex: 1, backgroundColor: "rgba(7,11,20,0.75)" }} />
-        </View>
-        
-        {/* Bottom section - equal flex to center the frame */}
-        <View style={{ flex: 1, width: '100%', backgroundColor: "rgba(7,11,20,0.75)" }} />
-      </View>
+        {/* Top Header Bar */}
+        <View style={s.topHeaderBar}>
+          <TouchableOpacity style={s.circleHeaderBtn} onPress={() => navigation.goBack()} activeOpacity={0.8}>
+            <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
+          </TouchableOpacity>
 
-      {/* Top bar */}
-      <View style={[s.topBar, { paddingTop: Math.max(insets.top, 20) }]}>
-        <AnimatedPressable style={s.backBtn} onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={20} color="#fff" />
-        </AnimatedPressable>
-        <Text style={s.topTitle}>Scan QR Code</Text>
-        <View style={{ width: 40 }} />
-      </View>
-
-      {/* Center hint */}
-      <View style={s.hintWrap}>
-        <Text style={s.hintText}>
-          {scanned ? (error ? "❌ QR not recognized" : (geofenceDenied ? "🔒 Access Denied" : "✅ QR detected!")) : "Point camera at a NavX QR code"}
-        </Text>
-      </View>
-
-      {/* Bottom result panel */}
-      <View style={[s.bottomPanel, { paddingBottom: insets.bottom > 0 ? insets.bottom + 8 : 24 }]}>
-        {result && !error && (
-          <Animated.View style={[s.resultCard, { transform: [{ translateY: successAnim.interpolate({ inputRange: [0, 1], outputRange: [60, 0] }) }], opacity: successAnim }]}>
-            <View style={[s.resultIconWrap, { backgroundColor: isCampusQR ? "rgba(99,102,241,0.15)" : "rgba(34,197,94,0.15)" }]}>
-              <Ionicons name={isCampusQR ? "business" : "location"} size={22} color={isCampusQR ? "#6366f1" : "#22c55e"} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={s.resultTitle}>{isCampusQR ? result.name : (result.label || "Location Set")}</Text>
-              {isCampusQR ? (
-                <>
-                  <Text style={s.resultMeta}>{result.address || "Campus Map Unlocked"}</Text>
-                  <Text style={s.resultCoords}>Welcome to {result.name}</Text>
-                </>
-              ) : (
-                <>
-                  <Text style={s.resultMeta}>
-                    {result.floorId?.name || "Floor ?"} · {result.blockId?.name || "Block ?"}
-                  </Text>
-                  <Text style={s.resultCoords}>
-                    Position: ({result.position?.x}, {result.position?.y})
-                  </Text>
-                </>
-              )}
-            </View>
-          </Animated.View>
-        )}
-        {error && (
-          <View style={s.errorCard}>
-            <Ionicons name="alert-circle" size={20} color="#ef4444" />
-            <Text style={s.errorText}>{error}</Text>
+          <View style={{ alignItems: 'center' }}>
+            <Text style={s.brandTitle}>Nav<Text style={{ color: '#7C3AED' }}>X</Text></Text>
+            <Text style={s.brandSubtitle}>Smart Campus Navigation</Text>
           </View>
-        )}
-        {/* Geofence Denied Card */}
-        {geofenceDenied && !error && (
-          <Animated.View style={[s.deniedCard, { transform: [{ translateY: successAnim.interpolate({ inputRange: [0, 1], outputRange: [60, 0] }) }], opacity: successAnim }]}>
-            <View style={s.deniedIconWrap}>
-              <Ionicons name="shield-checkmark" size={24} color="#ef4444" />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={s.deniedTitle}>Campus Access Denied</Text>
-              <Text style={s.deniedMessage}>You must be physically present on campus to access this data.</Text>
-              <View style={s.deniedDistanceRow}>
-                <Ionicons name="location" size={13} color="#f59e0b" />
-                <Text style={s.deniedDistance}>
-                  {geofenceDenied.distance}m away · Boundary: {geofenceDenied.radius}m
-                </Text>
+
+          <TouchableOpacity style={s.circleHeaderBtn} onPress={toggleTheme} activeOpacity={0.8}>
+            <Ionicons name={isDark ? "sunny" : "moon"} size={18} color="#FFFFFF" />
+          </TouchableOpacity>
+        </View>
+
+        {/* Main Translucent Glass Scanner Card */}
+        <View style={s.scannerCard}>
+          <Text style={s.scannerTitle}>Scan QR Code</Text>
+          <Text style={s.scannerSubtitle}>Align the QR code within the frame</Text>
+
+          {/* Viewfinder Frame */}
+          <Animated.View style={[s.viewfinderFrame, { transform: [{ scale: frameAnim }] }]}>
+            {/* Glowing Violet Frame Corners */}
+            <View style={[s.frameCorner, s.cornerTL]} />
+            <View style={[s.frameCorner, s.cornerTR]} />
+            <View style={[s.frameCorner, s.cornerBL]} />
+            <View style={[s.frameCorner, s.cornerBR]} />
+
+            {/* Horizontal Glowing Scanning Beam Line */}
+            {!scanned && (
+              <Animated.View style={[s.scanBeam, { top: scanLineY }]}>
+                <LinearGradient
+                  colors={['rgba(168,85,247,0)', '#A855F7', 'rgba(168,85,247,0)']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={StyleSheet.absoluteFill}
+                />
+              </Animated.View>
+            )}
+
+            {/* Success Overlay */}
+            {scanned && !error && !geofenceDenied && (
+              <Animated.View style={[s.successBadgeOverlay, { transform: [{ scale: successAnim }], opacity: successAnim }]}>
+                <View style={s.successCheckCircle}>
+                  <Ionicons name="checkmark" size={38} color="#FFF" />
+                </View>
+              </Animated.View>
+            )}
+          </Animated.View>
+
+          {/* Status Capsule Badge */}
+          <View style={s.statusPill}>
+            <Ionicons 
+              name={scanned ? (error ? "alert-circle" : "checkmark-circle") : "scan-circle"} 
+              size={18} 
+              color={scanned ? (error ? "#EF4444" : "#22C55E") : "#8B5CF6"} 
+              style={{ marginRight: 6 }} 
+            />
+            <Text style={s.statusPillText}>
+              {scanned 
+                ? (error ? "QR Not Recognized" : "Saved to MongoDB Atlas — ready to use")
+                : "Point camera at a NavX Campus QR"}
+            </Text>
+          </View>
+
+          {/* Primary Action Button (Regenerate & Save / Scan Again) */}
+          <AnimatedPressable style={s.primaryActionBtn} onPress={resetScan}>
+            <LinearGradient
+              colors={['#8B5CF6', '#6D28D9']}
+              style={s.btnGradientFill}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+            >
+              <Ionicons name="refresh-outline" size={18} color="#FFF" style={{ marginRight: 6 }} />
+              <Text style={s.primaryBtnText}>Regenerate & Save</Text>
+              <Ionicons name="chevron-forward" size={16} color="#FFF" style={{ marginLeft: 4 }} />
+            </LinearGradient>
+          </AnimatedPressable>
+
+          {/* Secondary Action Row (Download / Close) */}
+          <View style={s.secondaryActionRow}>
+            <TouchableOpacity style={s.secondaryBtn} onPress={() => resetScan()} activeOpacity={0.8}>
+              <Ionicons name="download-outline" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+              <Text style={s.secondaryBtnText}>Download to System</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={s.secondaryBtn} onPress={() => navigation.goBack()} activeOpacity={0.8}>
+              <Ionicons name="close" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+              <Text style={s.secondaryBtnText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Bottom Card: "Campus Detected" */}
+        {result && (
+          <Animated.View style={[s.campusCard, { opacity: successAnim }]}>
+            {/* Header Row */}
+            <View style={s.campusCardHeader}>
+              <View style={s.campusIconWrap}>
+                <Ionicons name="city" size={18} color="#8B5CF6" />
               </View>
-              {geofenceDenied.campusName && (
-                <Text style={s.deniedCampusName}>{geofenceDenied.campusName}</Text>
-              )}
+              <Text style={s.campusCardTitle}>
+                Campus Detected <Ionicons name="checkmark-circle" size={16} color="#22C55E" />
+              </Text>
+              <TouchableOpacity 
+                style={s.viewDetailsBtn} 
+                onPress={() => navigation.navigate("MainTabs", { screen: "Home", params: { campusId: result._id } })}
+                activeOpacity={0.8}
+              >
+                <Text style={s.viewDetailsText}>View Details ›</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Campus Info & Image Row */}
+            <View style={s.campusInfoRow}>
+              {/* Campus Photo Image (Uploaded by Admin!) */}
+              <Image 
+                source={{ uri: result.image || FALLBACK_CAMPUS_IMAGE }} 
+                style={s.campusImageThumbnail}
+                resizeMode="cover"
+              />
+
+              <View style={{ flex: 1 }}>
+                <Text style={s.campusNameText}>{result.name || result.campusName || "GMRIT"}</Text>
+                <Text style={s.campusDescText} numberOfLines={1}>
+                  {result.description || result.address || "GMR Institute of Technology"}
+                </Text>
+                
+                <View style={s.metaItemRow}>
+                  <Ionicons name="location-outline" size={13} color="#94A3B8" />
+                  <Text style={s.metaItemText}>{result.address || "Rajam, Andhra Pradesh"}</Text>
+                </View>
+
+                <View style={s.metaStatsRow}>
+                  <View style={s.metaStatItem}>
+                    <Ionicons name="layers-outline" size={13} color="#94A3B8" />
+                    <Text style={s.metaStatText}>Floors: {result.floors || 6}</Text>
+                  </View>
+                  <View style={s.metaStatItem}>
+                    <Ionicons name="door-open-outline" size={13} color="#94A3B8" />
+                    <Text style={s.metaStatText}>Rooms: {result.rooms || 142}</Text>
+                  </View>
+                </View>
+              </View>
+            </View>
+
+            {/* Quick Action Buttons Grid (3 Buttons Row) */}
+            <View style={s.quickNavGrid}>
+              <TouchableOpacity 
+                style={s.quickNavBtn} 
+                onPress={async () => {
+                  try { await activateCampus(result); } catch(e){}
+                  navigation.navigate("MainTabs", { screen: "Map", params: { campusId: result._id } });
+                }}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="navigate" size={18} color="#8B5CF6" />
+                <Text style={s.quickNavBtnText}>Indoor Navigation</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={s.quickNavBtn} 
+                onPress={() => navigation.navigate("ARScreen", { campusId: result._id })}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="cube-outline" size={18} color="#8B5CF6" />
+                <Text style={s.quickNavBtnText}>AR Mode</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={s.quickNavBtn} 
+                onPress={() => navigation.navigate("SearchScreen")}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="hardware-chip-outline" size={18} color="#8B5CF6" />
+                <Text style={s.quickNavBtnText}>AI Assistant</Text>
+              </TouchableOpacity>
             </View>
           </Animated.View>
         )}
-        <View style={s.actionRow}>
-          {scanned && !result && !error && !geofenceDenied ? (
-            <View style={{ flex: 1, alignItems: 'center', padding: 14 }}>
-              <ActivityIndicator color="#6366f1" size="small" />
-              <Text style={{ color: '#94a3b8', marginTop: 8, fontSize: 13 }}>Verifying location & QR Code...</Text>
-            </View>
-          ) : scanned ? (
-            <>
-              <AnimatedPressable style={s.rescanBtn} onPress={resetScan}>
-                <Ionicons name="refresh" size={18} color="#6366f1" />
-                <Text style={s.rescanText}>Scan Again</Text>
-              </AnimatedPressable>
-              {result && (
-                <AnimatedPressable
-                  style={s.navigateBtn}
-                  onPress={async () => {
-                    if (isCampusQR) {
-                      try {
-                        await activateCampus(result);
-                      } catch (e) { }
-                      navigation.navigate("MainTabs", { screen: "Home", params: { campusId: result._id } });
-                    } else {
-                      try {
-                        await AsyncStorage.setItem('navx_last_scan', JSON.stringify({
-                          x: result.position.x,
-                          y: result.position.y,
-                          floorId: result.floorId?._id,
-                          timestamp: Date.now()
-                        }));
-                      } catch (e) { }
 
-                      const campusId = result.campusId || result.floorId?.campusId;
-                      // Activate the campus first so GeofenceContext knows we're inside
-                      try {
-                        await activateCampus({ _id: campusId });
-                      } catch (e) { }
+      </ScrollView>
 
-                      navigation.navigate("MainTabs", {
-                        screen: "Map",
-                        params: {
-                          campusId,
-                          floorId: result.floorId?._id,
-                          blockId: result.blockId?._id
-                        }
-                      });
-                    }
-                  }}
-                >
-                  <Ionicons name={isCampusQR ? "arrow-forward" : "map"} size={18} color="#fff" />
-                  <Text style={s.navigateBtnText}>{isCampusQR ? "Enter Campus" : "View Floor Details"}</Text>
-                </AnimatedPressable>
-              )}
-            </>
-          ) : (
-            <View style={s.infoCard}>
-              <Ionicons name="information-circle" size={18} color="#6366f1" />
-              <Text style={s.infoText}>QR codes are placed at entrances and key corridors to set your indoor position</Text>
-            </View>
-          )}
-        </View>
+      {/* Bottom Floating Navigation Bar */}
+      <View style={[s.bottomTabBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+        <TouchableOpacity style={[s.tabItem, s.tabItemActive]} activeOpacity={0.8}>
+          <Ionicons name="qr-code" size={20} color="#FFFFFF" />
+          <Text style={s.tabTextActive}>Scan</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={s.tabItem} onPress={() => navigation.navigate("FavoritesScreen")} activeOpacity={0.8}>
+          <Ionicons name="time-outline" size={20} color="#94A3B8" />
+          <Text style={s.tabText}>History</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={s.tabItem} onPress={() => navigation.navigate("MainTabs", { screen: "Home" })} activeOpacity={0.8}>
+          <Ionicons name="business-outline" size={20} color="#94A3B8" />
+          <Text style={s.tabText}>Campuses</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={s.tabItem} onPress={() => navigation.navigate("ProfileScreen")} activeOpacity={0.8}>
+          <Ionicons name="person-outline" size={20} color="#94A3B8" />
+          <Text style={s.tabText}>Profile</Text>
+        </TouchableOpacity>
       </View>
     </Animated.View>
   );
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#000" },
+  container: { flex: 1, backgroundColor: "#070B14" },
   center: { flex: 1, justifyContent: "center", alignItems: "center", padding: 20 },
-  overlay: { ...StyleSheet.absoluteFillObject },
-  topBar: {
-    position: "absolute", top: 0, left: 0, right: 0,
-    flexDirection: "row", alignItems: "center",
-    paddingTop: 20,
-    paddingBottom: 12, paddingHorizontal: 16,
+  darkOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(7, 11, 20, 0.78)" },
+  scrollContent: {
+    paddingHorizontal: 16,
+    alignItems: "center",
   },
-  backBtn: {
-    width: 40, height: 40, borderRadius: 12,
-    backgroundColor: "rgba(255,255,255,0.12)", alignItems: "center", justifyContent: "center",
+
+  /* Top Header Bar */
+  topHeaderBar: {
+    width: "100%",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 16,
   },
-  topTitle: { flex: 1, textAlign: "center", fontSize: 18, fontWeight: "700", color: "#fff" },
-  scanFrame: {
-    width: FRAME, height: FRAME,
-    position: "relative", overflow: "hidden",
+  circleHeaderBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "rgba(255, 255, 255, 0.12)",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.15)",
   },
-  corner: { position: "absolute", width: 28, height: 28, borderColor: "#6366f1", borderWidth: 3 },
-  tl: { top: 0, left: 0, borderRightWidth: 0, borderBottomWidth: 0, borderTopLeftRadius: 8 },
-  tr: { top: 0, right: 0, borderLeftWidth: 0, borderBottomWidth: 0, borderTopRightRadius: 8 },
-  bl: { bottom: 0, left: 0, borderRightWidth: 0, borderTopWidth: 0, borderBottomLeftRadius: 8 },
-  br: { bottom: 0, right: 0, borderLeftWidth: 0, borderTopWidth: 0, borderBottomRightRadius: 8 },
-  scanLine: {
-    position: "absolute", left: 4, right: 4, height: 2,
-    backgroundColor: "#6366f1", borderRadius: 1,
-    shadowColor: "#6366f1", shadowOpacity: 0.8, shadowRadius: 6,
+  brandTitle: {
+    fontSize: 22,
+    fontWeight: "900",
+    color: "#FFFFFF",
+    letterSpacing: -0.5,
   },
-  successOverlay: {
-    ...StyleSheet.absoluteFillObject, alignItems: "center", justifyContent: "center",
-    backgroundColor: "rgba(34,197,94,0.35)",
+  brandSubtitle: {
+    fontSize: 11,
+    color: "#94A3B8",
+    fontWeight: "600",
   },
-  successCheck: {
-    width: 64, height: 64, borderRadius: 32,
-    backgroundColor: "#22c55e", alignItems: "center", justifyContent: "center",
+
+  /* Scanner Card */
+  scannerCard: {
+    width: "100%",
+    maxWidth: 420,
+    backgroundColor: "rgba(15, 23, 42, 0.75)",
+    borderRadius: 28,
+    padding: 20,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.12)",
+    shadowColor: "#7C3AED",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 8,
+    marginBottom: 16,
   },
-  hintWrap: {
+  scannerTitle: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: "#FFFFFF",
+    marginTop: 2,
+  },
+  scannerSubtitle: {
+    fontSize: 13,
+    color: "#94A3B8",
+    marginTop: 4,
+    marginBottom: 16,
+  },
+  viewfinderFrame: {
+    width: FRAME,
+    height: FRAME,
+    borderRadius: 20,
+    position: "relative",
+    overflow: "hidden",
+    backgroundColor: "rgba(0,0,0,0.4)",
+    marginBottom: 16,
+  },
+  frameCorner: {
     position: "absolute",
-    top: SH / 2 + FRAME / 2 + 20,
-    left: 0, right: 0, alignItems: "center",
+    width: 28,
+    height: 28,
+    borderColor: "#8B5CF6",
+    borderWidth: 3.5,
   },
-  hintText: {
-    color: "#fff", fontSize: 14, fontWeight: "600",
-    textShadowColor: "rgba(0,0,0,0.8)", textShadowRadius: 4, textShadowOffset: { width: 0, height: 1 },
+  cornerTL: { top: 0, left: 0, borderRightWidth: 0, borderBottomWidth: 0, borderTopLeftRadius: 16 },
+  cornerTR: { top: 0, right: 0, borderLeftWidth: 0, borderBottomWidth: 0, borderTopRightRadius: 16 },
+  cornerBL: { bottom: 0, left: 0, borderRightWidth: 0, borderTopWidth: 0, borderBottomLeftRadius: 16 },
+  cornerBR: { bottom: 0, right: 0, borderLeftWidth: 0, borderTopWidth: 0, borderBottomRightRadius: 16 },
+  scanBeam: {
+    position: "absolute",
+    left: 0, right: 0,
+    height: 4,
+    shadowColor: "#A855F7",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 1,
+    shadowRadius: 8,
   },
-  bottomPanel: {
-    position: "absolute", bottom: 0, left: 0, right: 0,
-    padding: 20, paddingBottom: 36,
+  successBadgeOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(34, 197, 94, 0.3)",
+    alignItems: "center",
+    justifyContent: "center",
   },
-  resultCard: {
-    flexDirection: "row", alignItems: "center",
-    backgroundColor: "rgba(17,24,39,0.92)", borderRadius: 16,
-    padding: 14, marginBottom: 12,
-    borderWidth: 1, borderColor: "rgba(34,197,94,0.3)",
+  successCheckCircle: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: "#22C55E",
+    alignItems: "center",
+    justifyContent: "center",
   },
-  resultIconWrap: {
-    width: 44, height: 44, borderRadius: 12,
-    backgroundColor: "rgba(34,197,94,0.15)", alignItems: "center", justifyContent: "center", marginRight: 12,
+
+  /* Status Pill */
+  statusPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.12)",
+    marginBottom: 16,
   },
-  resultTitle: { fontSize: 15, fontWeight: "700", color: "#fff" },
-  resultMeta: { fontSize: 12, color: "#94a3b8", marginTop: 2 },
-  resultCoords: { fontSize: 11, color: "#4b5563", marginTop: 2 },
-  errorCard: {
-    flexDirection: "row", alignItems: "center",
-    backgroundColor: "rgba(239,68,68,0.15)", borderRadius: 12,
-    padding: 12, marginBottom: 12,
-    borderWidth: 1, borderColor: "rgba(239,68,68,0.3)", gap: 8,
+  statusPillText: {
+    color: "#E2E8F0",
+    fontSize: 12,
+    fontWeight: "600",
   },
-  errorText: { color: "#ef4444", fontSize: 13, fontWeight: "600", flex: 1 },
-  actionRow: { flexDirection: "row", gap: 10 },
-  rescanBtn: {
-    flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center",
-    backgroundColor: "rgba(99,102,241,0.15)", paddingVertical: 13,
-    borderRadius: 13, gap: 8,
-    borderWidth: 1, borderColor: "rgba(99,102,241,0.3)",
+
+  /* Action Buttons */
+  primaryActionBtn: {
+    width: "100%",
+    height: 50,
+    borderRadius: 16,
+    overflow: "hidden",
+    marginBottom: 10,
+    shadowColor: "#8B5CF6",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 4,
   },
-  rescanText: { color: "#818cf8", fontWeight: "700", fontSize: 14 },
-  navigateBtn: {
-    flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center",
-    backgroundColor: "#6366f1", paddingVertical: 13, borderRadius: 13, gap: 8,
+  btnGradientFill: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
   },
-  navigateBtnText: { color: "#fff", fontWeight: "700", fontSize: 14 },
-  infoCard: {
-    flex: 1, flexDirection: "row", alignItems: "center",
-    backgroundColor: "rgba(17,24,39,0.85)", padding: 14, borderRadius: 14, gap: 10,
+  primaryBtnText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "800",
   },
-  infoText: { flex: 1, color: "#94a3b8", fontSize: 13, lineHeight: 18 },
-  // Geofence denial styles
-  deniedCard: {
-    flexDirection: "row", alignItems: "flex-start",
-    backgroundColor: "rgba(17,24,39,0.95)", borderRadius: 16,
-    padding: 16, marginBottom: 12,
-    borderWidth: 1.5, borderColor: "rgba(239,68,68,0.4)",
+  secondaryActionRow: {
+    flexDirection: "row",
+    width: "100%",
+    gap: 10,
   },
-  deniedIconWrap: {
-    width: 48, height: 48, borderRadius: 14,
-    backgroundColor: "rgba(239,68,68,0.15)", alignItems: "center", justifyContent: "center", marginRight: 14,
+  secondaryBtn: {
+    flex: 1,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.12)",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
   },
-  deniedTitle: { fontSize: 16, fontWeight: "800", color: "#ef4444", marginBottom: 4 },
-  deniedMessage: { fontSize: 13, color: "#94a3b8", lineHeight: 18, marginBottom: 8 },
-  deniedDistanceRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 4 },
-  deniedDistance: { fontSize: 12, color: "#f59e0b", fontWeight: "700" },
-  deniedCampusName: { fontSize: 11, color: "#4b5563", fontWeight: "600", marginTop: 2 },
+  secondaryBtnText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+
+  /* Campus Detected Card */
+  campusCard: {
+    width: "100%",
+    maxWidth: 420,
+    backgroundColor: "#111827",
+    borderRadius: 24,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.12)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 6,
+    marginBottom: 80,
+  },
+  campusCardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 14,
+  },
+  campusIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: "rgba(139, 92, 246, 0.18)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 8,
+  },
+  campusCardTitle: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: "#FFFFFF",
+    flex: 1,
+  },
+  viewDetailsBtn: {
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+  },
+  viewDetailsText: {
+    color: "#8B5CF6",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+
+  /* Campus Info Row */
+  campusInfoRow: {
+    flexDirection: "row",
+    gap: 14,
+    alignItems: "center",
+    marginBottom: 16,
+    backgroundColor: "rgba(255, 255, 255, 0.04)",
+    padding: 10,
+    borderRadius: 16,
+  },
+  campusImageThumbnail: {
+    width: 90,
+    height: 90,
+    borderRadius: 16,
+    backgroundColor: "#1E293B",
+  },
+  campusNameText: {
+    fontSize: 18,
+    fontWeight: "900",
+    color: "#FFFFFF",
+  },
+  campusDescText: {
+    fontSize: 12,
+    color: "#94A3B8",
+    marginTop: 2,
+    marginBottom: 6,
+  },
+  metaItemRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginBottom: 4,
+  },
+  metaItemText: {
+    fontSize: 11,
+    color: "#CBD5E1",
+    fontWeight: "600",
+  },
+  metaStatsRow: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  metaStatItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  metaStatText: {
+    fontSize: 11,
+    color: "#94A3B8",
+    fontWeight: "600",
+  },
+
+  /* Quick Nav Grid */
+  quickNavGrid: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  quickNavBtn: {
+    flex: 1,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: "rgba(139, 92, 246, 0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(139, 92, 246, 0.25)",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+  },
+  quickNavBtnText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#8B5CF6",
+  },
+
+  /* Bottom Floating Tab Bar */
+  bottomTabBar: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    flexDirection: "row",
+    backgroundColor: "rgba(15, 23, 42, 0.95)",
+    paddingTop: 10,
+    paddingHorizontal: 16,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255, 255, 255, 0.1)",
+    justifyContent: "space-around",
+  },
+  tabItem: {
+    alignItems: "center",
+    paddingVertical: 4,
+    paddingHorizontal: 12,
+  },
+  tabItemActive: {
+    backgroundColor: "rgba(124, 58, 237, 0.25)",
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: "rgba(124, 58, 237, 0.4)",
+  },
+  tabText: {
+    fontSize: 11,
+    color: "#94A3B8",
+    marginTop: 2,
+    fontWeight: "600",
+  },
+  tabTextActive: {
+    fontSize: 11,
+    color: "#FFFFFF",
+    marginTop: 2,
+    fontWeight: "800",
+  },
 });

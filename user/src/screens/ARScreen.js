@@ -264,6 +264,7 @@ window.updateGeoJSON = function(data, floorId) {
       'id': 'campus-labels',
       'type': 'symbol',
       'source': 'campus-data',
+      'filter': ['!=', ['get', 'type'], 'room'],
       'layout': {
         'text-field': ['get', 'name'],
         'text-size': 10,

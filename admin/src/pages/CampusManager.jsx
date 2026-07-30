@@ -154,7 +154,7 @@ export default function CampusManager({ admin }) {
       }
       setShowModal(false);
       setEditing(null);
-      setForm({ name: '', description: '', address: '', venueType: 'campus' });
+      setForm({ name: '', description: '', address: '', venueType: 'campus', image: '' });
       load();
     } catch (err) { toast.error(err.response?.data?.error || 'Error'); }
   };
@@ -167,7 +167,7 @@ export default function CampusManager({ admin }) {
 
   const openEdit = (c) => {
     setEditing(c);
-    setForm({ name: c.name, description: c.description, address: c.address, venueType: c.venueType || 'campus' });
+    setForm({ name: c.name, description: c.description, address: c.address, venueType: c.venueType || 'campus', image: c.image || '' });
     if (c.location && c.location.lat) {
       setMapCenter([c.location.lat, c.location.lng]);
       setMarkerPos([c.location.lat, c.location.lng]);
@@ -380,6 +380,52 @@ export default function CampusManager({ admin }) {
                     <FiSearch /> Search Map
                   </button>
                 </div>
+              </div>
+
+              <div className="input-group" style={{ marginTop: '12px' }}>
+                <label>Campus Photo / Cover Image</label>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <input 
+                    className="input" 
+                    value={form.image || ''} 
+                    onChange={e => setForm({ ...form, image: e.target.value })} 
+                    placeholder="Paste image URL (https://...) or upload file" 
+                    style={{ flex: 1 }} 
+                  />
+                  <input
+                    type="file"
+                    accept="image/*"
+                    id="campus-img-file-input"
+                    style={{ display: 'none' }}
+                    onChange={(e) => {
+                      const file = e.target.files[0];
+                      if (file) {
+                        const reader = new FileReader();
+                        reader.onloadend = () => {
+                          setForm(prev => ({ ...prev, image: reader.result }));
+                          toast.success('Campus image loaded!');
+                        };
+                        reader.readAsDataURL(file);
+                      }
+                    }}
+                  />
+                  <button 
+                    type="button" 
+                    className="btn btn-secondary" 
+                    onClick={() => document.getElementById('campus-img-file-input').click()}
+                  >
+                    📁 Upload Image
+                  </button>
+                </div>
+                {form.image && (
+                  <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 12, background: 'rgba(99, 102, 241, 0.08)', padding: '8px 12px', borderRadius: 8, border: '1px solid rgba(99, 102, 241, 0.2)' }}>
+                    <img src={form.image} alt="Campus Preview" style={{ width: 80, height: 50, borderRadius: 6, objectFit: 'cover' }} />
+                    <div>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: '#6366f1' }}>Campus Image Ready</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>This photo will display on the User App QR Scanner page</div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div style={{ height: '200px', width: '100%', marginTop: '16px', marginBottom: '16px', borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--border)' }}>
