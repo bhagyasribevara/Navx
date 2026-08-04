@@ -549,7 +549,7 @@ export default function Admin3DViewer({ blocks, floors, rooms, nodes, paths, cam
           'fill-extrusion-base': ['get', 'min_height'],
           'fill-extrusion-opacity': 0.7
         }
-      });
+      }, '3d-buildings');
     }
 
     // Prepare Paths (Elevated/Inclined 3D Paths using fill-extrusion segments)
@@ -558,13 +558,6 @@ export default function Admin3DViewer({ blocks, floors, rooms, nodes, paths, cam
       const a = nodes.find(n => n._id === p.nodeA);
       const b = nodes.find(n => n._id === p.nodeB);
       if (a && b) {
-        const aVisible = !a.blockId || a.blockId === selectedBlockId;
-        const bVisible = !b.blockId || b.blockId === selectedBlockId;
-        if (!aVisible || !bVisible) return;
-
-        const aOnFloor = isNodeOnSelectedFloor(a);
-        const bOnFloor = isNodeOnSelectedFloor(b);
-        if (!aOnFloor && !bOnFloor) return;
 
         let levelA = getNodeLevel(a);
         let levelB = getNodeLevel(b);
@@ -652,14 +645,12 @@ export default function Admin3DViewer({ blocks, floors, rooms, nodes, paths, cam
           'fill-extrusion-base': ['get', 'min_height'],
           'fill-extrusion-opacity': 0.95
         }
-      });
+      }, 'campus-polygons-layer');
     }
 
     // Prepare Nodes (Small 3D suspended discs using fill-extrusion)
     const nodeFeatures = [];
     nodes.forEach(n => {
-      if (n.blockId && n.blockId !== selectedBlockId) return;
-      if (!isNodeOnSelectedFloor(n)) return;
 
       const h = getNodeLevel(n) * 3.5 + 0.5;
       const isStartNode = pathStartNode?._id === n._id;
@@ -714,7 +705,7 @@ export default function Admin3DViewer({ blocks, floors, rooms, nodes, paths, cam
           'fill-extrusion-base': ['get', 'min_height'],
           'fill-extrusion-opacity': 0.95
         }
-      });
+      }, 'campus-polygons-layer');
     }
   };
 

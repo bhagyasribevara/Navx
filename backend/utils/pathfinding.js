@@ -131,7 +131,7 @@ function angleDiff(fromDeg, toDeg) {
 //  Build adjacency list from nodes and paths
 // ──────────────────────────────────────────────
 
-function buildGraph(nodes, paths, floorMap = {}) {
+function buildGraph(nodes, paths, floorMap = {}, rooms = []) {
   const graph = {};
 
   // Initialize all nodes
@@ -145,22 +145,20 @@ function buildGraph(nodes, paths, floorMap = {}) {
       floorId,
       floorLevel: floorId && floorMap[floorId] != null ? floorMap[floorId] : null,
       type: node.type,
+      roomId: node.roomId ? node.roomId.toString() : null,
       neighbors: []
     };
   });
 
-  // Add edges from paths
+  // Add edges from explicit paths
   paths.forEach(path => {
     const a = path.nodeA.toString();
     const b = path.nodeB.toString();
 
     if (!graph[a] || !graph[b]) return;
 
-    // Recompute true geodesic distance between the two end-nodes
     const trueDist = haversineDistMeters(graph[a].x, graph[a].y, graph[b].x, graph[b].y);
-    // Use the larger of stored distance and haversine (stored may include vertical component)
     const edgeDist = Math.max(path.distance, trueDist);
-
     const effectiveWeight = edgeDist * path.weight * (1 + path.congestionLevel * 0.1);
 
     graph[a].neighbors.push({
@@ -181,6 +179,9 @@ function buildGraph(nodes, paths, floorMap = {}) {
       });
     }
   });
+
+  // Edges from room stairsConfig have been removed to prevent automatic vertical shortcuts 
+  // that override the user's manual slanted paths drawn in the 2D/3D map.
 
   return graph;
 }
@@ -249,8 +250,12 @@ function autoConnectGraph(graph) {
     }
 
     if (bestA && bestB) {
-      const virtualDistance = bestDist;
-      const virtualWeight = virtualDistance * 1.5; // Slightly penalize virtual edges
+      const nodeA = graph[bestA];
+      const nodeB = graph[bestB];
+      const levelDiff = Math.abs((nodeA.floorLevel || 0) - (nodeB.floorLevel || 0));
+      const verticalDist = levelDiff * 3.5;
+      const virtualDistance = Math.sqrt(bestDist * bestDist + verticalDist * verticalDist) || 0.1; // avoid 0
+      const virtualWeight = virtualDistance * 5.0; // Heavily penalize virtual teleportation edges
 
       graph[bestA].neighbors.push({
         nodeId: bestB,

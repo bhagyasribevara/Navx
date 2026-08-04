@@ -83,7 +83,7 @@ window.setMapMode = function(mode) {
   // Hide all block shapes, room polygons, steps, nodes, and custom layers in 2D mode for a pure clean Mapbox map tile view
   var customLayers = [
     'campus-2d-fill', 'campus-2d-line', 'campus-2d-paths', 'campus-2d-nodes',
-    'campus-polygons', '3d-buildings', 'campus-labels'
+    'campus-blocks', 'campus-rooms', '3d-buildings', 'campus-labels'
   ];
 
   customLayers.forEach(function(id) {
@@ -132,6 +132,10 @@ window.renderGeoJSONLayers = function(data, floorId) {
   var polyFeatures = data.features.filter(function(f) {
     if (f.properties.type === 'path' || f.properties.type === 'node') return false;
     if (f.properties.category === 'parking' || (f.properties.name && f.properties.name.toLowerCase().includes('parking'))) return false;
+    if (f.properties.type === 'room') {
+      if (!floorId) return false;
+      if (f.properties.floorId !== floorId) return false;
+    }
     return true;
   });
 
@@ -172,29 +176,42 @@ window.renderGeoJSONLayers = function(data, floorId) {
     });
   }
 
-  // ── 5. 3D EXTRUSION LAYER FOR BLOCKS & ROOMS ──
-  if (!map.getLayer('campus-polygons')) {
+  // ── 5B. 3D EXTRUSION LAYER FOR ROOMS (OPAQUE, DRAW FIRST) ──
+  if (!map.getLayer('campus-rooms')) {
     map.addLayer({
-      'id': 'campus-polygons',
+      'id': 'campus-rooms',
       'type': 'fill-extrusion',
       'source': 'campus-data',
+      'filter': ['!=', ['get', 'type'], 'block'],
       'layout': { 'visibility': is2D ? 'none' : 'visible' },
       'paint': {
-        'fill-extrusion-color': ['coalesce', ['get', 'color'], '#3b82f6'],
-        'fill-extrusion-height': [
+        'fill-extrusion-color': [
           'case',
-          ['has', 'height'], ['get', 'height'],
-          ['==', ['get', 'type'], 'block'], 2,
-          3
+          ['==', ['get', 'type'], 'stairs'], ['coalesce', ['get', 'color'], '#f97316'],
+          '#ffffff'
         ],
-        'fill-extrusion-base': [
-          'case',
-          ['has', 'min_height'], ['get', 'min_height'],
-          0
-        ],
-        'fill-extrusion-opacity': 0.8
+        'fill-extrusion-height': ['coalesce', ['get', 'height'], 3],
+        'fill-extrusion-base': ['coalesce', ['get', 'min_height'], 0],
+        'fill-extrusion-opacity': 0.9
       }
-    });
+    }, '3d-buildings');
+  }
+
+  // ── 5A. 3D EXTRUSION LAYER FOR BLOCKS (TRANSLUCENT, DRAW AFTER ROOMS) ──
+  if (!map.getLayer('campus-blocks')) {
+    map.addLayer({
+      'id': 'campus-blocks',
+      'type': 'fill-extrusion',
+      'source': 'campus-data',
+      'filter': ['==', ['get', 'type'], 'block'],
+      'layout': { 'visibility': is2D ? 'none' : 'visible' },
+      'paint': {
+        'fill-extrusion-color': ['coalesce', ['get', 'color'], '#64748b'],
+        'fill-extrusion-height': ['coalesce', ['get', 'height'], 2],
+        'fill-extrusion-base': ['coalesce', ['get', 'min_height'], 0],
+        'fill-extrusion-opacity': 0.2
+      }
+    }, '3d-buildings');
   }
 
   // ── 6. LABELS FOR BLOCKS ──

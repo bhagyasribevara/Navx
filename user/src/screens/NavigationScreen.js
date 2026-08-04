@@ -105,7 +105,9 @@ function buildNavMapHTML(geoJSONData, pathPoints, initialPos, targetRoom, mapbox
 
   // Collect all floor IDs the route passes through for multi-floor visibility
   const routeFloorIds = new Set();
-  const pathCoordinates = pathPoints ? pathPoints.map(p => {
+  
+  // First pass: extract base heights and types
+  const pathData = pathPoints ? pathPoints.map(p => {
     let level = p.floorLevel;
     if (level === undefined && floors) {
       const f = floors.find(fl => fl._id.toString() === (p.floorId?._id || p.floorId)?.toString());
@@ -113,10 +115,58 @@ function buildNavMapHTML(geoJSONData, pathPoints, initialPos, targetRoom, mapbox
     }
     const fid = p.floorId?._id || p.floorId;
     if (fid) routeFloorIds.add(fid.toString());
-    // Base height for each floor is 3.5m. We add 0.5 to lift it slightly off the ground.
-    const h = (level || 0) * 3.5 + 0.5;
+    const baseH = (level || 0) * 3.5 + 0.5;
+    return { ...p, level, baseH };
+  }) : [];
+
+  // Second pass: smooth out stairs/elevator transitions
+  if (pathData.length > 0) {
+    let i = 0;
+    while (i < pathData.length) {
+      const isTransition = (n) => n && (n.type === 'stairs' || n.type === 'elevator' || n.segmentType === 'stairs' || n.segmentType === 'elevator');
+      if (isTransition(pathData[i])) {
+        let start = i;
+        let end = i;
+        while (end + 1 < pathData.length && isTransition(pathData[end + 1])) {
+          end++;
+        }
+        
+        const hStart = pathData[start].baseH;
+        const hEnd = pathData[end].baseH;
+        
+        if (hStart !== hEnd) {
+          let totalDist = 0;
+          const dists = [0];
+          for (let j = start; j < end; j++) {
+            const d = Math.hypot(pathData[j+1].x - pathData[j].x, pathData[j+1].y - pathData[j].y);
+            totalDist += d;
+            dists.push(totalDist);
+          }
+          
+          if (totalDist > 0) {
+            for (let j = start; j <= end; j++) {
+              const fraction = dists[j - start] / totalDist;
+              pathData[j].adjustedH = hStart + fraction * (hEnd - hStart);
+            }
+          } else {
+            for (let j = start; j <= end; j++) {
+              const fraction = (j - start) / (end - start);
+              pathData[j].adjustedH = hStart + fraction * (hEnd - hStart);
+            }
+          }
+        }
+        i = end + 1;
+      } else {
+        i++;
+      }
+    }
+  }
+
+  const pathCoordinates = pathData.map(p => {
+    const h = p.adjustedH !== undefined ? p.adjustedH : p.baseH;
     return `[${p.y}, ${p.x}, ${h}]`;
-  }).join(',') : '';
+  }).join(',');
+
   const routeFloorIdsJSON = JSON.stringify([...routeFloorIds]);
 
   const targetFloorId = targetRoom?.floorId
@@ -176,6 +226,7 @@ var map = new mapboxgl.Map({
 var currentMapMode = '${mapMode || "3D"}';
 var currentGeoData = ${geoJSONData ? JSON.stringify(geoJSONData) : 'null'};
 var currentFloorId = '${targetFloorId || ""}';
+window._routeFloorIds = ${routeFloorIdsJSON || '[]'};
 
 window.setMapMode = function(mode) {
   if (!map) return;
@@ -188,22 +239,19 @@ window.setMapMode = function(mode) {
     map.easeTo({ pitch: 60, bearing: -17.6, duration: 600 });
   }
 
-  // Hide custom block shapes, steps, and 3D layers in 2D mode for clean 2D map tile
-  var blockAnd3DLayers = [
-    'campus-2d-fill', 'campus-2d-line', 'campus-2d-paths', 'campus-2d-nodes',
-    'campus-polygons', 'campus-stairs', '3d-buildings', 'route-bg', 'route-line', 'campus-labels'
-  ];
-
-  blockAnd3DLayers.forEach(function(id) {
+  var layers3D = ['campus-blocks', 'campus-rooms', 'campus-stairs', '3d-buildings', 'route-bg', 'route-line'];
+  layers3D.forEach(function(id) {
     if (map.getLayer(id)) {
       map.setLayoutProperty(id, 'visibility', is2D ? 'none' : 'visible');
     }
   });
 
-  // Keep active 2D navigation route visible if navigation is active
-  if (map.getLayer('nav-route-2d-line')) {
-    map.setLayoutProperty('nav-route-2d-line', 'visibility', is2D ? 'visible' : 'none');
-  }
+  var layers2D = ['campus-2d-fill', 'campus-2d-line', 'nav-route-2d-line', 'campus-labels'];
+  layers2D.forEach(function(id) {
+    if (map.getLayer(id)) {
+      map.setLayoutProperty(id, 'visibility', is2D ? 'visible' : 'none');
+    }
+  });
 };
 
 function generate3DRouteFeatures(coords, width, thickness) {
@@ -286,13 +334,13 @@ map.on('load', () => {
   }
 });
 
-window.updateGeoJSON = function(data, floorId) {
+window.updateGeoJSON = function(data, floorId, activeFloorId) {
   currentGeoData = data;
   currentFloorId = floorId;
-  window.renderGeoJSONLayers(data, floorId);
+  window.renderGeoJSONLayers(data, floorId, activeFloorId);
 };
 
-window.renderGeoJSONLayers = function(data, floorId) {
+window.renderGeoJSONLayers = function(data, floorId, activeFloorId) {
   if (!map || !data || !data.features) return;
 
   var is2D = (currentMapMode === '2D');
@@ -302,11 +350,16 @@ window.renderGeoJSONLayers = function(data, floorId) {
     if (f.properties.category === 'parking' || (f.properties.name && f.properties.name.toLowerCase().includes('parking'))) {
       if (f.properties.id !== '${targetRoom?._id || ''}') return false;
     }
-    if (f.properties.type === 'room' && f.properties.floorId) {
-      if (f.properties.category === 'stairs' || f.properties.isStairs) { }
-      else if (floorId && f.properties.floorId !== floorId) {
-        var routeFloors = window._routeFloorIds || [];
-        if (routeFloors.indexOf(f.properties.floorId) === -1) return false;
+    if (f.properties.type === 'room') {
+      if (f.properties.category === 'stairs') {
+        if (activeFloorId) {
+          return f.properties.floorId === activeFloorId;
+        } else {
+          return f.properties.floorId === floorId;
+        }
+      } else {
+        if (!floorId) return false;
+        if (f.properties.floorId !== floorId) return false;
       }
     }
     return true;
@@ -335,8 +388,8 @@ window.renderGeoJSONLayers = function(data, floorId) {
       map.addSource('nav-route-2d', { type: 'geojson', data: route2DGeoJSON });
     }
 
-    var mainFeatures = generate3DRouteFeatures(rawRouteCoords, 0.0000005, 0.04);
-    var bgFeatures = generate3DRouteFeatures(rawRouteCoords, 0.0000012, 0.06);
+    var mainFeatures = generate3DRouteFeatures(rawRouteCoords, 0.000004, 0.04);
+    var bgFeatures = generate3DRouteFeatures(rawRouteCoords, 0.000006, 0.06);
 
     if (map.getSource('route')) {
       map.getSource('route').setData({ type: 'FeatureCollection', features: mainFeatures });
@@ -359,11 +412,7 @@ window.renderGeoJSONLayers = function(data, floorId) {
       'source': 'campus-data',
       'layout': { 'visibility': is2D ? 'visible' : 'none' },
       'paint': {
-        'fill-color': [
-          'case',
-          ['==', ['get', 'id'], '${targetRoom?._id || ''}'], '#3b82f6',
-          ['coalesce', ['get', 'color'], '#64748b']
-        ],
+        'fill-color': ['coalesce', ['get', 'color'], '#3b82f6'],
         'fill-opacity': 0.55
       }
     });
@@ -382,6 +431,7 @@ window.renderGeoJSONLayers = function(data, floorId) {
         'line-opacity': 0.85
       }
     });
+  }
   // ── 3. 2D NAVIGATION ACTIVE ROUTE LINE ──
   ${pathCoordinates ? `
     if (!map.getLayer('nav-route-2d-line')) {
@@ -399,55 +449,43 @@ window.renderGeoJSONLayers = function(data, floorId) {
     }
   ` : ''}
 
-  // ── 6. 3D EXTRUSIONS ──
-  if (!map.getLayer('campus-polygons')) {
+  // ── 6B. 3D EXTRUSION LAYER FOR ROOMS (OPAQUE, DRAW FIRST) ──
+  if (!map.getLayer('campus-rooms')) {
     map.addLayer({
-      'id': 'campus-polygons',
+      'id': 'campus-rooms',
       'type': 'fill-extrusion',
       'source': 'campus-data',
-      'filter': ['!=', ['get', 'category'], 'stairs'],
+      'filter': ['!=', ['get', 'type'], 'block'],
       'layout': { 'visibility': is2D ? 'none' : 'visible' },
       'paint': {
         'fill-extrusion-color': [
           'case',
-          ['==', ['get', 'id'], '${targetRoom?._id || ''}'], '#3b82f6',
-          ['coalesce', ['get', 'color'], '#64748b']
+          ['==', ['get', 'id'], '${targetRoom?._id || ""}'], '#3b82f6',
+          ['==', ['get', 'type'], 'stairs'], ['coalesce', ['get', 'color'], '#f97316'],
+          '#ffffff'
         ],
-        'fill-extrusion-height': [
-          'case',
-          ['has', 'height'], ['get', 'height'],
-          ['==', ['get', 'type'], 'block'], 0.5,
-          3
-        ],
-        'fill-extrusion-base': [
-          'case',
-          ['has', 'min_height'], ['get', 'min_height'],
-          0
-        ],
-        'fill-extrusion-opacity': [
-          'case',
-          ['==', ['get', 'id'], '${targetRoom?._id || ''}'], 0.8,
-          0.35
-        ]
-      }
-    });
-  }
-
-  // ── 7. 3D STAIRS ──
-  if (!map.getLayer('campus-stairs')) {
-    map.addLayer({
-      'id': 'campus-stairs',
-      'type': 'fill-extrusion',
-      'source': 'campus-data',
-      'filter': ['==', ['get', 'category'], 'stairs'],
-      'layout': { 'visibility': is2D ? 'none' : 'visible' },
-      'paint': {
-        'fill-extrusion-color': ['coalesce', ['get', 'color'], '#f97316'],
-        'fill-extrusion-height': ['get', 'height'],
-        'fill-extrusion-base': ['get', 'min_height'],
+        'fill-extrusion-height': ['coalesce', ['get', 'height'], 3],
+        'fill-extrusion-base': ['coalesce', ['get', 'min_height'], 0],
         'fill-extrusion-opacity': 0.9
       }
-    });
+    }, '3d-buildings');
+  }
+
+  // ── 6A. 3D EXTRUSION LAYER FOR BLOCKS (TRANSLUCENT, DRAW AFTER ROOMS) ──
+  if (!map.getLayer('campus-blocks')) {
+    map.addLayer({
+      'id': 'campus-blocks',
+      'type': 'fill-extrusion',
+      'source': 'campus-data',
+      'filter': ['==', ['get', 'type'], 'block'],
+      'layout': { 'visibility': is2D ? 'none' : 'visible' },
+      'paint': {
+        'fill-extrusion-color': ['coalesce', ['get', 'color'], '#64748b'],
+        'fill-extrusion-height': ['coalesce', ['get', 'height'], 2],
+        'fill-extrusion-base': ['coalesce', ['get', 'min_height'], 0],
+        'fill-extrusion-opacity': 0.2
+      }
+    }, '3d-buildings');
   }
 
   // ── 8. 3D ROUTE RIBBONS ──
@@ -488,7 +526,7 @@ window.renderGeoJSONLayers = function(data, floorId) {
       'id': 'campus-labels',
       'type': 'symbol',
       'source': 'campus-data',
-      'filter': ['!=', ['get', 'type'], 'room'],
+      'filter': ['has', 'name'],
       'layout': {
         'text-field': ['get', 'name'],
         'text-size': 12,
@@ -639,10 +677,11 @@ export default function NavigationScreen({ navigation, route }) {
       return floorVal;
     };
     const targetFloorId = getFloorIdString(targetRoom?.floorId) || getFloorIdString(currentFloor) || getFloorIdString(route.params?.floorId) || getFloorIdString(mapData?.floors?.[0]?._id);
+    const currentFloorId = getFloorIdString(currentFloor);
     if (geoJSONData && webViewRef.current) {
       webViewRef.current.injectJavaScript(`
         if (typeof window.updateGeoJSON === 'function') {
-          window.updateGeoJSON(${JSON.stringify(geoJSONData)}, '${targetFloorId || ''}');
+          window.updateGeoJSON(${JSON.stringify(geoJSONData)}, '${targetFloorId || ''}', '${currentFloorId || ''}');
         }
         true;
       `);

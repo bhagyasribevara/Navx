@@ -23,8 +23,8 @@ const registerSchema = {
     type: 'string',
     required: false,
     minLength: 10,
-    maxLength: 15,
-    pattern: /^[0-9+()-]+$/,
+    maxLength: 20,
+    pattern: /^[0-9+()-\s]+$/,
   },
   collegeEmail: {
     type: 'email',
@@ -78,8 +78,8 @@ const otpRequestSchema = {
     type: 'string',
     required: false,
     minLength: 10,
-    maxLength: 15,
-    pattern: /^[0-9+()-]+$/,
+    maxLength: 20,
+    pattern: /^[0-9+()-\s]+$/,
   },
   collegeEmail: {
     type: 'email',
@@ -96,7 +96,7 @@ const otpVerifySchema = {
   mobileNumber: {
     type: 'string',
     required: false,
-    maxLength: 15,
+    maxLength: 20,
   },
   collegeEmail: {
     type: 'email',
@@ -128,8 +128,8 @@ const profileUpdateSchema = {
   mobileNumber: {
     type: 'string',
     required: false,
-    maxLength: 15,
-    pattern: /^[0-9+()-]+$/,
+    maxLength: 20,
+    pattern: /^[0-9+()-\s]+$/,
   },
   profileImage: {
     type: 'string',

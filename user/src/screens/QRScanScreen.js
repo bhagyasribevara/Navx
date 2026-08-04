@@ -244,32 +244,7 @@ export default function QRScanScreen({ navigation }) {
             </Text>
           </View>
 
-          {/* Primary Action Button (Regenerate & Save / Scan Again) */}
-          <AnimatedPressable style={s.primaryActionBtn} onPress={resetScan}>
-            <LinearGradient
-              colors={['#8B5CF6', '#6D28D9']}
-              style={s.btnGradientFill}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-            >
-              <Ionicons name="refresh-outline" size={18} color="#FFF" style={{ marginRight: 6 }} />
-              <Text style={s.primaryBtnText}>Regenerate & Save</Text>
-              <Ionicons name="chevron-forward" size={16} color="#FFF" style={{ marginLeft: 4 }} />
-            </LinearGradient>
-          </AnimatedPressable>
 
-          {/* Secondary Action Row (Download / Close) */}
-          <View style={s.secondaryActionRow}>
-            <TouchableOpacity style={s.secondaryBtn} onPress={() => resetScan()} activeOpacity={0.8}>
-              <Ionicons name="download-outline" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
-              <Text style={s.secondaryBtnText}>Download to System</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={s.secondaryBtn} onPress={() => navigation.goBack()} activeOpacity={0.8}>
-              <Ionicons name="close" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
-              <Text style={s.secondaryBtnText}>Close</Text>
-            </TouchableOpacity>
-          </View>
         </View>
 
         {/* Bottom Card: "Campus Detected" */}
@@ -325,65 +300,13 @@ export default function QRScanScreen({ navigation }) {
               </View>
             </View>
 
-            {/* Quick Action Buttons Grid (3 Buttons Row) */}
-            <View style={s.quickNavGrid}>
-              <TouchableOpacity 
-                style={s.quickNavBtn} 
-                onPress={async () => {
-                  try { await activateCampus(result); } catch(e){}
-                  navigation.navigate("MainTabs", { screen: "Map", params: { campusId: result._id } });
-                }}
-                activeOpacity={0.8}
-              >
-                <Ionicons name="navigate" size={18} color="#8B5CF6" />
-                <Text style={s.quickNavBtnText}>Indoor Navigation</Text>
-              </TouchableOpacity>
 
-              <TouchableOpacity 
-                style={s.quickNavBtn} 
-                onPress={() => navigation.navigate("ARScreen", { campusId: result._id })}
-                activeOpacity={0.8}
-              >
-                <Ionicons name="cube-outline" size={18} color="#8B5CF6" />
-                <Text style={s.quickNavBtnText}>AR Mode</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity 
-                style={s.quickNavBtn} 
-                onPress={() => navigation.navigate("SearchScreen")}
-                activeOpacity={0.8}
-              >
-                <Ionicons name="hardware-chip-outline" size={18} color="#8B5CF6" />
-                <Text style={s.quickNavBtnText}>AI Assistant</Text>
-              </TouchableOpacity>
-            </View>
           </Animated.View>
         )}
 
       </ScrollView>
 
-      {/* Bottom Floating Navigation Bar */}
-      <View style={[s.bottomTabBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
-        <TouchableOpacity style={[s.tabItem, s.tabItemActive]} activeOpacity={0.8}>
-          <Ionicons name="qr-code" size={20} color="#FFFFFF" />
-          <Text style={s.tabTextActive}>Scan</Text>
-        </TouchableOpacity>
 
-        <TouchableOpacity style={s.tabItem} onPress={() => navigation.navigate("FavoritesScreen")} activeOpacity={0.8}>
-          <Ionicons name="time-outline" size={20} color="#94A3B8" />
-          <Text style={s.tabText}>History</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={s.tabItem} onPress={() => navigation.navigate("MainTabs", { screen: "Home" })} activeOpacity={0.8}>
-          <Ionicons name="business-outline" size={20} color="#94A3B8" />
-          <Text style={s.tabText}>Campuses</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={s.tabItem} onPress={() => navigation.navigate("ProfileScreen")} activeOpacity={0.8}>
-          <Ionicons name="person-outline" size={20} color="#94A3B8" />
-          <Text style={s.tabText}>Profile</Text>
-        </TouchableOpacity>
-      </View>
     </Animated.View>
   );
 }

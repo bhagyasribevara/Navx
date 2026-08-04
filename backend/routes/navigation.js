@@ -23,19 +23,20 @@ async function getCachedGraph(campusId) {
     return cached;
   }
 
-  const [nodes, paths, floors] = await Promise.all([
+  const [nodes, paths, floors, rooms] = await Promise.all([
     NavNode.find({ campusId, isActive: true }).lean(),
     NavPath.find({ campusId, isActive: true }).lean(),
     Floor.find({ campusId, isActive: true }).lean(),
+    Room.find({ campusId, isActive: true, type: { $in: ['stairs', 'elevator'] } }).lean(),
   ]);
 
   const floorMap = {};
   floors.forEach(f => { floorMap[f._id.toString()] = f.level; });
 
-  let graph = buildGraph(nodes, paths, floorMap);
+  let graph = buildGraph(nodes, paths, floorMap, rooms);
   graph = autoConnectGraph(graph);
 
-  const entry = { graph, nodes, paths, floors, floorMap, timestamp: Date.now() };
+  const entry = { graph, nodes, paths, floors, rooms, floorMap, timestamp: Date.now() };
   graphCache.set(key, entry);
 
   // Limit cache size
