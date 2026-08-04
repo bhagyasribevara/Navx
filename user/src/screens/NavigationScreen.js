@@ -665,8 +665,8 @@ export default function NavigationScreen({ navigation, route }) {
   const mapboxUrl = getCachedConfigValue("EXPO_PUBLIC_MAPBOX_URL", "https://api.mapbox.com/styles/v1/mapbox/streets-v11/tiles/256/{z}/{x}/{y}@2x?access_token=pk.eyJ1IjoidmVua2F0YS1rcmlzaG5hIiwiYSI6ImNtZnYycHN0bTAzY28yanFxeG4wOXVsenAifQ.w1yd6XuvWvarYj33rP1LkA");
 
   const mapHtml = React.useMemo(() => {
-    if (!geoJSONData) return "";
-    return buildNavMapHTML(geoJSONData, routeData?.path, initialUserPosRef.current, targetRoom, mapboxUrl, mapData?.floors, mapMode);
+    const geoDataToUse = geoJSONData || { type: 'FeatureCollection', features: [] };
+    return buildNavMapHTML(geoDataToUse, routeData?.path, initialUserPosRef.current, targetRoom, mapboxUrl, mapData?.floors, mapMode);
   }, [geoJSONData, routeData, targetRoom, mapboxUrl, mapData?.floors, mapMode]);
 
   // Inject updated GeoJSON when it changes without reloading WebView

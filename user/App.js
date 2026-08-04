@@ -26,6 +26,7 @@ import FeesScreen from "./src/screens/FeesScreen";
 
 import SplashScreen from "./src/screens/SplashScreen";
 import OfflineMapsScreen from "./src/screens/OfflineMapsScreen";
+import FavoritesScreen from "./src/screens/FavoritesScreen";
 import CampaignDetailScreen from "./src/screens/CampaignDetailScreen";
 import LiveMeetScreen from "./src/screens/LiveMeetScreen";
 import ARMeetScreen from "./src/screens/ARMeetScreen";
@@ -244,6 +245,11 @@ function AppNavigator() {
                 name="OfflineMaps"
                 component={OfflineMapsScreen}
                 options={{ animation: "slide_from_bottom", gestureEnabled: true }}
+              />
+              <Stack.Screen
+                name="Favorites"
+                component={FavoritesScreen}
+                options={{ animation: "slide_from_right" }}
               />
               <Stack.Screen
                 name="CampaignDetail"

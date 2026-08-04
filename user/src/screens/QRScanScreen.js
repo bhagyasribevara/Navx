@@ -253,7 +253,7 @@ export default function QRScanScreen({ navigation }) {
             {/* Header Row */}
             <View style={s.campusCardHeader}>
               <View style={s.campusIconWrap}>
-                <Ionicons name="city" size={18} color="#8B5CF6" />
+                <Ionicons name="business" size={18} color="#8B5CF6" />
               </View>
               <Text style={s.campusCardTitle}>
                 Campus Detected <Ionicons name="checkmark-circle" size={16} color="#22C55E" />
@@ -293,19 +293,17 @@ export default function QRScanScreen({ navigation }) {
                     <Text style={s.metaStatText}>Floors: {result.floors || 6}</Text>
                   </View>
                   <View style={s.metaStatItem}>
-                    <Ionicons name="door-open-outline" size={13} color="#94A3B8" />
+                    <Ionicons name="grid-outline" size={13} color="#94A3B8" />
                     <Text style={s.metaStatText}>Rooms: {result.rooms || 142}</Text>
                   </View>
                 </View>
               </View>
             </View>
 
-
           </Animated.View>
         )}
 
       </ScrollView>
-
 
     </Animated.View>
   );
