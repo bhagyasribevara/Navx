@@ -3,6 +3,11 @@ const mongoose = require('mongoose');
 const navigationGraphSchema = new mongoose.Schema({
   campusId: { type: mongoose.Schema.Types.ObjectId, ref: 'Campus', required: true },
   graphData: { type: mongoose.Schema.Types.Mixed, default: {} },
+  spatialMetadata: {
+    lastScannedAt: Date,
+    digitalTwinVersion: { type: Number, default: 1 },
+    corridorWidths: { type: mongoose.Schema.Types.Mixed, default: {} }
+  },
   isActive: { type: Boolean, default: true }
 }, { timestamps: true });
 

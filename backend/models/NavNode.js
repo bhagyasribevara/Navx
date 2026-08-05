@@ -17,6 +17,15 @@ const navNodeSchema = new mongoose.Schema({
   // For multi-floor connections
   connectedFloorNodeId: { type: mongoose.Schema.Types.ObjectId, ref: 'NavNode', default: null },
   connectedFloorId: { type: mongoose.Schema.Types.ObjectId, ref: 'Floor', default: null },
+  // Spatial Studio properties
+  z: { type: Number, default: 0 },
+  localCoordinates: { 
+    x: Number,
+    y: Number,
+    z: Number
+  },
+  arAnchorId: { type: String, default: null },
+  walkingCost: { type: Number, default: 1 },
   accessible: { type: Boolean, default: true },
   isActive: { type: Boolean, default: true }
 }, { timestamps: true });

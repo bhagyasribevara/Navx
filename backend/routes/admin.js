@@ -3,7 +3,13 @@ const bcrypt = require('bcryptjs');
 const mongoose = require('mongoose');
 const Admin = require('../models/Admin');
 const Campus = require('../models/Campus');
-const { generateTokens, authenticateJWT, verifyRefreshToken } = require('../utils/auth');
+const Block = require('../models/Block');
+const Floor = require('../models/Floor');
+const Room = require('../models/Room');
+const AppUser = require('../models/AppUser');
+const Campaign = require('../models/Campaign');
+const Analytics = require('../models/Analytics');
+const { generateTokens, authenticateJWT, optionalAuthenticateJWT, verifyRefreshToken } = require('../utils/auth');
 const { authLimiter } = require('../middleware/rateLimiter');
 const { validateBody } = require('../middleware/inputValidator');
 const { adminLoginSchema, createCampusAdminSchema } = require('../middleware/schemas');
@@ -421,6 +427,113 @@ router.put('/campus/:campusId/subscription', authenticateJWT, async (req, res, n
     await campus.save();
 
     res.json({ success: true, campus });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── Mobile Admin Studio Endpoints ──────────────────────────────────────────
+
+// GET /mobile-dashboard/:campusId — Aggregated real-time stats for Admin Studio app
+router.get('/mobile-dashboard/:campusId', optionalAuthenticateJWT, async (req, res, next) => {
+  try {
+    const { campusId } = req.params;
+    if (req.admin && req.admin.role !== 'SuperAdmin') {
+      const adminCampusId = req.admin.campusId?._id?.toString() || req.admin.campusId?.toString();
+      if (adminCampusId && adminCampusId !== campusId) {
+        return res.status(403).json({ error: 'Access denied: campus mismatch.' });
+      }
+    }
+
+    const campus = await Campus.findById(campusId);
+    if (!campus) return res.status(404).json({ error: 'Campus not found.' });
+
+    // Aggregate all stats in parallel
+    const blocks = await Block.find({ campusId });
+    const blockIds = blocks.map(b => b._id);
+
+    const [floorsCount, roomsCount, usersCount, campaignsCount, recentActivity] = await Promise.all([
+      Floor.countDocuments({ blockId: { $in: blockIds } }),
+      Room.countDocuments({ campusId }),
+      AppUser.countDocuments({ activeCampusId: campusId }),
+      Campaign.countDocuments({ campusId, isActive: { $ne: false } }),
+      Analytics.find({ campusId })
+        .sort({ timestamp: -1 })
+        .limit(10)
+        .lean()
+    ]);
+
+    // Format recent activity
+    const activityFeed = recentActivity.map(a => ({
+      _id: a._id,
+      type: a.type,
+      description: a.type === 'navigation' ? 'Navigation route completed'
+        : a.type === 'search' ? `Searched for "${a.data?.searchQuery || 'unknown'}"`
+        : a.type === 'qr_scan' ? 'QR code scanned'
+        : a.type || 'Activity',
+      data: a.data,
+      timestamp: a.timestamp || a.createdAt
+    }));
+
+    res.json({
+      success: true,
+      stats: {
+        buildings: blocks.length,
+        floors: floorsCount,
+        pois: roomsCount,
+        users: usersCount,
+        campaigns: campaignsCount
+      },
+      campus: {
+        _id: campus._id,
+        name: campus.name,
+        campusCode: campus.campusCode,
+        venueType: campus.venueType,
+        emergencyState: campus.emergencyState,
+        image: campus.image
+      },
+      recentActivity: activityFeed
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /mobile-buildings/:campusId — Read-only building/floor/room hierarchy
+router.get('/mobile-buildings/:campusId', optionalAuthenticateJWT, async (req, res, next) => {
+  try {
+    const { campusId } = req.params;
+    if (req.admin && req.admin.role !== 'SuperAdmin') {
+      const adminCampusId = req.admin.campusId?._id?.toString() || req.admin.campusId?.toString();
+      if (adminCampusId && adminCampusId !== campusId) {
+        return res.status(403).json({ error: 'Access denied: campus mismatch.' });
+      }
+    }
+
+    const blocks = await Block.find({ campusId }).sort({ order: 1 }).lean();
+    const blockIds = blocks.map(b => b._id);
+    const floors = await Floor.find({ blockId: { $in: blockIds } }).sort({ level: 1 }).lean();
+    const rooms = await Room.find({ campusId }).lean();
+
+    // Build hierarchy
+    const hierarchy = blocks.map(block => {
+      const blockFloors = floors.filter(f => f.blockId.toString() === block._id.toString());
+      return {
+        ...block,
+        floors: blockFloors.map(floor => ({
+          ...floor,
+          rooms: rooms.filter(r => r.floorId.toString() === floor._id.toString()),
+          roomCount: rooms.filter(r => r.floorId.toString() === floor._id.toString()).length
+        })),
+        floorCount: blockFloors.length,
+        totalRooms: rooms.filter(r => {
+          const floorIds = blockFloors.map(f => f._id.toString());
+          return floorIds.includes(r.floorId.toString());
+        }).length
+      };
+    });
+
+    res.json({ success: true, buildings: hierarchy });
   } catch (err) {
     next(err);
   }

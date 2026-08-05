@@ -2,7 +2,7 @@ import React from 'react';
 import { Routes, Route, NavLink, useLocation, useNavigate, useParams, Outlet } from 'react-router-dom';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
-import { FiMap, FiGrid, FiLayers, FiNavigation, FiBarChart2, FiSettings, FiHome, FiAlertCircle, FiMenu, FiX, FiUsers, FiCalendar, FiFileText, FiCpu, FiLogOut } from 'react-icons/fi';
+import { FiMap, FiGrid, FiLayers, FiNavigation, FiBarChart2, FiSettings, FiHome, FiAlertCircle, FiMenu, FiX, FiUsers, FiCalendar, FiFileText, FiCpu, FiLogOut, FiBox } from 'react-icons/fi';
 import NavXAIChat from './components/NavXAIChat';
 import NavXAdminCopilot from './components/NavXAdminCopilot';
 import { AdminPageProvider } from './components/AdminPageContext';
@@ -21,6 +21,7 @@ import FacultyManager from './pages/FacultyManager';
 import TimetableAllocation from './pages/TimetableAllocation';
 import AdminReports from './pages/AdminReports';
 import AdminAiAssistant from './pages/AdminAiAssistant';
+import SpatialStudioDashboard from './pages/SpatialStudioDashboard';
 import { getCampusByCode } from './api';
 
 const isCampusAdminRole = (role) => 
@@ -242,6 +243,7 @@ function App() {
           <Route path="timetable" element={<TimetableAllocation admin={admin} />} />
           <Route path="reports" element={<AdminReports admin={admin} />} />
           <Route path="ai-assistant" element={<AdminAiAssistant admin={admin} />} />
+          <Route path="spatial-studio" element={<SpatialStudioDashboard admin={admin} />} />
         </Route>
       </Routes>
     </AdminPageProvider>
@@ -419,6 +421,10 @@ function Sidebar({ admin, onLogout, campusCode }) {
               {!collapsed && <span>Reports</span>}
             </NavLink>
             {!collapsed && <div className="sidebar-section-label" style={{ marginTop: 16 }}>Tools</div>}
+            <NavLink to={`${prefix}/spatial-studio`} className={({ isActive }) => `sidebar-nav-link ${isActive ? 'active' : ''}`}>
+              <FiBox className="sidebar-icon" />
+              {!collapsed && <span>Spatial Studio (3D)</span>}
+            </NavLink>
             <NavLink to={`${prefix}/ai-assistant`} className={({ isActive }) => `sidebar-nav-link ${isActive ? 'active' : ''}`}>
               <FiCpu className="sidebar-icon" />
               {!collapsed && <span>AI Assistant</span>}

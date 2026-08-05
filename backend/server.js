@@ -171,6 +171,7 @@ app.use('/api/navigationGraphs', require('./routes/navigationGraphs'));
 app.use('/api/meet', require('./routes/liveMeet'));
 app.use('/api/student', require('./routes/student'));
 app.use('/api/faculty', require('./routes/faculty'));
+app.use('/api/spatialStudio', require('./routes/spatialStudio'));
 
 // Health check (includes MongoDB status)
 app.get('/api/health', (req, res) => {

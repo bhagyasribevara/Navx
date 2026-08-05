@@ -42,8 +42,8 @@ const generateTokens = (admin) => {
     sessionVersion: admin.sessionVersion || 1
   };
 
-  const accessToken = jwt.sign(payload, JWT_SECRET, { expiresIn: '15m' });
-  const refreshToken = jwt.sign({ id: admin._id, sessionVersion: admin.sessionVersion || 1 }, JWT_REFRESH_SECRET, { expiresIn: '7d' });
+  const accessToken = jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
+  const refreshToken = jwt.sign({ id: admin._id, sessionVersion: admin.sessionVersion || 1 }, JWT_REFRESH_SECRET, { expiresIn: '30d' });
 
   return { accessToken, refreshToken };
 };
