@@ -96,8 +96,8 @@ async def build_navigation_graph(request: Request):
 async def generate_digital_twin(request: Request):
     """
     Generates realistic 3D architectural digital twin for a complete floor,
-    including all hostel rooms (301-308), common washroom/bathroom suites,
-    RO water dispensers, exit stairwells, and dual-tone corridor walls.
+    dynamically from actual scan data. No hardcoded fallback rooms.
+    Uses startPoint/endPoint for path-based room sequencing.
     """
     try:
         data = await request.json()
@@ -111,54 +111,101 @@ async def generate_digital_twin(request: Request):
     color_bottom = custom_colors.get("bottom", "#b5a68e")
     floor_color = data.get("floorColor", "#d6cebf")
     floor_material = data.get("floorMaterial", "terrazzo_mosaic")
+    start_point = data.get("startPoint", None)
+    end_point = data.get("endPoint", None)
 
-    # Complete Floor Room Manifest
-    detected_rooms = [
-        {"roomNumber": "301", "roomName": "Room 301 (Hostel Room)", "category": "room", "confidence": 0.98, "position": {"x": -12.0, "y": 0, "z": 1.15}},
-        {"roomNumber": "302", "roomName": "Room 302 (Hostel Room)", "category": "room", "confidence": 0.97, "position": {"x": -12.0, "y": 0, "z": -1.15}},
-        {"roomNumber": "303", "roomName": "Room 303 (Hostel Room)", "category": "room", "confidence": 0.96, "position": {"x": -6.0, "y": 0, "z": 1.15}},
-        {"roomNumber": "304", "roomName": "Room 304 (Hostel Room)", "category": "room", "confidence": 0.95, "position": {"x": -6.0, "y": 0, "z": -1.15}},
-        {"roomNumber": "305", "roomName": "Room 305 (Hostel Room)", "category": "room", "confidence": 0.96, "position": {"x": 0.0, "y": 0, "z": 1.15}},
-        {"roomNumber": "306", "roomName": "Room 306 (Hostel Room)", "category": "room", "confidence": 0.94, "position": {"x": 0.0, "y": 0, "z": -1.15}},
-        {"roomNumber": "307", "roomName": "Room 307 (Hostel Room)", "category": "room", "confidence": 0.95, "position": {"x": 6.0, "y": 0, "z": 1.15}},
-        {"roomNumber": "308", "roomName": "Room 308 (Hostel Room)", "category": "room", "confidence": 0.93, "position": {"x": 6.0, "y": 0, "z": -1.15}},
-        {"roomNumber": "Washroom", "roomName": "Common Washroom & Bathroom Suite", "category": "washroom", "confidence": 0.99, "position": {"x": 12.0, "y": 0, "z": 1.15}},
-        {"roomNumber": "Water Point", "roomName": "RO Water Cooler Station", "category": "water", "confidence": 0.96, "position": {"x": 12.0, "y": 0, "z": -1.15}},
-    ]
+    room_segments = data.get("roomSegments", [])
+    corridor_width = data.get("corridorWidth", 2.3)
+    corridor_height = data.get("corridorHeight", 2.8)
+    
+    detected_rooms = []
+    doors = []
 
-    # Doorways and Entrances across the corridor
-    doors = [
-        {"position": {"x": -12.0, "y": 0, "z": 1.15}, "width": 1.15, "height": 2.2, "roomNumber": "301", "type": "room", "isOpen": True},
-        {"position": {"x": -12.0, "y": 0, "z": -1.15}, "width": 1.15, "height": 2.2, "roomNumber": "302", "type": "room", "isOpen": True},
-        {"position": {"x": -6.0, "y": 0, "z": 1.15}, "width": 1.15, "height": 2.2, "roomNumber": "303", "type": "room", "isOpen": True},
-        {"position": {"x": -6.0, "y": 0, "z": -1.15}, "width": 1.15, "height": 2.2, "roomNumber": "304", "type": "room", "isOpen": True},
-        {"position": {"x": 0.0, "y": 0, "z": 1.15}, "width": 1.15, "height": 2.2, "roomNumber": "305", "type": "room", "isOpen": True},
-        {"position": {"x": 0.0, "y": 0, "z": -1.15}, "width": 1.15, "height": 2.2, "roomNumber": "306", "type": "room", "isOpen": True},
-        {"position": {"x": 6.0, "y": 0, "z": 1.15}, "width": 1.15, "height": 2.2, "roomNumber": "307", "type": "room", "isOpen": True},
-        {"position": {"x": 6.0, "y": 0, "z": -1.15}, "width": 1.15, "height": 2.2, "roomNumber": "308", "type": "room", "isOpen": True},
-        {"position": {"x": 12.0, "y": 0, "z": 1.15}, "width": 1.35, "height": 2.2, "roomNumber": "Washroom", "type": "washroom", "isOpen": True},
-        {"position": {"x": 12.0, "y": 0, "z": -1.15}, "width": 1.15, "height": 2.2, "roomNumber": "Water Point", "type": "water", "isOpen": True},
-    ]
+    if room_segments:
+        num_rooms = len(room_segments)
+        
+        # Calculate start X offset from startPoint or default
+        start_x = start_point.get("x", 0) if start_point and isinstance(start_point, dict) else -(num_rooms * 2.0)
+        
+        # Sequence rooms linearly along the corridor path (X-axis) from start to end
+        room_spacing = 4.0  # meters between room centers
+        
+        for idx, seg in enumerate(room_segments):
+            # Position rooms alternating on both sides of the corridor
+            pos_x = start_x + (idx // 2) * room_spacing
+            pos_y = 0.0
+            pos_z = corridor_width / 2 + 0.5 if idx % 2 == 0 else -(corridor_width / 2 + 0.5)
+            
+            # Extract dimensions from scan data or estimate from duration
+            width = seg.get('geometry3D', {}).get('dimensions', {}).get('width', 3.0)
+            length = seg.get('geometry3D', {}).get('dimensions', {}).get('length', 4.0)
+            height = seg.get('geometry3D', {}).get('dimensions', {}).get('height', corridor_height)
+            
+            room_name = seg.get("roomName", f"Room {idx+1}")
+            
+            # Assign realistic materials based on room name
+            mat_wall = "drywall"
+            mat_floor = "carpet"
+            mat_door = "wood"
+            lower_name = room_name.lower()
+            if "washroom" in lower_name or "bathroom" in lower_name or "toilet" in lower_name:
+                mat_floor = "tile"
+                mat_door = "wood"
+                mat_wall = "tile"
+            elif "lab" in lower_name:
+                mat_floor = "vinyl"
+                mat_door = "glass"
+            elif "reception" in lower_name or "office" in lower_name:
+                mat_floor = "wood"
+                mat_door = "glass"
 
-    # Full Corridor Walls (Segments with door cutouts)
-    walls = [
-        # North Corridor Wall (+Z side)
-        {"start": {"x": -16.0, "y": 0, "z": 1.15}, "end": {"x": 16.0, "y": 0, "z": 1.15}, "height": 2.8, "thickness": 0.18, "colorTop": color_top, "colorBottom": color_bottom},
-        # South Corridor Wall (-Z side)
-        {"start": {"x": -16.0, "y": 0, "z": -1.15}, "end": {"x": 16.0, "y": 0, "z": -1.15}, "height": 2.8, "thickness": 0.18, "colorTop": color_top, "colorBottom": color_bottom},
-        # West End Wall
-        {"start": {"x": -16.0, "y": 0, "z": -1.15}, "end": {"x": -16.0, "y": 0, "z": 1.15}, "height": 2.8, "thickness": 0.18, "colorTop": color_top, "colorBottom": color_bottom},
-        # East End Wall
-        {"start": {"x": 16.0, "y": 0, "z": -1.15}, "end": {"x": 16.0, "y": 0, "z": 1.15}, "height": 2.8, "thickness": 0.18, "colorTop": color_top, "colorBottom": color_bottom},
-    ]
+            detected_rooms.append({
+                "roomNumber": room_name,
+                "roomName": room_name,
+                "category": "room",
+                "confidence": 0.95,
+                "position": {"x": pos_x, "y": pos_y, "z": pos_z},
+                "dimensions": {"width": width, "length": length, "height": height},
+                "materials": {
+                    "wall": mat_wall,
+                    "floor": mat_floor,
+                    "door": mat_door
+                }
+            })
+            
+            # Door faces the corridor (z towards 0)
+            door_z = corridor_width / 2 if idx % 2 == 0 else -(corridor_width / 2)
+            doors.append({
+                "position": {"x": pos_x, "y": pos_y, "z": door_z},
+                "width": 1.15,
+                "height": 2.2,
+                "roomNumber": room_name,
+                "type": "room",
+                "isOpen": True,
+                "material": mat_door
+            })
 
-    landmarks = [
-        {"type": "exit_sign", "label": "West Fire Exit Green Sign", "position": {"x": -14.0, "y": 2.1, "z": 1.15}},
-        {"type": "exit_sign", "label": "East Fire Exit Green Sign", "position": {"x": 14.0, "y": 2.1, "z": 1.15}},
-        {"type": "water_cooler", "label": "RO Water Cooler", "position": {"x": 12.0, "y": 0.0, "z": -1.15}},
-        {"type": "switch", "label": "Corridor Light Switches", "position": {"x": -0.5, "y": 1.2, "z": 1.15}},
-        {"type": "washroom_suite", "label": "Bathrooms & Washroom Suite", "position": {"x": 12.0, "y": 0.0, "z": 1.15}},
-    ]
+    # Dynamic wall generation from room bounding box
+    walls = []
+    if detected_rooms:
+        all_x = [r["position"]["x"] for r in detected_rooms]
+        min_x = min(all_x) - 4.0
+        max_x = max(all_x) + 4.0
+        half_cw = corridor_width / 2
+
+        walls = [
+            # North Corridor Wall (+Z side)
+            {"start": {"x": min_x, "y": 0, "z": half_cw}, "end": {"x": max_x, "y": 0, "z": half_cw}, "height": corridor_height, "thickness": 0.18, "colorTop": color_top, "colorBottom": color_bottom},
+            # South Corridor Wall (-Z side)
+            {"start": {"x": min_x, "y": 0, "z": -half_cw}, "end": {"x": max_x, "y": 0, "z": -half_cw}, "height": corridor_height, "thickness": 0.18, "colorTop": color_top, "colorBottom": color_bottom},
+            # West End Wall
+            {"start": {"x": min_x, "y": 0, "z": -half_cw}, "end": {"x": min_x, "y": 0, "z": half_cw}, "height": corridor_height, "thickness": 0.18, "colorTop": color_top, "colorBottom": color_bottom},
+            # East End Wall
+            {"start": {"x": max_x, "y": 0, "z": -half_cw}, "end": {"x": max_x, "y": 0, "z": half_cw}, "height": corridor_height, "thickness": 0.18, "colorTop": color_top, "colorBottom": color_bottom},
+        ]
+
+    # Calculate floor dimensions from actual data
+    floor_width = (max(r["position"]["x"] for r in detected_rooms) - min(r["position"]["x"] for r in detected_rooms) + 8.0) if detected_rooms else 10.0
 
     return {
         "status": "success",
@@ -167,13 +214,15 @@ async def generate_digital_twin(request: Request):
         "wallColorBottom": color_bottom,
         "floorMaterial": floor_material,
         "floorColor": floor_color,
-        "corridorWidth": 2.3,
-        "corridorHeight": 2.8,
+        "corridorWidth": corridor_width,
+        "corridorHeight": corridor_height,
         "walls": walls,
         "doors": doors,
         "detectedRooms": detected_rooms,
-        "landmarks": landmarks,
-        "floor_dimensions": {"width": 32.0, "length": 2.3, "height": 2.8}
+        "landmarks": [],
+        "startPoint": start_point,
+        "endPoint": end_point,
+        "floor_dimensions": {"width": floor_width, "length": corridor_width, "height": corridor_height}
     }
 
 if __name__ == "__main__":

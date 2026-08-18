@@ -126,7 +126,12 @@ export default function NavXAdminCopilot({ admin }) {
             setMessages(loadedMessages);
           }
         })
-        .catch(err => console.error("Failed to fetch chat history:", err));
+        .catch(err => {
+          // Gracefully fallback when chat history is empty or endpoint is uninitialized
+          if (err.response?.status !== 404) {
+            console.warn("Notice fetching chat history:", err.message);
+          }
+        });
     }
   }, [admin]);
 

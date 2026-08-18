@@ -36,6 +36,11 @@ const roomSchema = new mongoose.Schema({
     height: { type: Number, default: 60 },
     radius: { type: Number, default: 0 },
     points: [{ x: Number, y: Number }],
+    innerPoints: [{ x: Number, y: Number }],
+    wallColors: {
+      top: { type: String, default: '#f6f5ee' },
+      bottom: { type: String, default: '#b5a68e' }
+    },
     rotation: { type: Number, default: 0 },
     fill: { type: String, default: '#E8F4FD' },
     stroke: { type: String, default: '#4A90D9' },

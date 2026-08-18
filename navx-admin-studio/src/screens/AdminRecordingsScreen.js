@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { getSpatialSessions, deleteSpatialSession } from '../services/adminApi';
+import { getSpatialSessions, deleteSpatialSession, sendScanToWeb } from '../services/adminApi';
 import { useAdmin } from '../context/AdminContext';
 
 const { width: SW } = Dimensions.get('window');
@@ -72,12 +72,59 @@ export default function AdminRecordingsScreen({ navigation }) {
     );
   };
 
+  const handleSendToWeb = async (session) => {
+    try {
+      const rooms = session.roomSegments || session.detectedRooms || [];
+      const scannedElements = session.scannedElements || rooms.map((r, idx) => ({
+        id: `room_${session._id}_${idx}`,
+        name: r.roomName || r.roomNumber || `Room ${idx + 1}`,
+        type: 'room',
+        geometry3D: {
+          dimensions: { width: 3.2, length: 4.0, height: 2.8 },
+          position: { x: (Math.floor(idx / 2) * 4) - 6, y: 0, z: idx % 2 === 0 ? 1.15 : -1.15 },
+          rotation: { x: 0, y: 0, z: 0 },
+          color: '#3b82f6'
+        },
+        status: 'unplaced'
+      }));
+
+      // Include a Corridor element if none present
+      if (!scannedElements.some(e => e.type === 'corridor')) {
+        const estimatedCorridorLength = Math.max(10, rooms.length * 4.0);
+        scannedElements.push({
+          id: `corridor_${session._id}`,
+          name: `${session.floor?.name || 'Floor'} Main Corridor`,
+          type: 'corridor',
+          geometry3D: {
+            dimensions: { width: 2.4, length: estimatedCorridorLength, height: 2.8 },
+            position: { x: 0, y: 0, z: 0 },
+            rotation: { x: 0, y: 0, z: 0 },
+            color: '#8b5cf6'
+          },
+          status: 'unplaced'
+        });
+      }
+
+      const res = await sendScanToWeb(session._id, {
+        roomSegments: session.roomSegments,
+        scannedElements
+      });
+      if (res?.success) {
+        Alert.alert('Success', 'Scan 3D components sent to Web Dashboard staging area.');
+        fetchRecordings();
+      } else {
+        Alert.alert('Error', 'Failed to send scan to web.');
+      }
+    } catch (e) {
+      Alert.alert('Error', e.message || 'Network error.');
+    }
+  };
+
   const renderItem = ({ item }) => {
     const isDeleting = deletingId === item._id;
-    const detectedRooms = item.detectedRooms || [
-      { roomNumber: '301', category: 'Hostel Room' },
-      { roomNumber: '302', category: 'Hostel Room' }
-    ];
+    const rooms = item.roomSegments && item.roomSegments.length > 0 
+      ? item.roomSegments 
+      : (item.detectedRooms || []);
     const wallColors = item.wallColors || { top: '#f6f5ee', bottom: '#b5a68e' };
     const floorColor = item.floorColor || '#d6cebf';
 
@@ -120,12 +167,13 @@ export default function AdminRecordingsScreen({ navigation }) {
 
         {/* Detected Rooms Chips */}
         <View style={styles.roomsContainer}>
-          <Text style={styles.sectionSubtitle}>Detected Rooms:</Text>
+          <Text style={styles.sectionSubtitle}>Tagged Rooms:</Text>
           <View style={styles.roomChips}>
-            {detectedRooms.map((r, i) => (
+            {rooms.length === 0 && <Text style={{fontSize: 11, color: '#94a3b8'}}>No rooms tagged</Text>}
+            {rooms.map((r, i) => (
               <View key={i} style={styles.chip}>
                 <MaterialCommunityIcons name="door-open" size={13} color="#3b82f6" />
-                <Text style={styles.chipText}>Room {r.roomNumber}</Text>
+                <Text style={styles.chipText}>{r.roomName || `Room ${r.roomNumber}`}</Text>
               </View>
             ))}
           </View>
@@ -146,7 +194,16 @@ export default function AdminRecordingsScreen({ navigation }) {
 
         {/* Card Footer with Delete Action */}
         <View style={styles.cardFooter}>
-          <Text style={styles.sessionId}>ID: {item._id?.slice(-8)}</Text>
+          <TouchableOpacity
+            style={[styles.sendBtn, item.isAvailableOnWeb && styles.sendBtnDisabled]}
+            onPress={() => handleSendToWeb(item)}
+            disabled={item.isAvailableOnWeb || isDeleting}
+          >
+            <Ionicons name={item.isAvailableOnWeb ? "cloud-done" : "cloud-upload-outline"} size={15} color={item.isAvailableOnWeb ? "#10b981" : "#fff"} />
+            <Text style={[styles.sendBtnText, item.isAvailableOnWeb && styles.sendBtnTextDisabled]}>
+              {item.isAvailableOnWeb ? 'Sent to Web' : 'Send to Web'}
+            </Text>
+          </TouchableOpacity>
           <TouchableOpacity
             style={styles.deleteBtn}
             onPress={() => handleDelete(item)}
@@ -157,7 +214,7 @@ export default function AdminRecordingsScreen({ navigation }) {
             ) : (
               <>
                 <Ionicons name="trash-outline" size={15} color="#ef4444" />
-                <Text style={styles.deleteBtnText}>Delete Recording &amp; Twin</Text>
+                <Text style={styles.deleteBtnText}>Delete</Text>
               </>
             )}
           </TouchableOpacity>
@@ -275,10 +332,13 @@ const styles = StyleSheet.create({
   swatchLabel: { fontSize: 10, color: '#64748b', marginRight: 8 },
 
   // Card Footer
-  cardFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 10, borderTopWidth: 1, borderTopColor: '#f1f5f9' },
-  sessionId: { fontSize: 10, color: '#94a3b8', fontFamily: 'monospace' },
-  deleteBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#fef2f2', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: '#fee2e2' },
-  deleteBtnText: { fontSize: 11, fontWeight: '700', color: '#ef4444' },
+  cardFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 12, borderTopWidth: 1, borderTopColor: '#f1f5f9', marginTop: 8 },
+  sendBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#8b5cf6', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8 },
+  sendBtnDisabled: { backgroundColor: '#f0fdf4', borderWidth: 1, borderColor: '#bbf7d0' },
+  sendBtnText: { fontSize: 12, fontWeight: '700', color: '#fff' },
+  sendBtnTextDisabled: { color: '#10b981' },
+  deleteBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#fef2f2', paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8, borderWidth: 1, borderColor: '#fee2e2' },
+  deleteBtnText: { fontSize: 12, fontWeight: '700', color: '#ef4444' },
 
   // Empty state
   emptyWrap: { alignItems: 'center', justifyContent: 'center', paddingVertical: 60, paddingHorizontal: 20 },

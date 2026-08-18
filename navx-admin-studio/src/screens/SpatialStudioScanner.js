@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, Alert, Modal, ScrollView, ActivityIndicator } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, Alert, Modal, ScrollView, ActivityIndicator, TextInput } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Accelerometer, Gyroscope, Barometer } from 'expo-sensors';
 import SLAMService from '../services/SLAMService';
@@ -7,7 +7,7 @@ import AROverlay from '../components/AROverlay';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAdmin } from '../context/AdminContext';
-import { getBlocks, getFloors } from '../services/adminApi';
+import { getBlocks, getFloors, createFloor } from '../services/adminApi';
 
 export default function SpatialStudioScanner({ navigation, route }) {
   const { admin } = useAdmin();
@@ -15,8 +15,13 @@ export default function SpatialStudioScanner({ navigation, route }) {
 
   const [permission, requestPermission] = useCameraPermissions();
   const [isScanning, setIsScanning] = useState(false);
-  const [sessionStats, setSessionStats] = useState({ nodes: 0, coverage: 0 });
   const [scanDuration, setScanDuration] = useState(0);
+
+  // Room tagging state
+  const [roomSegments, setRoomSegments] = useState([]);
+  const [activeRoom, setActiveRoom] = useState(null); // { name: string, startTimestamp: date }
+  const [showRoomModal, setShowRoomModal] = useState(false);
+  const [newRoomName, setNewRoomName] = useState('');
 
   // Telemetry buffer for review screen
   const trajectoryBufferRef = useRef([]);
@@ -30,6 +35,11 @@ export default function SpatialStudioScanner({ navigation, route }) {
   const [showLocationPicker, setShowLocationPicker] = useState(false);
   const [loadingLocation, setLoadingLocation] = useState(false);
 
+  // New Floor state
+  const [showNewFloorMode, setShowNewFloorMode] = useState(false);
+  const [newFloorName, setNewFloorName] = useState('');
+  const [creatingFloor, setCreatingFloor] = useState(false);
+
   // Fetch campus blocks for targeting
   useEffect(() => {
     if (campusId) {
@@ -39,18 +49,25 @@ export default function SpatialStudioScanner({ navigation, route }) {
           if (Array.isArray(list) && list.length > 0) {
             setBlocks(list);
             setSelectedBlock(list[0]);
-            getFloors(list[0]._id).then(fRes => {
-              const fList = fRes?.data || fRes || [];
-              if (Array.isArray(fList) && fList.length > 0) {
-                setFloors(fList);
-                setSelectedFloor(fList[0]);
-              }
-            }).catch(() => {});
+            fetchFloors(list[0]._id);
           }
         })
         .catch(() => {});
     }
   }, [campusId]);
+
+  const fetchFloors = (blockId) => {
+    setLoadingLocation(true);
+    getFloors(blockId).then(fRes => {
+      const fList = fRes?.data || fRes || [];
+      if (Array.isArray(fList)) {
+        setFloors(fList);
+        if (fList.length > 0) setSelectedFloor(fList[0]);
+      }
+    }).catch(() => {
+      setFloors([]);
+    }).finally(() => setLoadingLocation(false));
+  };
 
   // Scan duration timer
   useEffect(() => {
@@ -58,7 +75,6 @@ export default function SpatialStudioScanner({ navigation, route }) {
     if (isScanning) {
       interval = setInterval(() => {
         setScanDuration(d => d + 1);
-        // Sample current pose into buffer
         if (SLAMService.currentPose) {
           trajectoryBufferRef.current.push({
             ...SLAMService.currentPose,
@@ -105,34 +121,55 @@ export default function SpatialStudioScanner({ navigation, route }) {
     };
   }, [isScanning]);
 
-  const handleSelectBlock = async (block) => {
+  const handleSelectBlock = (block) => {
     setSelectedBlock(block);
     setSelectedFloor(null);
-    setLoadingLocation(true);
+    fetchFloors(block._id);
+  };
+
+  const handleCreateFloor = async () => {
+    if (!newFloorName.trim() || !selectedBlock) return;
+    setCreatingFloor(true);
     try {
-      const res = await getFloors(block._id);
-      const list = res?.data || res || [];
-      setFloors(Array.isArray(list) ? list : []);
-      if (list.length > 0) setSelectedFloor(list[0]);
+      const res = await createFloor({
+        blockId: selectedBlock._id,
+        campusId,
+        name: newFloorName.trim(),
+        floorNumber: newFloorName.trim()
+      });
+      if (res.success && res.floor) {
+        setFloors([...floors, res.floor]);
+        setSelectedFloor(res.floor);
+        setShowNewFloorMode(false);
+        setNewFloorName('');
+      }
     } catch (e) {
-      setFloors([]);
+      Alert.alert('Error', 'Failed to create floor');
     } finally {
-      setLoadingLocation(false);
+      setCreatingFloor(false);
     }
   };
 
   const toggleScan = async () => {
     if (!isScanning) {
+      if (!selectedBlock || !selectedFloor) {
+        Alert.alert('Error', 'Please select a building and floor first.');
+        return;
+      }
       trajectoryBufferRef.current = [];
       sensorCountsRef.current = { accel: 0, gyro: 0 };
+      setRoomSegments([]);
+      setActiveRoom(null);
       
       const adminId = admin?._id;
-      const bId = selectedBlock?._id;
-      const fId = selectedFloor?._id;
-      
-      await SLAMService.startSession(bId, fId, adminId);
+      await SLAMService.startSession(selectedBlock._id, selectedFloor._id, adminId);
       setIsScanning(true);
     } else {
+      if (activeRoom) {
+        Alert.alert('Active Room', 'Please finish the active room before stopping the scan.');
+        return;
+      }
+
       setIsScanning(false);
       
       const points = [...trajectoryBufferRef.current];
@@ -140,12 +177,81 @@ export default function SpatialStudioScanner({ navigation, route }) {
       const dist = (points.length * 0.45).toFixed(1);
       const nodes = Math.max(Math.floor(points.length / 5), 4);
 
+      // Generate scannedElements array (rooms + main corridor segments)
+      const scannedElements = [];
+
+      // 1. Convert roomSegments to 3D room mesh elements
+      roomSegments.forEach((r, idx) => {
+        const startT = new Date(r.startTimestamp || Date.now()).getTime();
+        const endT = new Date(r.endTimestamp || Date.now()).getTime();
+        const roomDurationSec = Math.max(3, Math.round((endT - startT) / 1000));
+        
+        const w = parseFloat(Math.max(2.8, Math.min(6.5, roomDurationSec * 0.75)).toFixed(2));
+        const l = parseFloat(Math.max(3.2, Math.min(8.5, roomDurationSec * 1.05)).toFixed(2));
+        const h = 2.8;
+
+        const hw = w / 2;
+        const hl = l / 2;
+
+        scannedElements.push({
+          id: `room_${Date.now()}_${idx}`,
+          name: r.roomName || `Room ${idx + 1}`,
+          type: 'room',
+          geometry3D: {
+            dimensions: { width: w, length: l, height: h },
+            position: { x: 0, y: 0, z: 0 },
+            rotation: { x: 0, y: 0, z: 0 },
+            vertices: [
+              { x: -hw, y: 0, z: -hl }, { x: hw, y: 0, z: -hl },
+              { x: hw, y: 0, z: hl }, { x: -hw, y: 0, z: hl },
+              { x: -hw, y: h, z: -hl }, { x: hw, y: h, z: -hl },
+              { x: hw, y: h, z: hl }, { x: -hw, y: h, z: hl }
+            ],
+            faces: [
+              [0, 1, 2, 3], [4, 5, 6, 7],
+              [0, 1, 5, 4], [1, 2, 6, 5],
+              [2, 3, 7, 6], [3, 0, 4, 7]
+            ],
+            color: '#3b82f6'
+          },
+          status: 'unplaced'
+        });
+      });
+
+      // 2. Generate Corridor Wireframe Segment
+      const corridorLength = parseFloat(Math.max(12, dist).toFixed(1));
+      scannedElements.push({
+        id: `corridor_${Date.now()}`,
+        name: `${selectedFloor?.name || 'Floor'} Main Corridor`,
+        type: 'corridor',
+        geometry3D: {
+          dimensions: { width: 2.4, length: corridorLength, height: 2.8 },
+          position: { x: 0, y: 0, z: 0 },
+          rotation: { x: 0, y: 0, z: 0 },
+          vertices: [
+            { x: -1.2, y: 0, z: -corridorLength / 2 }, { x: 1.2, y: 0, z: -corridorLength / 2 },
+            { x: 1.2, y: 0, z: corridorLength / 2 }, { x: -1.2, y: 0, z: corridorLength / 2 },
+            { x: -1.2, y: 2.8, z: -corridorLength / 2 }, { x: 1.2, y: 2.8, z: -corridorLength / 2 },
+            { x: 1.2, y: 2.8, z: corridorLength / 2 }, { x: -1.2, y: 2.8, z: corridorLength / 2 }
+          ],
+          faces: [
+            [0, 1, 2, 3], [4, 5, 6, 7],
+            [0, 1, 5, 4], [1, 2, 6, 5],
+            [2, 3, 7, 6], [3, 0, 4, 7]
+          ],
+          color: '#8b5cf6'
+        },
+        status: 'unplaced'
+      });
+
       const scanSummary = {
         sessionId: SLAMService.sessionId,
         building: selectedBlock,
         floor: selectedFloor,
         duration: durationSeconds,
         trajectory: points,
+        roomSegments: roomSegments,
+        scannedElements: scannedElements,
         pointCount: points.length,
         estimatedDistance: dist,
         nodeCount: nodes,
@@ -158,9 +264,47 @@ export default function SpatialStudioScanner({ navigation, route }) {
         timestamp: new Date().toISOString(),
       };
 
-      // Navigate to Review Screen
       navigation.navigate('ScanReview', { scanSummary });
     }
+  };
+
+  const handleStartRoom = () => {
+    if (!newRoomName.trim()) return;
+    setActiveRoom({
+      roomName: newRoomName.trim(),
+      startTimestamp: new Date().toISOString()
+    });
+    setNewRoomName('');
+    setShowRoomModal(false);
+  };
+
+  const handleFinishRoom = () => {
+    if (!activeRoom) return;
+    const startT = new Date(activeRoom.startTimestamp).getTime();
+    const endT = Date.now();
+    const roomDurationSec = Math.max(3, Math.round((endT - startT) / 1000));
+    
+    const w = parseFloat(Math.max(2.8, Math.min(6.5, roomDurationSec * 0.75)).toFixed(2));
+    const l = parseFloat(Math.max(3.2, Math.min(8.5, roomDurationSec * 1.05)).toFixed(2));
+    const h = 2.8;
+
+    const finishedRoom = {
+      ...activeRoom,
+      endTimestamp: new Date(endT).toISOString(),
+      status: 'completed',
+      geometry3D: {
+        dimensions: { width: w, length: l, height: h },
+        position: { x: 0, y: 0, z: 0 },
+        rotation: { x: 0, y: 0, z: 0 },
+        color: '#3b82f6'
+      }
+    };
+
+    setRoomSegments([
+      ...roomSegments,
+      finishedRoom
+    ]);
+    setActiveRoom(null);
   };
 
   const formatDuration = (halfSeconds) => {
@@ -170,20 +314,13 @@ export default function SpatialStudioScanner({ navigation, route }) {
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
-  if (!permission) {
-    return <View style={styles.container} />;
-  }
+  if (!permission) return <View style={styles.container} />;
 
   if (!permission.granted) {
     return (
       <View style={[styles.container, { justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff' }]}>
         <Ionicons name="camera-outline" size={64} color="#8b5cf6" />
-        <Text style={{ color: '#1e293b', fontSize: 18, marginTop: 16, fontWeight: '700' }}>
-          Camera Access Needed
-        </Text>
-        <Text style={{ color: '#64748b', fontSize: 13, textAlign: 'center', marginTop: 8, paddingHorizontal: 32, lineHeight: 18 }}>
-          NavX AR Studio needs camera permissions to perform real-time visual-inertial odometry and spatial mapping.
-        </Text>
+        <Text style={{ color: '#1e293b', fontSize: 18, marginTop: 16, fontWeight: '700' }}>Camera Access Needed</Text>
         <TouchableOpacity style={styles.grantBtn} onPress={requestPermission}>
           <Text style={{ color: '#fff', fontWeight: '700', fontSize: 14 }}>Grant Camera Permission</Text>
         </TouchableOpacity>
@@ -196,10 +333,7 @@ export default function SpatialStudioScanner({ navigation, route }) {
 
   return (
     <View style={styles.container}>
-      {/* Live Camera Stream */}
       <CameraView style={StyleSheet.absoluteFill} facing="back" />
-
-      {/* AR Reticle Overlay */}
       <AROverlay isScanning={isScanning} />
 
       {/* Top HUD */}
@@ -229,8 +363,8 @@ export default function SpatialStudioScanner({ navigation, route }) {
       {/* Stats HUD */}
       <View style={styles.statsHud}>
         <View style={styles.statBox}>
-          <Text style={styles.statLabel}>Points</Text>
-          <Text style={styles.statValue}>{trajectoryBufferRef.current.length}</Text>
+          <Text style={styles.statLabel}>Rooms Tagged</Text>
+          <Text style={styles.statValue}>{roomSegments.length}</Text>
         </View>
         <View style={styles.statDivider} />
         <View style={styles.statBox}>
@@ -246,9 +380,25 @@ export default function SpatialStudioScanner({ navigation, route }) {
 
       {/* Bottom Controls */}
       <View style={styles.controls}>
-        <Text style={styles.controlHint}>
-          {isScanning ? 'Walk steadily through corridors and doorways...' : 'Tap to start real-time spatial mapping'}
-        </Text>
+        {isScanning ? (
+          activeRoom ? (
+            <View style={styles.activeRoomContainer}>
+              <Text style={styles.activeRoomText}>Recording Room: {activeRoom.roomName}</Text>
+              <TouchableOpacity style={styles.finishRoomBtn} onPress={handleFinishRoom}>
+                <Ionicons name="checkmark-circle" size={20} color="#fff" style={{marginRight: 6}} />
+                <Text style={styles.finishRoomBtnText}>Finish Room</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <TouchableOpacity style={styles.newRoomBtn} onPress={() => setShowRoomModal(true)}>
+              <Ionicons name="add-circle" size={24} color="#fff" style={{marginRight: 8}} />
+              <Text style={styles.newRoomBtnText}>New Room Tag</Text>
+            </TouchableOpacity>
+          )
+        ) : (
+          <Text style={styles.controlHint}>Tap to start continuous recording</Text>
+        )}
+
         <TouchableOpacity
           style={[styles.actionBtn, isScanning ? styles.btnStop : styles.btnStart]}
           onPress={toggleScan}
@@ -262,11 +412,36 @@ export default function SpatialStudioScanner({ navigation, route }) {
           >
             <Ionicons name={isScanning ? 'stop' : 'scan'} size={26} color="#fff" />
             <Text style={styles.btnText}>
-              {isScanning ? 'Stop Scan & Review' : 'Start Scan'}
+              {isScanning ? 'Finish Floor Scan' : 'Start Floor Scan'}
             </Text>
           </LinearGradient>
         </TouchableOpacity>
       </View>
+
+      {/* Room Modal */}
+      <Modal visible={showRoomModal} transparent animationType="fade">
+        <View style={styles.modalBackdropCenter}>
+          <View style={styles.roomModalContent}>
+            <Text style={styles.modalTitle}>Tag New Room</Text>
+            <Text style={styles.modalSub}>Enter room name before stepping inside.</Text>
+            <TextInput
+              style={styles.textInput}
+              placeholder="e.g. Room 101"
+              value={newRoomName}
+              onChangeText={setNewRoomName}
+              autoFocus
+            />
+            <View style={styles.modalRow}>
+              <TouchableOpacity style={styles.modalCancel} onPress={() => setShowRoomModal(false)}>
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.modalConfirm} onPress={handleStartRoom}>
+                <Text style={styles.modalConfirmText}>Start Recording</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* Building / Floor Picker Modal */}
       <Modal visible={showLocationPicker} transparent animationType="slide">
@@ -287,15 +462,38 @@ export default function SpatialStudioScanner({ navigation, route }) {
                   style={[styles.chip, selectedBlock?._id === b._id && styles.chipActive]}
                   onPress={() => handleSelectBlock(b)}
                 >
-                  <Text style={[styles.chipText, selectedBlock?._id === b._id && styles.chipTextActive]}>
-                    {b.name}
-                  </Text>
+                  <Text style={[styles.chipText, selectedBlock?._id === b._id && styles.chipTextActive]}>{b.name}</Text>
                 </TouchableOpacity>
               ))}
             </ScrollView>
 
-            <Text style={styles.pickerSectionTitle}>Floor</Text>
-            {loadingLocation ? (
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <Text style={[styles.pickerSectionTitle, { marginBottom: 0 }]}>Floor</Text>
+              {!showNewFloorMode && (
+                <TouchableOpacity onPress={() => setShowNewFloorMode(true)}>
+                  <Text style={{ color: '#8b5cf6', fontWeight: '600', fontSize: 13 }}>+ New Floor</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {showNewFloorMode ? (
+              <View style={styles.newFloorContainer}>
+                <TextInput
+                  style={styles.textInput}
+                  placeholder="Floor Name/Number (e.g. Ground Floor)"
+                  value={newFloorName}
+                  onChangeText={setNewFloorName}
+                />
+                <View style={styles.modalRow}>
+                  <TouchableOpacity style={styles.modalCancel} onPress={() => setShowNewFloorMode(false)}>
+                    <Text style={styles.modalCancelText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.modalConfirm} onPress={handleCreateFloor} disabled={creatingFloor}>
+                    {creatingFloor ? <ActivityIndicator color="#fff" size="small"/> : <Text style={styles.modalConfirmText}>Create</Text>}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : loadingLocation ? (
               <ActivityIndicator color="#8b5cf6" style={{ marginVertical: 20 }} />
             ) : (
               <ScrollView style={{ maxHeight: 160 }}>
@@ -303,27 +501,17 @@ export default function SpatialStudioScanner({ navigation, route }) {
                   <TouchableOpacity
                     key={f._id}
                     style={[styles.floorRow, selectedFloor?._id === f._id && styles.floorRowActive]}
-                    onPress={() => {
-                      setSelectedFloor(f);
-                      setShowLocationPicker(false);
-                    }}
+                    onPress={() => setSelectedFloor(f)}
                   >
                     <Ionicons name="layers" size={18} color={selectedFloor?._id === f._id ? '#8b5cf6' : '#64748b'} />
-                    <Text style={[styles.floorRowText, selectedFloor?._id === f._id && styles.floorRowTextActive]}>
-                      {f.name}
-                    </Text>
-                    {selectedFloor?._id === f._id && (
-                      <Ionicons name="checkmark" size={18} color="#8b5cf6" style={{ marginLeft: 'auto' }} />
-                    )}
+                    <Text style={[styles.floorRowText, selectedFloor?._id === f._id && styles.floorRowTextActive]}>{f.name}</Text>
+                    {selectedFloor?._id === f._id && <Ionicons name="checkmark" size={18} color="#8b5cf6" style={{ marginLeft: 'auto' }} />}
                   </TouchableOpacity>
                 ))}
               </ScrollView>
             )}
 
-            <TouchableOpacity 
-              style={styles.modalDoneBtn} 
-              onPress={() => setShowLocationPicker(false)}
-            >
+            <TouchableOpacity style={styles.modalDoneBtn} onPress={() => setShowLocationPicker(false)}>
               <Text style={styles.modalDoneText}>Confirm Location</Text>
             </TouchableOpacity>
           </View>
@@ -336,133 +524,40 @@ export default function SpatialStudioScanner({ navigation, route }) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
   grantBtn: { marginTop: 24, backgroundColor: '#8b5cf6', paddingVertical: 14, paddingHorizontal: 28, borderRadius: 12 },
-  // Top HUD
-  topHud: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingTop: 54,
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    zIndex: 10,
-  },
-  iconBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  locationSelector: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 10,
-    maxWidth: '55%',
-    gap: 6,
-  },
-  locationText: {
-    color: '#fff',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  liveIndicator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
-  },
-  liveDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#94a3b8',
-    marginRight: 6,
-  },
-  liveDotActive: {
-    backgroundColor: '#22c55e',
-  },
-  liveText: {
-    color: '#fff',
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-  },
-  // Stats HUD
-  statsHud: {
-    position: 'absolute',
-    top: 120,
-    left: 16,
-    right: 16,
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.55)',
-    borderRadius: 16,
-    paddingVertical: 14,
-    paddingHorizontal: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-    zIndex: 10,
-  },
+  topHud: { position: 'absolute', top: 0, left: 0, right: 0, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 54, paddingHorizontal: 16, paddingBottom: 12, backgroundColor: 'rgba(0,0,0,0.4)', zIndex: 10 },
+  iconBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.15)', justifyContent: 'center', alignItems: 'center' },
+  locationSelector: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.15)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10, maxWidth: '55%', gap: 6 },
+  locationText: { color: '#fff', fontSize: 13, fontWeight: '600' },
+  liveIndicator: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.12)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 },
+  liveDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#94a3b8', marginRight: 6 },
+  liveDotActive: { backgroundColor: '#22c55e' },
+  liveText: { color: '#fff', fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
+  statsHud: { position: 'absolute', top: 120, left: 16, right: 16, flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', backgroundColor: 'rgba(0, 0, 0, 0.55)', borderRadius: 16, paddingVertical: 14, paddingHorizontal: 8, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', zIndex: 10 },
   statBox: { alignItems: 'center', flex: 1 },
   statDivider: { width: 1, height: 28, backgroundColor: 'rgba(255,255,255,0.15)' },
   statLabel: { color: 'rgba(255,255,255,0.6)', fontSize: 11, fontWeight: '500' },
   statValue: { color: '#fff', fontSize: 20, fontWeight: '800', marginTop: 2 },
-  // Controls
-  controls: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    paddingBottom: 50,
-    paddingTop: 16,
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    zIndex: 10,
-  },
-  controlHint: {
-    color: 'rgba(255,255,255,0.75)',
-    fontSize: 13,
-    fontWeight: '500',
-    marginBottom: 16,
-  },
-  actionBtn: {
-    borderRadius: 28,
-    overflow: 'hidden',
-    shadowColor: '#8b5cf6',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 6,
-  },
-  actionBtnInner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 16,
-    paddingHorizontal: 36,
-    borderRadius: 28,
-  },
-  btnStart: {},
-  btnStop: {},
-  btnText: {
-    color: '#fff',
-    fontSize: 17,
-    fontWeight: '700',
-    marginLeft: 10,
-    letterSpacing: 0.3,
-  },
-  // Modal
+  controls: { position: 'absolute', bottom: 0, left: 0, right: 0, paddingBottom: 50, paddingTop: 16, alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.45)', zIndex: 10 },
+  controlHint: { color: 'rgba(255,255,255,0.75)', fontSize: 13, fontWeight: '500', marginBottom: 16 },
+  newRoomBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#3b82f6', paddingVertical: 12, paddingHorizontal: 24, borderRadius: 24, marginBottom: 16 },
+  newRoomBtnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
+  activeRoomContainer: { alignItems: 'center', marginBottom: 16 },
+  activeRoomText: { color: '#fff', fontSize: 14, fontWeight: '600', marginBottom: 8 },
+  finishRoomBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#10b981', paddingVertical: 12, paddingHorizontal: 24, borderRadius: 24 },
+  finishRoomBtnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
+  actionBtn: { borderRadius: 28, overflow: 'hidden', shadowColor: '#8b5cf6', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.3, shadowRadius: 12, elevation: 6 },
+  actionBtnInner: { flexDirection: 'row', alignItems: 'center', paddingVertical: 16, paddingHorizontal: 36, borderRadius: 28 },
+  btnStart: {}, btnStop: {},
+  btnText: { color: '#fff', fontSize: 17, fontWeight: '700', marginLeft: 10, letterSpacing: 0.3 },
+  modalBackdropCenter: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center' },
+  roomModalContent: { backgroundColor: '#fff', borderRadius: 20, padding: 24, width: '85%' },
+  modalSub: { color: '#64748b', fontSize: 14, marginBottom: 16 },
+  textInput: { backgroundColor: '#f1f5f9', borderRadius: 10, padding: 12, fontSize: 15, marginBottom: 16, color: '#1e293b' },
+  modalRow: { flexDirection: 'row', justifyContent: 'flex-end', gap: 12 },
+  modalCancel: { paddingVertical: 10, paddingHorizontal: 16 },
+  modalCancelText: { color: '#64748b', fontWeight: '600' },
+  modalConfirm: { backgroundColor: '#8b5cf6', paddingVertical: 10, paddingHorizontal: 16, borderRadius: 10 },
+  modalConfirmText: { color: '#fff', fontWeight: '600' },
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
   modalContent: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, maxHeight: '80%' },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
@@ -476,6 +571,7 @@ const styles = StyleSheet.create({
   floorRowActive: { backgroundColor: 'rgba(139,92,246,0.08)', borderWidth: 1, borderColor: 'rgba(139,92,246,0.2)' },
   floorRowText: { fontSize: 14, color: '#334155', marginLeft: 10, fontWeight: '500' },
   floorRowTextActive: { color: '#8b5cf6', fontWeight: '700' },
+  newFloorContainer: { backgroundColor: '#f8fafc', padding: 12, borderRadius: 10, marginBottom: 16 },
   modalDoneBtn: { backgroundColor: '#8b5cf6', paddingVertical: 14, borderRadius: 12, alignItems: 'center', marginTop: 16 },
   modalDoneText: { color: '#fff', fontSize: 15, fontWeight: '700' },
 });

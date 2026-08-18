@@ -180,8 +180,77 @@ function buildGraph(nodes, paths, floorMap = {}, rooms = []) {
     }
   });
 
-  // Edges from room stairsConfig have been removed to prevent automatic vertical shortcuts 
-  // that override the user's manual slanted paths drawn in the 2D/3D map.
+  // Add edges from room stairsConfig (Diagonally to create slanted 3D steps)
+  if (rooms && rooms.length > 0) {
+    rooms.forEach(room => {
+      if (room.stairsConfig && room.stairsConfig.startFloorId && room.stairsConfig.endFloorId) {
+        const startFloor = room.stairsConfig.startFloorId.toString();
+        const endFloor = room.stairsConfig.endFloorId.toString();
+        
+        // Find nodes belonging to this room on the start floor
+        const startNodes = Object.values(graph).filter(n => n.roomId === room._id.toString() && n.floorId === startFloor);
+        
+        // Find candidate nodes on the end floor
+        const endNodes = Object.values(graph).filter(n => n.floorId === endFloor && (n.type === 'stairs' || n.type === 'elevator'));
+        
+        startNodes.forEach(startNode => {
+          let bestEndNode = null;
+          let bestDist = -1; 
+          
+          // Filter end nodes that are in the same staircase area (e.g. within 15 meters)
+          const localEndNodes = endNodes.filter(n => haversineDistMeters(startNode.x, startNode.y, n.x, n.y) < 15);
+          
+          if (localEndNodes.length > 0) {
+            // Find the FARTHEST node within this local area to force a diagonal connection
+            // This prevents vertical jumps (dist=0) and creates a realistic slanted staircase path.
+            localEndNodes.forEach(endNode => {
+              const dist = haversineDistMeters(startNode.x, startNode.y, endNode.x, endNode.y);
+              if (dist > bestDist) {
+                bestDist = dist;
+                bestEndNode = endNode;
+              }
+            });
+          } else {
+            // Fallback: just find the absolute closest node if none are within 15m
+            let minFallbackDist = Infinity;
+            endNodes.forEach(endNode => {
+              const dist = haversineDistMeters(startNode.x, startNode.y, endNode.x, endNode.y);
+              if (dist < minFallbackDist) {
+                minFallbackDist = dist;
+                bestEndNode = endNode;
+              }
+            });
+            bestDist = minFallbackDist;
+          }
+          
+          if (bestEndNode) {
+            const levelDiff = Math.abs((startNode.floorLevel || 0) - (bestEndNode.floorLevel || 0));
+            const verticalDist = levelDiff * 3.5;
+            const dist3D = Math.sqrt(bestDist * bestDist + verticalDist * verticalDist);
+            const edgeWeight = dist3D * 1.5; 
+            
+            graph[startNode.id].neighbors.push({
+              nodeId: bestEndNode.id,
+              distance: dist3D,
+              weight: edgeWeight,
+              pathType: room.type, 
+              accessible: room.type === 'elevator'
+            });
+            
+            if (!graph[bestEndNode.id].neighbors.find(n => n.nodeId === startNode.id)) {
+              graph[bestEndNode.id].neighbors.push({
+                nodeId: startNode.id,
+                distance: dist3D,
+                weight: edgeWeight,
+                pathType: room.type,
+                accessible: room.type === 'elevator'
+              });
+            }
+          }
+        });
+      }
+    });
+  }
 
   return graph;
 }

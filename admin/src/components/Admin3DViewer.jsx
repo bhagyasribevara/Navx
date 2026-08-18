@@ -493,16 +493,40 @@ export default function Admin3DViewer({ blocks, floors, rooms, nodes, paths, cam
           const floor = floors.find(f => f._id === (r.floorId?._id || r.floorId));
           const level = floor ? floor.level : 0;
           const minH = level * 3.5;
-          const h = minH + 3.0; // Room height
-
           const coords = r.shape.points.map(p => [p.y, p.x]);
           coords.push([r.shape.points[0].y, r.shape.points[0].x]);
 
-          roomFeatures.push({
-            type: 'Feature',
-            properties: { isRoom: true, blockId: rBlockId || '', color: r.color || '#3b82f6', min_height: minH, height: h },
-            geometry: { type: 'Polygon', coordinates: [coords] }
-          });
+          if (r.type === 'entrance') {
+            roomFeatures.push({
+              type: 'Feature',
+              properties: { isRoom: true, blockId: rBlockId || '', color: (r.shape && r.shape.fill) ? r.shape.fill : '#78716c', min_height: minH, height: minH + 2.1 },
+              geometry: { type: 'Polygon', coordinates: [coords] }
+            });
+          } else if (r.type === 'classroom' && r.shape && r.shape.wallColors) {
+            const h = minH + 3.0;
+            const dadoH = minH + 1.0;
+            const wallColors = r.shape.wallColors;
+            // Dado Block
+            roomFeatures.push({
+              type: 'Feature',
+              properties: { isRoom: true, blockId: rBlockId || '', color: wallColors.bottom || '#b5a68e', min_height: minH, height: dadoH },
+              geometry: { type: 'Polygon', coordinates: [coords] }
+            });
+            // Upper Wall Block
+            roomFeatures.push({
+              type: 'Feature',
+              properties: { isRoom: true, blockId: rBlockId || '', color: wallColors.top || '#f6f5ee', min_height: dadoH, height: h },
+              geometry: { type: 'Polygon', coordinates: [coords] }
+            });
+          } else {
+            // Corridor or default shape - completely flat on the floor
+            const h = (r.type === 'corridor') ? minH + 0.01 : minH + 3.0;
+            roomFeatures.push({
+              type: 'Feature',
+              properties: { isRoom: true, blockId: rBlockId || '', color: (r.shape && r.shape.fill) ? r.shape.fill : (r.color || '#3b82f6'), min_height: minH, height: h },
+              geometry: { type: 'Polygon', coordinates: [coords] }
+            });
+          }
         }
       }
     });
@@ -547,7 +571,7 @@ export default function Admin3DViewer({ blocks, floors, rooms, nodes, paths, cam
           'fill-extrusion-color': ['get', 'color'],
           'fill-extrusion-height': ['get', 'height'],
           'fill-extrusion-base': ['get', 'min_height'],
-          'fill-extrusion-opacity': 0.7
+          'fill-extrusion-opacity': 0.85
         }
       }, '3d-buildings');
     }

@@ -5,7 +5,7 @@ import { Platform } from 'react-native';
 let Constants = null;
 try { Constants = require('expo-constants').default; } catch (e) {}
 
-let devHost = Platform.OS === 'android' ? '10.0.2.2' : 'localhost';
+let devHost = '10.142.252.64'; // Explicit IP from Metro bundler for physical device testing
 if (Constants?.expoConfig?.hostUri) {
   devHost = Constants.expoConfig.hostUri.split(':')[0];
 }
@@ -119,6 +119,9 @@ export const getBlocks = (campusId) =>
 export const getFloors = (blockId) =>
   api.get(`/floors?blockId=${blockId}`).then(r => r.data);
 
+export const createFloor = (data) =>
+  api.post(`/floors`, data).then(r => r.data);
+
 export const getRooms = (floorId) =>
   api.get(`/rooms?floorId=${floorId}`).then(r => r.data);
 
@@ -174,5 +177,8 @@ export const getSpatialSessions = (params) =>
 
 export const deleteSpatialSession = (sessionId) =>
   api.delete(`/spatialStudio/session/${sessionId}`).then(r => r.data);
+
+export const sendScanToWeb = (sessionId, data) =>
+  api.post(`/spatialStudio/session/${sessionId}/send-to-web`, data).then(r => r.data);
 
 export default api;

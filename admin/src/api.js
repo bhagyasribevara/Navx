@@ -219,6 +219,7 @@ export const deleteCampaign = (id) => api.delete(`/campaigns/${id}`);
 // Spatial Studio & Digital Twin
 export const getDigitalTwin = (buildingId, floorId) => api.get(`/spatialStudio/digital-twin/${buildingId}/${floorId}`);
 export const saveDigitalTwin = (data) => api.post('/spatialStudio/twin', data);
+export const publishDigitalTwinLayout = (data) => api.post('/spatialStudio/twin/publish', data);
 export const getSpatialSessions = (params) => api.get('/spatialStudio/sessions', { params });
 export const deleteSpatialSession = (id) => api.delete(`/spatialStudio/session/${id}`);
 

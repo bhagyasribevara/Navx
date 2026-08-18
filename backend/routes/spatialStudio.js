@@ -5,6 +5,8 @@ const axios = require('axios');
 const SpatialScanSession = require('../models/SpatialScanSession');
 const DigitalTwin = require('../models/DigitalTwin');
 const NavNode = require('../models/NavNode');
+const Block = require('../models/Block');
+const Room = require('../models/Room');
 
 // Configuration for AI Microservice
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
@@ -106,6 +108,9 @@ router.post('/session/:id/finalize', async (req, res) => {
     if (reqFloorMaterial) session.floorMaterial = finalFloorMaterial;
     if (reqFloorColor) session.floorColor = finalFloorColor;
     if (reqLandmarks) session.landmarks = reqLandmarks;
+    if (req.body.startPoint) session.startPoint = req.body.startPoint;
+    if (req.body.endPoint) session.endPoint = req.body.endPoint;
+    if (req.body.scannedElements) session.scannedElements = req.body.scannedElements;
 
     await session.save();
 
@@ -132,7 +137,10 @@ router.post('/session/:id/finalize', async (req, res) => {
         trajectory: session.trajectory || [],
         wallColors: { top: finalWallTop, bottom: finalWallBottom },
         floorMaterial: finalFloorMaterial,
-        floorColor: finalFloorColor
+        floorColor: finalFloorColor,
+        roomSegments: req.body.roomSegments || [],
+        startPoint: req.body.startPoint || null,
+        endPoint: req.body.endPoint || null
       }, { timeout: 4000 });
       if (dtResponse.data) {
         dtWalls = dtResponse.data.walls || [];
@@ -146,49 +154,16 @@ router.post('/session/:id/finalize', async (req, res) => {
 
     // Default realistic two-tone hostel corridor walls if empty
     if (!dtWalls || dtWalls.length === 0) {
-      dtWalls = [
-        { start: { x: -16.0, y: 0, z: 1.15 }, end: { x: 16.0, y: 0, z: 1.15 }, height: 2.8, thickness: 0.18, colorTop: finalWallTop, colorBottom: finalWallBottom },
-        { start: { x: -16.0, y: 0, z: -1.15 }, end: { x: 16.0, y: 0, z: -1.15 }, height: 2.8, thickness: 0.18, colorTop: finalWallTop, colorBottom: finalWallBottom },
-        { start: { x: -16.0, y: 0, z: -1.15 }, end: { x: -16.0, y: 0, z: 1.15 }, height: 2.8, thickness: 0.18, colorTop: finalWallTop, colorBottom: finalWallBottom },
-        { start: { x: 16.0, y: 0, z: -1.15 }, end: { x: 16.0, y: 0, z: 1.15 }, height: 2.8, thickness: 0.18, colorTop: finalWallTop, colorBottom: finalWallBottom }
-      ];
+      dtWalls = []; // Removed default layout as per user request
     }
 
-    if (!dtDoors || dtDoors.length === 0) {
-      dtDoors = [
-        { position: { x: -12.0, y: 0, z: 1.15 }, width: 1.15, height: 2.2, roomNumber: '301', isOpen: true },
-        { position: { x: -12.0, y: 0, z: -1.15 }, width: 1.15, height: 2.2, roomNumber: '302', isOpen: true },
-        { position: { x: -6.0, y: 0, z: 1.15 }, width: 1.15, height: 2.2, roomNumber: '303', isOpen: true },
-        { position: { x: -6.0, y: 0, z: -1.15 }, width: 1.15, height: 2.2, roomNumber: '304', isOpen: true },
-        { position: { x: 0.0, y: 0, z: 1.15 }, width: 1.15, height: 2.2, roomNumber: '305', isOpen: true },
-        { position: { x: 0.0, y: 0, z: -1.15 }, width: 1.15, height: 2.2, roomNumber: '306', isOpen: true },
-        { position: { x: 6.0, y: 0, z: 1.15 }, width: 1.15, height: 2.2, roomNumber: '307', isOpen: true },
-        { position: { x: 6.0, y: 0, z: -1.15 }, width: 1.15, height: 2.2, roomNumber: '308', isOpen: true },
-        { position: { x: 12.0, y: 0, z: 1.15 }, width: 1.35, height: 2.2, roomNumber: 'Washroom', type: 'washroom', isOpen: true },
-        { position: { x: 12.0, y: 0, z: -1.15 }, width: 1.15, height: 2.2, roomNumber: 'Water Point', type: 'water', isOpen: true }
-      ];
+    if (!dtDoors) {
+      dtDoors = (req.body?.doors && req.body.doors.length > 0) ? req.body.doors : [];
     }
 
-    const finalRooms = (reqRooms && reqRooms.length > 0) ? reqRooms : (aiRooms.length > 0 ? aiRooms : [
-      { roomNumber: '301', roomName: 'Room 301 (Hostel Room)', category: 'room', confidence: 0.98, position: { x: -12.0, y: 0, z: 1.15 } },
-      { roomNumber: '302', roomName: 'Room 302 (Hostel Room)', category: 'room', confidence: 0.97, position: { x: -12.0, y: 0, z: -1.15 } },
-      { roomNumber: '303', roomName: 'Room 303 (Hostel Room)', category: 'room', confidence: 0.96, position: { x: -6.0, y: 0, z: 1.15 } },
-      { roomNumber: '304', roomName: 'Room 304 (Hostel Room)', category: 'room', confidence: 0.95, position: { x: -6.0, y: 0, z: -1.15 } },
-      { roomNumber: '305', roomName: 'Room 305 (Hostel Room)', category: 'room', confidence: 0.96, position: { x: 0.0, y: 0, z: 1.15 } },
-      { roomNumber: '306', roomName: 'Room 306 (Hostel Room)', category: 'room', confidence: 0.94, position: { x: 0.0, y: 0, z: -1.15 } },
-      { roomNumber: '307', roomName: 'Room 307 (Hostel Room)', category: 'room', confidence: 0.95, position: { x: 6.0, y: 0, z: 1.15 } },
-      { roomNumber: '308', roomName: 'Room 308 (Hostel Room)', category: 'room', confidence: 0.93, position: { x: 6.0, y: 0, z: -1.15 } },
-      { roomNumber: 'Washroom', roomName: 'Common Washroom & Bathroom Suite', category: 'washroom', confidence: 0.99, position: { x: 12.0, y: 0, z: 1.15 } },
-      { roomNumber: 'Water Point', roomName: 'RO Water Cooler Station', category: 'water', confidence: 0.96, position: { x: 12.0, y: 0, z: -1.15 } }
-    ]);
+    const finalRooms = (reqRooms && reqRooms.length > 0) ? reqRooms : (aiRooms.length > 0 ? aiRooms : (session.roomSegments || session.detectedRooms || []));
 
-    const finalLandmarks = (reqLandmarks && reqLandmarks.length > 0) ? reqLandmarks : (aiLandmarks.length > 0 ? aiLandmarks : [
-      { type: 'exit_sign', label: 'West Fire Exit Green Sign', position: { x: -14.0, y: 2.1, z: 1.15 } },
-      { type: 'exit_sign', label: 'East Fire Exit Green Sign', position: { x: 14.0, y: 2.1, z: 1.15 } },
-      { type: 'water_cooler', label: 'RO Water Cooler', position: { x: 12.0, y: 0.0, z: -1.15 } },
-      { type: 'switch', label: 'Corridor Light Switches', position: { x: -0.5, y: 1.2, z: 1.15 } },
-      { type: 'washroom_suite', label: 'Bathrooms & Washroom Suite', position: { x: 12.0, y: 0.0, z: 1.15 } },
-    ]);
+    const finalLandmarks = (reqLandmarks && reqLandmarks.length > 0) ? reqLandmarks : (aiLandmarks.length > 0 ? aiLandmarks : []);
 
     // Save or update DigitalTwin for this building & floor
     let digitalTwinId = null;
@@ -210,6 +185,9 @@ router.post('/session/:id/finalize', async (req, res) => {
         doors: dtDoors,
         detectedRooms: finalRooms,
         landmarks: finalLandmarks,
+        startPoint: session.startPoint,
+        endPoint: session.endPoint,
+        scannedElements: session.scannedElements || [],
         rooms: []
       });
       await digitalTwin.save();
@@ -228,6 +206,63 @@ router.post('/session/:id/finalize', async (req, res) => {
   }
 });
 
+// Mark session as available on web & store 3D scanned elements
+router.post('/session/:id/send-to-web', async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ error: 'Invalid session ID' });
+    }
+
+    const { roomSegments, scannedElements } = req.body;
+
+    const session = await SpatialScanSession.findById(id);
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+
+    session.isAvailableOnWeb = true;
+    if (roomSegments && roomSegments.length > 0) {
+      session.roomSegments = roomSegments;
+    }
+    if (scannedElements && Array.isArray(scannedElements)) {
+      session.scannedElements = scannedElements;
+    }
+
+    await session.save();
+
+    // Also attach or update DigitalTwin staging elements if building & floor exist
+    if (session.building && session.floor) {
+      let twin = await DigitalTwin.findOne({ building: session.building, floor: session.floor });
+      if (!twin) {
+        twin = new DigitalTwin({
+          building: session.building,
+          floor: session.floor,
+          session: session._id,
+          scannedElements: scannedElements || [],
+          startPoint: session.startPoint,
+          endPoint: session.endPoint,
+          detectedRooms: session.detectedRooms || []
+        });
+      } else {
+        if (scannedElements && scannedElements.length > 0) {
+          twin.scannedElements = scannedElements;
+        } else if (session.scannedElements && session.scannedElements.length > 0) {
+          twin.scannedElements = session.scannedElements;
+        }
+        twin.placedComponents = []; // Reset placed items on re-sync so items show up in unplaced Staging Tray
+        if (session.startPoint) twin.startPoint = session.startPoint;
+        if (session.endPoint) twin.endPoint = session.endPoint;
+        if (session.detectedRooms && session.detectedRooms.length > 0) twin.detectedRooms = session.detectedRooms;
+      }
+      await twin.save();
+    }
+
+    res.status(200).json({ success: true, session });
+  } catch (error) {
+    console.error('Error sending session to web:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Delete a scan session AND remove its associated Digital Twin directly
 router.delete('/session/:id', async (req, res) => {
   try {
@@ -241,7 +276,6 @@ router.delete('/session/:id', async (req, res) => {
       return res.status(404).json({ error: 'Session not found' });
     }
 
-    // Remove associated Digital Twin from the building floor so 3D twin removes it
     if (session.building && session.floor) {
       await DigitalTwin.deleteMany({
         $or: [
@@ -251,7 +285,6 @@ router.delete('/session/:id', async (req, res) => {
       });
     }
 
-    // Delete session itself
     await SpatialScanSession.findByIdAndDelete(id);
 
     res.status(200).json({ 
@@ -296,7 +329,9 @@ router.post('/twin', async (req, res) => {
       walls,
       doors,
       detectedRooms,
-      landmarks
+      landmarks,
+      scannedElements,
+      placedComponents
     } = req.body;
 
     if (!buildingId || !floorId) {
@@ -305,34 +340,197 @@ router.post('/twin', async (req, res) => {
 
     const query = { building: buildingId, floor: floorId };
     
-    // Clear old twin and save updated twin
-    await DigitalTwin.deleteMany(query);
+    let twin = await DigitalTwin.findOne(query);
+    if (!twin) {
+      twin = new DigitalTwin({ building: buildingId, floor: floorId });
+    }
 
-    const newTwin = new DigitalTwin({
-      building: buildingId,
-      floor: floorId,
-      wallColorTop: wallColorTop || '#f6f5ee',
-      wallColorBottom: wallColorBottom || '#b5a68e',
-      floorMaterial: floorMaterial || 'terrazzo_mosaic',
-      floorColor: floorColor || '#d6cebf',
-      corridorWidth: corridorWidth || 2.3,
-      corridorHeight: corridorHeight || 2.8,
-      walls: walls || [],
-      doors: doors || [],
-      detectedRooms: detectedRooms || [],
-      landmarks: landmarks || [],
-      rooms: []
-    });
+    twin.wallColorTop = wallColorTop || twin.wallColorTop || '#f6f5ee';
+    twin.wallColorBottom = wallColorBottom || twin.wallColorBottom || '#b5a68e';
+    twin.floorMaterial = floorMaterial || twin.floorMaterial || 'terrazzo_mosaic';
+    twin.floorColor = floorColor || twin.floorColor || '#d6cebf';
+    twin.corridorWidth = corridorWidth || twin.corridorWidth || 2.3;
+    twin.corridorHeight = corridorHeight || twin.corridorHeight || 2.8;
+    if (walls) twin.walls = walls;
+    if (doors) twin.doors = doors;
+    if (detectedRooms) twin.detectedRooms = detectedRooms;
+    if (landmarks) twin.landmarks = landmarks;
+    if (scannedElements) twin.scannedElements = scannedElements;
+    if (placedComponents) twin.placedComponents = placedComponents;
+    twin.lastUpdated = new Date();
 
-    await newTwin.save();
+    await twin.save();
 
     res.status(200).json({ 
       success: true, 
-      message: '3D Digital Twin successfully saved and published!', 
-      twin: newTwin 
+      message: '3D Digital Twin successfully saved!', 
+      twin 
     });
   } catch (error) {
     console.error('Error saving digital twin from 3D builder:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Publish Floor Assembly Layout Live to User App
+router.post('/twin/publish', async (req, res) => {
+  try {
+    const {
+      campusId,
+      buildingId,
+      floorId,
+      placedComponents,
+      scannedElements,
+      walls,
+      doors
+    } = req.body;
+
+    if (!buildingId || !floorId) {
+      return res.status(400).json({ error: 'buildingId and floorId are required' });
+    }
+
+    // 1. Update Digital Twin (Local 3D Scene)
+    const query = { building: buildingId, floor: floorId };
+    let twin = await DigitalTwin.findOne(query);
+    if (!twin) {
+      twin = new DigitalTwin({ building: buildingId, floor: floorId });
+    }
+
+    if (placedComponents) twin.placedComponents = placedComponents;
+    if (scannedElements) twin.scannedElements = scannedElements;
+    if (walls) twin.walls = walls;
+    if (doors) twin.doors = doors;
+    twin.lastUpdated = new Date();
+    twin.version = (twin.version || 1) + 1;
+    await twin.save();
+
+    // 2. Synchronize spatial coordinates back to 2D Map Geographic Database
+    if (placedComponents && placedComponents.length > 0 && campusId) {
+      const block = await Block.findById(buildingId);
+      if (block && block.shape && block.shape.points && block.shape.points.length >= 3) {
+        const bPts = block.shape.points;
+        const minX = Math.min(...bPts.map(p => p.x));
+        const maxX = Math.max(...bPts.map(p => p.x));
+        const minY = Math.min(...bPts.map(p => p.y));
+        const maxY = Math.max(...bPts.map(p => p.y));
+        const avgX = (minX + maxX) / 2;
+        const avgY = (minY + maxY) / 2;
+
+        const spanX = maxX - minX || 1e-8;
+        const spanY = maxY - minY || 1e-8;
+        const isLatLng = spanX < 5 && spanY < 5;
+
+        let scaleX = 1;
+        let scaleZ = 1;
+        if (isLatLng) {
+          scaleX = 111320;
+          scaleZ = 111320 * Math.cos((avgX * Math.PI) / 180);
+        }
+
+        const reverseProject = (localX, localZ) => ({
+          x: avgX + (localX / scaleX),
+          y: avgY + (localZ / scaleZ)
+        });
+
+        const newRooms = [];
+        
+        placedComponents.forEach(comp => {
+          const isCorridor = comp.type === 'corridor' || comp.name.toLowerCase().includes('corridor');
+          const type = isCorridor ? 'corridor' : 'classroom';
+          const fill = isCorridor ? '#8b5cf6' : '#3b82f6';
+          
+          const w = comp.dimensions?.width || 3;
+          const l = comp.dimensions?.length || 4;
+          const pos = comp.position || { x: 0, z: 0 };
+          const rotY = comp.rotation?.y || 0;
+
+          const hw = w / 2;
+          const hl = l / 2;
+
+          const corners = [
+            { x: -hw, z: -hl },
+            { x: hw, z: -hl },
+            { x: hw, z: hl },
+            { x: -hw, z: hl }
+          ];
+
+          const cosA = Math.cos(rotY);
+          const sinA = Math.sin(rotY);
+          
+          const geoPoints = corners.map(c => {
+            const rotX = c.x * cosA + c.z * sinA;
+            const rotZ = -c.x * sinA + c.z * cosA;
+            return reverseProject(rotX + pos.x, rotZ + pos.z);
+          });
+
+          newRooms.push({
+            campusId,
+            blockId: buildingId,
+            floorId,
+            name: comp.name || 'Room',
+            type,
+            shape: {
+              type: 'polygon',
+              points: geoPoints,
+              wallColors: {
+                top: comp.wallColorTop || '#f6f5ee',
+                bottom: comp.wallColorBottom || '#b5a68e'
+              },
+              fill
+            }
+          });
+
+          if (type === 'classroom') {
+            // Generate Door Geometry based on Spatial Studio PlacedComponentMesh door location
+            // Door is a box: w=1.0, h=2.1, l=0.1 at [0, 1.05, length / 2 + 0.05]
+            const dw = 1.0 / 2;
+            const dl = 0.1 / 2;
+            const dz = hl + 0.05; // local center of door
+            
+            const doorCorners = [
+              { x: -dw, z: dz - dl },
+              { x: dw, z: dz - dl },
+              { x: dw, z: dz + dl },
+              { x: -dw, z: dz + dl }
+            ];
+
+            const doorGeoPoints = doorCorners.map(c => {
+              const rotX = c.x * cosA + c.z * sinA;
+              const rotZ = -c.x * sinA + c.z * cosA;
+              return reverseProject(rotX + pos.x, rotZ + pos.z);
+            });
+
+            newRooms.push({
+              campusId,
+              blockId: buildingId,
+              floorId,
+              name: `${comp.name || 'Room'} Door`,
+              type: 'entrance',
+              shape: {
+                type: 'polygon',
+                points: doorGeoPoints,
+                fill: '#78716c' // Door frame color
+              }
+            });
+          }
+        });
+
+        // Wipe old un-synced rooms for this floor and insert accurate generated polygons
+        await Room.deleteMany({ floorId });
+        if (newRooms.length > 0) {
+          await Room.insertMany(newRooms);
+        }
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Floor 3D Layout Published Live! User navigation map cache invalidated.',
+      twin,
+      publishedAt: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Error publishing digital twin layout:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -345,6 +543,11 @@ router.get('/sessions', async (req, res) => {
     if (buildingId && mongoose.Types.ObjectId.isValid(buildingId)) query.building = buildingId;
     if (floorId && mongoose.Types.ObjectId.isValid(floorId)) query.floor = floorId;
     if (adminId && mongoose.Types.ObjectId.isValid(adminId)) query.admin = adminId;
+    
+    // If request comes from dashboard, might want to only show those available on web
+    if (req.query.webOnly === 'true') {
+      query.isAvailableOnWeb = true;
+    }
 
     const sessions = await SpatialScanSession.find(query)
       .populate('building', 'name')

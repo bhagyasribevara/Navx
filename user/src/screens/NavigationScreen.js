@@ -460,13 +460,12 @@ window.renderGeoJSONLayers = function(data, floorId, activeFloorId) {
       'paint': {
         'fill-extrusion-color': [
           'case',
-          ['==', ['get', 'id'], '${targetRoom?._id || ""}'], '#3b82f6',
           ['==', ['get', 'type'], 'stairs'], ['coalesce', ['get', 'color'], '#f97316'],
-          '#ffffff'
+          ['coalesce', ['get', 'color'], '#ffffff']
         ],
         'fill-extrusion-height': ['coalesce', ['get', 'height'], 3],
         'fill-extrusion-base': ['coalesce', ['get', 'min_height'], 0],
-        'fill-extrusion-opacity': 0.9
+        'fill-extrusion-opacity': 0.85
       }
     }, '3d-buildings');
   }
@@ -853,11 +852,11 @@ export default function NavigationScreen({ navigation, route }) {
           const streetNodes = await fetchStreetRoute(uLat, uLng, firstNode.x, firstNode.y);
           if (streetNodes && streetNodes.length > 0) {
             // Remove the exact first node if it's very close to the end of the street route to avoid looping
-            streetNodes.forEach(sn => sn.floorId = targetRoom?.floorId || null);
+            streetNodes.forEach(sn => sn.floorId = firstNode.floorId || null);
             result.path = [...streetNodes, ...result.path];
           } else {
             // Fallback to straight line
-            result.path.unshift({ nodeId: 'user_start', x: uLat, y: uLng, floorId: targetRoom?.floorId || null, type: 'user' });
+            result.path.unshift({ nodeId: 'user_start', x: uLat, y: uLng, floorId: firstNode.floorId || null, type: 'user' });
           }
 
           result.distance += distToFirst;
@@ -879,7 +878,7 @@ export default function NavigationScreen({ navigation, route }) {
           }
         } else if (distToFirst > 3) {
           // If just a few meters away, straight line is fine
-          result.path.unshift({ nodeId: 'user_start', x: uLat, y: uLng, floorId: targetRoom?.floorId || null, type: 'user' });
+          result.path.unshift({ nodeId: 'user_start', x: uLat, y: uLng, floorId: firstNode.floorId || null, type: 'user' });
         }
       }
 

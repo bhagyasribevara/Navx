@@ -439,20 +439,60 @@ router.get('/geojson/:id', async (req, res, next) => {
         } else {
           // Regular room
           const minH = level * 3.5;
-          const h = minH + 3.0;
           const coords = r.shape.points.map(p => [p.y, p.x]);
-          if (coords[0][0] !== coords[coords.length - 1][0] || coords[0][1] !== coords[coords.length - 1][1]) {
+          if (coords.length > 0 && (coords[0][0] !== coords[coords.length - 1][0] || coords[0][1] !== coords[coords.length - 1][1])) {
             coords.push([...coords[0]]);
           }
-          features.push({
-            type: 'Feature',
-            geometry: { type: 'Polygon', coordinates: [coords] },
-            properties: {
-              id: r._id, name: r.name, type: 'room', category: r.type, floorId: r.floorId,
-              color: r.color || r.shape.fill || '#3b82f6',
-              min_height: minH, height: h
-            }
-          });
+
+          if (r.type === 'entrance') {
+            features.push({
+              type: 'Feature',
+              geometry: { type: 'Polygon', coordinates: [coords] },
+              properties: {
+                id: r._id, name: r.name, type: 'room', category: 'entrance', floorId: r.floorId,
+                color: (r.shape && r.shape.fill) ? r.shape.fill : '#78716c',
+                min_height: minH, height: minH + 2.1
+              }
+            });
+          } else if (r.type === 'classroom' && r.shape && r.shape.wallColors) {
+            const h = minH + 3.0;
+            const dadoH = minH + 1.0;
+            const wallColors = r.shape.wallColors;
+            
+            // Dado Block
+            features.push({
+              type: 'Feature',
+              geometry: { type: 'Polygon', coordinates: [coords] },
+              properties: {
+                id: r._id + '_dado', name: r.name, type: 'room', category: 'classroom', floorId: r.floorId,
+                color: wallColors.bottom || '#b5a68e',
+                min_height: minH, height: dadoH
+              }
+            });
+            // Upper Wall Block
+            features.push({
+              type: 'Feature',
+              geometry: { type: 'Polygon', coordinates: [coords] },
+              properties: {
+                id: r._id + '_upper', name: r.name, type: 'room', category: 'classroom', floorId: r.floorId,
+                color: wallColors.top || '#f6f5ee',
+                min_height: dadoH, height: h
+              }
+            });
+          } else {
+            // Corridor or default
+            const isCorridor = r.type === 'corridor';
+            const h = isCorridor ? minH + 0.01 : minH + 3.0;
+            features.push({
+              type: 'Feature',
+              geometry: { type: 'Polygon', coordinates: [coords] },
+              properties: {
+                id: r._id, name: r.name, type: 'room', category: r.type, floorId: r.floorId,
+                color: r.color || (r.shape && r.shape.fill) ? r.shape.fill : '#3b82f6',
+                min_height: minH, height: h
+              }
+            });
+          }
         }
       }
     });

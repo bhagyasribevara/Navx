@@ -21,6 +21,13 @@ const SpatialScanSessionSchema = new mongoose.Schema({
     roomName: String,
     confidence: Number
   }],
+  roomSegments: [{
+    roomName: String,
+    startTimestamp: Date,
+    endTimestamp: Date,
+    status: { type: String, enum: ['recording', 'completed'], default: 'completed' }
+  }],
+  isAvailableOnWeb: { type: Boolean, default: false },
   wallColors: {
     top: { type: String, default: '#f6f6eb' },
     bottom: { type: String, default: '#b8aa8f' }
@@ -33,6 +40,27 @@ const SpatialScanSessionSchema = new mongoose.Schema({
   }],
   coveragePercentage: { type: Number, default: 0 },
   trackingQuality: { type: String, enum: ['poor', 'fair', 'good', 'excellent'], default: 'good' },
+  scannedElements: [{
+    id: String,
+    name: String,
+    type: { type: String, enum: ['room', 'corridor'] },
+    geometry3D: {
+      dimensions: {
+        width: { type: Number, default: 3.0 },
+        length: { type: Number, default: 4.0 },
+        height: { type: Number, default: 2.8 }
+      },
+      position: { x: Number, y: Number, z: Number },
+      rotation: { x: Number, y: Number, z: Number },
+      vertices: [{ x: Number, y: Number, z: Number }],
+      faces: [[Number]],
+      color: String
+    },
+    worldMatrix: [Number],
+    status: { type: String, enum: ['unplaced', 'placed'], default: 'unplaced' }
+  }],
+  startPoint: { x: Number, y: Number, heading: Number },
+  endPoint: { x: Number, y: Number, heading: Number },
   admin: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' },
   notes: { type: String }
 }, { timestamps: true });

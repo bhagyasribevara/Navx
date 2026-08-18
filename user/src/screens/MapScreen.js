@@ -188,11 +188,11 @@ window.renderGeoJSONLayers = function(data, floorId) {
         'fill-extrusion-color': [
           'case',
           ['==', ['get', 'type'], 'stairs'], ['coalesce', ['get', 'color'], '#f97316'],
-          '#ffffff'
+          ['coalesce', ['get', 'color'], '#ffffff']
         ],
         'fill-extrusion-height': ['coalesce', ['get', 'height'], 3],
         'fill-extrusion-base': ['coalesce', ['get', 'min_height'], 0],
-        'fill-extrusion-opacity': 0.9
+        'fill-extrusion-opacity': 0.85
       }
     }, '3d-buildings');
   }

@@ -1,18 +1,42 @@
 import React, { useState } from 'react';
 import {
   StyleSheet, View, Text, TouchableOpacity, ScrollView,
-  ActivityIndicator, Alert, StatusBar, Dimensions
+  ActivityIndicator, Alert, StatusBar, Dimensions, Modal, Image, PanResponder
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import Svg, { Polyline, Circle } from 'react-native-svg';
+import Svg, { Polyline, Circle, Rect, Line, Path, Polygon } from 'react-native-svg';
 import SLAMService from '../services/SLAMService';
+import { getFloors } from '../services/adminApi';
 
 const { width: SW } = Dimensions.get('window');
 
 export default function ScanReviewScreen({ navigation, route }) {
   const { scanSummary } = route.params || {};
   const [submitting, setSubmitting] = useState(false);
+  const [startPoint, setStartPoint] = useState(null);
+  const [endPoint, setEndPoint] = useState(null);
+  const [calibrationMode, setCalibrationMode] = useState(null); // 'start' | 'end' | null
+  const [tempPoint, setTempPoint] = useState(null);
+  const [tempHeading, setTempHeading] = useState(0); // 0-359 degrees
+  const [floorMapData, setFloorMapData] = useState(null);
+
+  React.useEffect(() => {
+    if (scanSummary?.building) {
+      const bId = scanSummary.building._id || scanSummary.building.id;
+      const fId = scanSummary.floor?._id || scanSummary.floor?.id;
+      if (bId) {
+        getFloors(bId).then(floors => {
+          const matchedFloor = floors.find(f => f._id === fId || f.id === fId);
+          if (matchedFloor && matchedFloor.mapData) {
+            setFloorMapData(matchedFloor.mapData);
+          }
+        }).catch(err => console.warn("Failed to fetch floor map", err));
+      }
+    }
+  }, [scanSummary]);
+
+  const blockShape = scanSummary?.building?.shape;
 
   if (!scanSummary) {
     return (
@@ -99,19 +123,35 @@ export default function ScanReviewScreen({ navigation, route }) {
           <Circle cx={endX} cy={endY} r="6" fill="#ef4444" />
         </Svg>
         <View style={styles.legendRow}>
-          <View style={styles.legendItem}>
+          <TouchableOpacity style={styles.legendItem} onPress={() => {
+            setCalibrationMode('start');
+            setTempPoint(startPoint || null);
+            setTempHeading(startPoint?.heading || 0);
+          }}>
             <View style={[styles.legendDot, { backgroundColor: '#22c55e' }]} />
-            <Text style={styles.legendText}>Start point</Text>
-          </View>
-          <View style={styles.legendItem}>
+            <Text style={[styles.legendText, { color: '#8b5cf6', fontWeight: '700' }]}>Calibrate Start</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.legendItem} onPress={() => {
+            setCalibrationMode('end');
+            setTempPoint(endPoint || null);
+            setTempHeading(endPoint?.heading || 0);
+          }}>
             <View style={[styles.legendDot, { backgroundColor: '#ef4444' }]} />
-            <Text style={styles.legendText}>End point</Text>
-          </View>
+            <Text style={[styles.legendText, { color: '#8b5cf6', fontWeight: '700' }]}>Calibrate End</Text>
+          </TouchableOpacity>
           <View style={styles.legendItem}>
             <View style={[styles.legendDot, { backgroundColor: '#8b5cf6' }]} />
-            <Text style={styles.legendText}>Mapped Walk Path</Text>
+            <Text style={styles.legendText}>Walk Path</Text>
           </View>
         </View>
+        {(startPoint || endPoint) && (
+          <View style={{ marginTop: 10, alignItems: 'center' }}>
+            <Text style={{ fontSize: 11, color: '#64748b' }}>
+              Start: {startPoint ? `${startPoint.x.toFixed(1)}, ${startPoint.y.toFixed(1)}` : 'Pending'} | 
+              End: {endPoint ? `${endPoint.x.toFixed(1)}, ${endPoint.y.toFixed(1)}` : 'Pending'}
+            </Text>
+          </View>
+        )}
       </View>
     );
   };
@@ -128,32 +168,29 @@ export default function ScanReviewScreen({ navigation, route }) {
           onPress: async () => {
             setSubmitting(true);
             try {
+              const payloadRooms = (scanSummary.roomSegments && scanSummary.roomSegments.length > 0) 
+                ? scanSummary.roomSegments.map((seg, i) => ({
+                    roomNumber: seg.roomName,
+                    roomName: seg.roomName,
+                    category: 'room',
+                    confidence: 1.0,
+                    position: { x: (i % 2 === 0 ? -2 : 2), y: 0, z: (i % 2 === 0 ? 1.15 : -1.15) }
+                  }))
+                : [];
+
               const payload = {
                 trajectory: trajectory || [],
-                detectedRooms: [
-                  { roomNumber: '301', roomName: 'Room 301 (Hostel Room)', category: 'room', confidence: 0.98, position: { x: -12.0, y: 0, z: 1.15 } },
-                  { roomNumber: '302', roomName: 'Room 302 (Hostel Room)', category: 'room', confidence: 0.97, position: { x: -12.0, y: 0, z: -1.15 } },
-                  { roomNumber: '303', roomName: 'Room 303 (Hostel Room)', category: 'room', confidence: 0.96, position: { x: -6.0, y: 0, z: 1.15 } },
-                  { roomNumber: '304', roomName: 'Room 304 (Hostel Room)', category: 'room', confidence: 0.95, position: { x: -6.0, y: 0, z: -1.15 } },
-                  { roomNumber: '305', roomName: 'Room 305 (Hostel Room)', category: 'room', confidence: 0.96, position: { x: 0.0, y: 0, z: 1.15 } },
-                  { roomNumber: '306', roomName: 'Room 306 (Hostel Room)', category: 'room', confidence: 0.94, position: { x: 0.0, y: 0, z: -1.15 } },
-                  { roomNumber: '307', roomName: 'Room 307 (Hostel Room)', category: 'room', confidence: 0.95, position: { x: 6.0, y: 0, z: 1.15 } },
-                  { roomNumber: '308', roomName: 'Room 308 (Hostel Room)', category: 'room', confidence: 0.93, position: { x: 6.0, y: 0, z: -1.15 } },
-                  { roomNumber: 'Washroom', roomName: 'Common Washroom & Bathroom Suite', category: 'washroom', confidence: 0.99, position: { x: 12.0, y: 0, z: 1.15 } },
-                  { roomNumber: 'Water Point', roomName: 'RO Water Cooler Station', category: 'water', confidence: 0.96, position: { x: 12.0, y: 0, z: -1.15 } }
-                ],
+                roomSegments: scanSummary.roomSegments || [],
+                detectedRooms: payloadRooms,
+                scannedElements: scanSummary.scannedElements || [],
                 wallColors: { top: '#f6f5ee', bottom: '#b5a68e' },
                 floorMaterial: 'terrazzo_mosaic',
                 floorColor: '#d6cebf',
                 corridorWidth: 2.3,
                 corridorHeight: 2.8,
-                landmarks: [
-                  { type: 'exit_sign', label: 'West Fire Exit Green Sign', position: { x: -14.0, y: 2.1, z: 1.15 } },
-                  { type: 'exit_sign', label: 'East Fire Exit Green Sign', position: { x: 14.0, y: 2.1, z: 1.15 } },
-                  { type: 'water_cooler', label: 'RO Water Cooler', position: { x: 12.0, y: 0.0, z: -1.15 } },
-                  { type: 'switch', label: 'Corridor Light Switches', position: { x: -0.5, y: 1.2, z: 1.15 } },
-                  { type: 'washroom_suite', label: 'Bathrooms & Washroom Suite', position: { x: 12.0, y: 0.0, z: 1.15 } }
-                ]
+                startPoint: startPoint ? { ...startPoint } : null,
+                endPoint: endPoint ? { ...endPoint } : null,
+                landmarks: []
               };
               const result = await SLAMService.stopSession(payload);
               setSubmitting(false);
@@ -284,21 +321,26 @@ export default function ScanReviewScreen({ navigation, route }) {
           <View style={styles.detectedRoomsBox}>
             <View style={styles.subHeaderRow}>
               <MaterialCommunityIcons name="door-open" size={16} color="#8b5cf6" />
-              <Text style={styles.subHeaderText}>Rooms &amp; Facilities Captured in Scan (10)</Text>
+              <Text style={styles.subHeaderText}>
+                Rooms &amp; Facilities Captured in Scan ({(scanSummary.roomSegments && scanSummary.roomSegments.length) || 10})
+              </Text>
             </View>
             <View style={styles.roomChipsRow}>
-              {[
-                { num: '301', name: 'Room 301', type: 'Hostel Room', conf: 98, color: '#3b82f6' },
-                { num: '302', name: 'Room 302', type: 'Hostel Room', conf: 97, color: '#8b5cf6' },
-                { num: '303', name: 'Room 303', type: 'Hostel Room', conf: 96, color: '#3b82f6' },
-                { num: '304', name: 'Room 304', type: 'Hostel Room', conf: 95, color: '#8b5cf6' },
-                { num: '305', name: 'Room 305', type: 'Hostel Room', conf: 96, color: '#3b82f6' },
-                { num: '306', name: 'Room 306', type: 'Hostel Room', conf: 94, color: '#8b5cf6' },
-                { num: '307', name: 'Room 307', type: 'Hostel Room', conf: 95, color: '#3b82f6' },
-                { num: '308', name: 'Room 308', type: 'Hostel Room', conf: 93, color: '#8b5cf6' },
-                { num: 'Washroom', name: 'Washrooms', type: 'Washroom Suite', conf: 99, color: '#10b981' },
-                { num: 'Water', name: 'Water Point', type: 'RO Station', conf: 96, color: '#06b6d4' }
-              ].map((r, i) => (
+              {((scanSummary.roomSegments && scanSummary.roomSegments.length > 0)
+                ? scanSummary.roomSegments.map(seg => ({ num: seg.roomName, name: seg.roomName, type: 'Manual Tag', conf: 100, color: '#10b981' }))
+                : [
+                  { num: '301', name: 'Room 301', type: 'Hostel Room', conf: 98, color: '#3b82f6' },
+                  { num: '302', name: 'Room 302', type: 'Hostel Room', conf: 97, color: '#8b5cf6' },
+                  { num: '303', name: 'Room 303', type: 'Hostel Room', conf: 96, color: '#3b82f6' },
+                  { num: '304', name: 'Room 304', type: 'Hostel Room', conf: 95, color: '#8b5cf6' },
+                  { num: '305', name: 'Room 305', type: 'Hostel Room', conf: 96, color: '#3b82f6' },
+                  { num: '306', name: 'Room 306', type: 'Hostel Room', conf: 94, color: '#8b5cf6' },
+                  { num: '307', name: 'Room 307', type: 'Hostel Room', conf: 95, color: '#3b82f6' },
+                  { num: '308', name: 'Room 308', type: 'Hostel Room', conf: 93, color: '#8b5cf6' },
+                  { num: 'Washroom', name: 'Washrooms', type: 'Washroom Suite', conf: 99, color: '#10b981' },
+                  { num: 'Water', name: 'Water Point', type: 'RO Station', conf: 96, color: '#06b6d4' }
+                ]
+              ).map((r, i) => (
                 <View key={i} style={styles.roomChip}>
                   <View style={[styles.roomIndicator, { backgroundColor: r.color }]} />
                   <View>
@@ -409,6 +451,149 @@ export default function ScanReviewScreen({ navigation, route }) {
 
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      {/* Calibration Modal */}
+      <Modal visible={!!calibrationMode} transparent animationType="slide">
+        <View style={styles.modalBackdropCenter}>
+          <View style={styles.calibrationModalContent}>
+            <Text style={styles.modalTitle}>
+              Calibrate {calibrationMode === 'start' ? 'Start' : 'End'} Point
+            </Text>
+            <Text style={styles.modalSub}>
+              Tap on the 2D floor layout to set the physical {calibrationMode} coordinates.
+            </Text>
+            
+            <TouchableOpacity 
+              style={styles.mapArea}
+              activeOpacity={1}
+              onPress={(e) => {
+                const { locationX, locationY } = e.nativeEvent;
+                setTempPoint({ x: locationX, y: locationY });
+              }}
+            >
+              {(() => {
+                const svgW = 300;
+                const svgH = 200;
+                let pts = blockShape?.points || [];
+
+                if (pts.length >= 3) {
+                  const minX = Math.min(...pts.map(p => p.x));
+                  const maxX = Math.max(...pts.map(p => p.x));
+                  const minY = Math.min(...pts.map(p => p.y));
+                  const maxY = Math.max(...pts.map(p => p.y));
+
+                  const spanX = maxX - minX || 1;
+                  const spanY = maxY - minY || 1;
+
+                  const padX = 25;
+                  const padY = 25;
+                  const drawW = svgW - padX * 2;
+                  const drawH = svgH - padY * 2;
+
+                  const scaledPoints = pts.map(p => {
+                    const sx = padX + ((p.x - minX) / spanX) * drawW;
+                    const sy = padY + ((p.y - minY) / spanY) * drawH;
+                    return `${sx.toFixed(1)},${sy.toFixed(1)}`;
+                  }).join(' ');
+
+                  return (
+                    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+                      <Svg width="100%" height="100%" viewBox={`0 0 ${svgW} ${svgH}`}>
+                        <Rect x="0" y="0" width={svgW} height={svgH} fill="#f8fafc" stroke="#e2e8f0" strokeWidth="2" rx="12" />
+                        <Polygon points={scaledPoints} fill="#dbeafe" fillOpacity="0.7" stroke="#3b82f6" strokeWidth="3" />
+                      </Svg>
+                    </View>
+                  );
+                }
+
+                return (
+                  <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+                    <Svg width="100%" height="100%" viewBox={`0 0 ${svgW} ${svgH}`}>
+                      <Rect x="0" y="0" width={svgW} height={svgH} fill="#f8fafc" stroke="#cbd5e1" strokeWidth="2" rx="12" />
+                      <Rect x="20" y="20" width="260" height="160" fill="#e2e8f0" fillOpacity="0.6" stroke="#94a3b8" strokeWidth="3" rx="8" />
+                      <Line x1="20" y1="100" x2="280" y2="100" stroke="#94a3b8" strokeWidth="2" strokeDasharray="4 2" />
+                      <Line x1="80" y1="20" x2="80" y2="85" stroke="#cbd5e1" strokeWidth="2" />
+                      <Line x1="150" y1="20" x2="150" y2="85" stroke="#cbd5e1" strokeWidth="2" />
+                      <Line x1="220" y1="20" x2="220" y2="85" stroke="#cbd5e1" strokeWidth="2" />
+                      <Line x1="100" y1="115" x2="100" y2="180" stroke="#cbd5e1" strokeWidth="2" />
+                      <Line x1="180" y1="115" x2="180" y2="180" stroke="#cbd5e1" strokeWidth="2" />
+                    </Svg>
+                  </View>
+                );
+              })()}
+
+              {/* Render the visual pin and heading arrow */}
+              {tempPoint && (
+                <View 
+                  style={{ 
+                    position: 'absolute', 
+                    left: tempPoint.x - 20, 
+                    top: tempPoint.y - 20, 
+                    width: 40, height: 40, 
+                    justifyContent: 'center', alignItems: 'center' 
+                  }}
+                >
+                  <View style={{ transform: [{ rotate: `${tempHeading}deg` }] }}>
+                    <Ionicons name="arrow-up" size={48} color="#0ea5e9" style={{ position: 'absolute', top: -32, left: -24 }} />
+                  </View>
+                  <Ionicons 
+                    name="location" 
+                    size={28} 
+                    color={calibrationMode === 'start' ? "#22c55e" : "#ef4444"} 
+                    style={{ position: 'absolute', top: 4, left: 6 }}
+                  />
+                </View>
+              )}
+            </TouchableOpacity>
+
+            {tempPoint && (
+              <View style={styles.headingControl}>
+                <Text style={styles.headingLabel}>Vector Heading: {Math.round(tempHeading)}°</Text>
+                <View 
+                  style={styles.headingSliderBar}
+                  {...PanResponder.create({
+                    onStartShouldSetPanResponder: () => true,
+                    onPanResponderMove: (evt, gestureState) => {
+                      const newHeading = Math.max(0, Math.min(359, tempHeading + gestureState.dx));
+                      setTempHeading(newHeading);
+                    }
+                  }).panHandlers}
+                >
+                  <View style={styles.headingSliderTrack} />
+                  <View style={[styles.headingSliderThumb, { left: `${(tempHeading / 359) * 100}%` }]} />
+                </View>
+                <Text style={{ fontSize: 10, color: '#94a3b8', textAlign: 'center' }}>Drag left/right to adjust direction</Text>
+              </View>
+            )}
+
+            <View style={styles.modalRow}>
+              <TouchableOpacity style={styles.modalCancel} onPress={() => {
+                setCalibrationMode(null);
+                setTempPoint(null);
+                setTempHeading(0);
+              }}>
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.modalConfirm, { opacity: tempPoint ? 1 : 0.5 }]} 
+                disabled={!tempPoint}
+                onPress={() => {
+                  if (tempPoint) {
+                    const finalPoint = { ...tempPoint, heading: tempHeading };
+                    if (calibrationMode === 'start') setStartPoint(finalPoint);
+                    else setEndPoint(finalPoint);
+                  }
+                  setCalibrationMode(null);
+                  setTempPoint(null);
+                  setTempHeading(0);
+                }}
+              >
+                <Text style={styles.modalConfirmText}>Confirm Vector</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -510,4 +695,21 @@ const styles = StyleSheet.create({
     borderRadius: 14, borderWidth: 1.5, borderColor: '#fee2e2', backgroundColor: '#fff',
   },
   discardBtnText: { color: '#ef4444', fontSize: 14, fontWeight: '700' },
+
+  modalBackdropCenter: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center' },
+  calibrationModalContent: { backgroundColor: '#fff', borderRadius: 20, padding: 24, width: '90%' },
+  modalTitle: { fontSize: 18, fontWeight: '700', color: '#1e293b', marginBottom: 8 },
+  modalSub: { color: '#64748b', fontSize: 14, marginBottom: 16 },
+  mapArea: { height: 250, backgroundColor: '#f8fafc', borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0', marginBottom: 16, overflow: 'hidden' },
+  mapPlaceholder: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  modalRow: { flexDirection: 'row', justifyContent: 'flex-end', gap: 12 },
+  modalCancel: { paddingVertical: 10, paddingHorizontal: 16 },
+  modalCancelText: { color: '#64748b', fontWeight: '600' },
+  modalConfirm: { paddingVertical: 10, paddingHorizontal: 16, backgroundColor: '#8b5cf6', borderRadius: 8 },
+  modalConfirmText: { color: '#fff', fontWeight: '700' },
+  headingControl: { marginVertical: 12 },
+  headingLabel: { fontSize: 13, fontWeight: '600', color: '#1e293b', marginBottom: 8, textAlign: 'center' },
+  headingSliderBar: { height: 30, justifyContent: 'center', position: 'relative' },
+  headingSliderTrack: { height: 6, backgroundColor: '#e2e8f0', borderRadius: 3, width: '100%' },
+  headingSliderThumb: { position: 'absolute', width: 20, height: 20, borderRadius: 10, backgroundColor: '#0ea5e9', marginLeft: -10, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.2, shadowRadius: 2 }
 });

@@ -1,6 +1,6 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { OrbitControls, Box, Line, Sphere, Cylinder, Grid, Float, Text, Html } from '@react-three/drei';
+import { OrbitControls, Box, Line, Sphere, Cylinder, Grid, Float, Text, Html, TransformControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { 
   Layers, 
@@ -686,7 +686,7 @@ function ScannerPulse({ position }) {
   );
 }
 
-export default function DigitalTwinViewer({ twinData, scanSession, onOpenBuilder }) {
+export default function DigitalTwinViewer({ twinData, scanSession, onOpenBuilder, isBuilderMode, onUpdateDoor }) {
   const [wireframe, setWireframe] = useState(false);
   const [cameraMode, setCameraMode] = useState('first_person'); // 'first_person' | 'orbit_3d' | 'top_down' | 'focus_room'
   const [selectedRoom, setSelectedRoom] = useState(null);
@@ -728,21 +728,8 @@ export default function DigitalTwinViewer({ twinData, scanSession, onOpenBuilder
     ];
   }, [twinData, defaultColors]);
 
-  // Ensure default realistic doors (All Rooms 301-308, Washroom Suite, and RO Water Point) if array is empty or single-room
   const doors = useMemo(() => {
-    if (twinData?.doors && twinData.doors.length >= 4) return twinData.doors;
-    return [
-      { position: { x: -12.0, y: 0, z: 1.15 }, width: 1.15, height: 2.2, roomNumber: '301', category: 'Hostel Room', isOpen: true },
-      { position: { x: -12.0, y: 0, z: -1.15 }, width: 1.15, height: 2.2, roomNumber: '302', category: 'Hostel Room', isOpen: true },
-      { position: { x: -6.0, y: 0, z: 1.15 }, width: 1.15, height: 2.2, roomNumber: '303', category: 'Hostel Room', isOpen: true },
-      { position: { x: -6.0, y: 0, z: -1.15 }, width: 1.15, height: 2.2, roomNumber: '304', category: 'Hostel Room', isOpen: true },
-      { position: { x: 0.0, y: 0, z: 1.15 }, width: 1.15, height: 2.2, roomNumber: '305', category: 'Hostel Room', isOpen: true },
-      { position: { x: 0.0, y: 0, z: -1.15 }, width: 1.15, height: 2.2, roomNumber: '306', category: 'Hostel Room', isOpen: true },
-      { position: { x: 6.0, y: 0, z: 1.15 }, width: 1.15, height: 2.2, roomNumber: '307', category: 'Hostel Room', isOpen: true },
-      { position: { x: 6.0, y: 0, z: -1.15 }, width: 1.15, height: 2.2, roomNumber: '308', category: 'Hostel Room', isOpen: true },
-      { position: { x: 12.0, y: 0, z: 1.15 }, width: 1.35, height: 2.2, roomNumber: 'Washroom', type: 'washroom', category: 'Common Washroom & Bathroom Suite', isOpen: true },
-      { position: { x: 12.0, y: 0, z: -1.15 }, width: 1.15, height: 2.2, roomNumber: 'Water Point', type: 'water', category: 'RO Drinking Water Station', isOpen: true }
-    ];
+    return twinData?.doors || [];
   }, [twinData]);
 
   // Dynamic Spatial Bounds Calculation for Real-World Scalability (Any floor size)
@@ -853,16 +840,44 @@ export default function DigitalTwinViewer({ twinData, scanSession, onOpenBuilder
             />
           ))}
 
-          {/* Render Realistic Doorways, Rooms 301-308, Washrooms & Water Station */}
-          {!wireframe && doors.map((door, i) => (
-            <RealisticRoomEntrance 
-              key={`door-${i}`} 
-              door={door} 
-              index={i} 
-              onSelectRoom={handleSelectRoom}
-              isSelected={selectedRoom?.roomNumber === (door.roomNumber || `30${i + 1}`)}
-            />
-          ))}
+          {/* Render Room Entrances & Interactive Doors */}
+          {doors.map((door, i) => {
+            const isSelected = selectedRoom?.roomNumber === door.roomNumber;
+            if (isBuilderMode) {
+              return (
+                  <TransformControls
+                    key={`door-${i}`}
+                    mode="translate"
+                    showY={true}
+                    showX={true}
+                    showZ={true}
+                  translationSnap={0.5}
+                  onMouseUp={(e) => {
+                    if (e.target && e.target.object && onUpdateDoor) {
+                      const pos = e.target.object.position;
+                      onUpdateDoor(i, { x: pos.x, y: pos.y, z: pos.z });
+                    }
+                  }}
+                >
+                  <RealisticRoomEntrance 
+                    door={door} 
+                    index={i} 
+                    onSelectRoom={handleSelectRoom} 
+                    isSelected={isSelected} 
+                  />
+                </TransformControls>
+              );
+            }
+            return (
+              <RealisticRoomEntrance 
+                key={`door-${i}`} 
+                door={door} 
+                index={i} 
+                onSelectRoom={handleSelectRoom} 
+                isSelected={isSelected} 
+              />
+            );
+          })}
 
           {/* SLAM Trajectory Trail */}
           {trajectoryPoints.length > 1 && (
@@ -881,95 +896,95 @@ export default function DigitalTwinViewer({ twinData, scanSession, onOpenBuilder
 
       {/* Floating HUD View Selector (First-Person, 3D Orbit, 2D Blueprint, 3D Builder) */}
       <div 
-        className="absolute top-4 right-4 flex items-center gap-2 bg-[#0d1526]/95 backdrop-blur-md border border-indigo-500/30 p-1.5 rounded-xl shadow-2xl z-10"
+        className="absolute top-3 right-3 flex flex-wrap justify-end items-center gap-1.5 bg-[#0d1526]/95 backdrop-blur-md border border-indigo-500/30 p-1 rounded-lg shadow-2xl z-10 max-w-[65%]"
         style={{ background: 'rgba(13, 21, 38, 0.95)', borderColor: 'rgba(99, 102, 241, 0.3)' }}
       >
         <button
           onClick={() => setCameraMode('first_person')}
-          className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+          className={`px-2.5 py-1.5 rounded-md text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer ${
             cameraMode === 'first_person' 
-              ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/40 ring-1 ring-indigo-400' 
+              ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/40 ring-1 ring-indigo-400' 
               : 'text-gray-300 hover:bg-gray-800 hover:text-white'
           }`}
           title="First-Person Walkthrough Perspective (Hallway eye level)"
         >
-          <Camera size={14} />
-          <span>Walkthrough View</span>
+          <Camera size={12} />
+          <span className="hidden sm:inline">Walkthrough</span>
         </button>
 
         <button
           onClick={() => setCameraMode('orbit_3d')}
-          className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+          className={`px-2.5 py-1.5 rounded-md text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer ${
             cameraMode === 'orbit_3d' 
-              ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/40 ring-1 ring-indigo-400' 
+              ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/40 ring-1 ring-indigo-400' 
               : 'text-gray-300 hover:bg-gray-800 hover:text-white'
           }`}
           title="3D Orbit Overview"
         >
-          <Maximize2 size={14} />
-          <span>3D Orbit</span>
+          <Maximize2 size={12} />
+          <span className="hidden sm:inline">3D Orbit</span>
         </button>
 
         <button
           onClick={() => setCameraMode('top_down')}
-          className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+          className={`px-2.5 py-1.5 rounded-md text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer ${
             cameraMode === 'top_down' 
-              ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/40 ring-1 ring-indigo-400' 
+              ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/40 ring-1 ring-indigo-400' 
               : 'text-gray-300 hover:bg-gray-800 hover:text-white'
           }`}
           title="2D Top-Down Blueprint"
         >
-          <Compass size={14} />
-          <span>2D Blueprint</span>
+          <Compass size={12} />
+          <span className="hidden sm:inline">2D Map</span>
         </button>
 
-        <div className="w-[1px] h-4 bg-gray-700 mx-0.5" />
+        <div className="w-[1px] h-3 bg-gray-700 mx-0.5" />
 
         <button
           onClick={() => setWireframe(!wireframe)}
-          className={`p-2 rounded-lg text-xs font-bold flex items-center gap-1 transition cursor-pointer ${
+          className={`p-1.5 rounded-md text-[10px] font-bold flex items-center gap-1 transition cursor-pointer ${
             wireframe ? 'bg-amber-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'
           }`}
           title="Toggle Wireframe Mesh"
         >
-          <Layers size={14} />
+          <Layers size={12} />
         </button>
 
         {onOpenBuilder && (
           <button
             onClick={onOpenBuilder}
-            className="px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white shadow-md cursor-pointer transition"
+            className="px-2.5 py-1.5 rounded-md text-[10px] font-bold flex items-center gap-1 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white shadow-md cursor-pointer transition"
             title="Open Interactive 3D Floor Builder"
           >
-            <Sparkles size={14} />
-            <span>3D Builder</span>
+            <Sparkles size={12} />
+            <span className="hidden sm:inline">3D Builder</span>
           </button>
         )}
       </div>
 
       {/* Detected Palette & Scene Breakdown Badge */}
       <div 
-        className="absolute top-4 left-4 bg-[#0d1526]/95 backdrop-blur-md border border-gray-700/80 px-3.5 py-2.5 rounded-xl text-xs text-gray-300 shadow-xl flex items-center gap-3.5 z-10"
+        className="absolute top-3 left-3 bg-[#0d1526]/95 backdrop-blur-md border border-gray-700/80 px-3 py-2 rounded-lg text-xs text-gray-300 shadow-xl hidden md:flex items-center gap-3 z-10"
         style={{ background: 'rgba(13, 21, 38, 0.95)' }}
       >
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           <Palette size={14} className="text-indigo-400" />
-          <span className="font-bold text-white">Scene Palette:</span>
+          <span className="font-bold text-white text-[11px] uppercase tracking-wider">Scene Palette:</span>
         </div>
         {/* Upper Wall Swatch */}
         <div className="flex items-center gap-1.5" title="Upper Wall Paint (Off-White/Cream)">
-          <span className="w-3.5 h-3.5 rounded-full border border-gray-500 shadow-inner" style={{ backgroundColor: defaultColors.top }}></span>
-          <span className="text-[11px] text-gray-300 font-medium">Upper ({defaultColors.top})</span>
+          <span className="w-3 h-3 rounded-sm border border-gray-500 shadow-inner" style={{ backgroundColor: defaultColors.top }}></span>
+          <span className="text-[10px] text-gray-300 font-medium">Upper</span>
         </div>
         {/* Lower Dado Swatch */}
         <div className="flex items-center gap-1.5" title="Lower Dado Wainscoting (Sandstone Beige Khaki)">
-          <span className="w-3.5 h-3.5 rounded-full border border-gray-500 shadow-inner" style={{ backgroundColor: defaultColors.bottom }}></span>
-          <span className="text-[11px] text-gray-300 font-medium">Dado ({defaultColors.bottom})</span>
+          <span className="w-3 h-3 rounded-sm border border-gray-500 shadow-inner" style={{ backgroundColor: defaultColors.bottom }}></span>
+          <span className="text-[10px] text-gray-300 font-medium">Dado</span>
         </div>
         {/* Floor Swatch */}
         <div className="flex items-center gap-1.5" title="Floor Material (Terrazzo Stone)">
-          <span className="w-3.5 h-3.5 rounded-full border border-gray-500 shadow-inner" style={{ backgroundColor: floorColor }}></span>
-          <span className="text-[11px] text-gray-300 font-medium">Floor ({floorColor})</span>
+          <span className="w-3 h-3 rounded-sm border border-gray-500 shadow-inner" style={{ backgroundColor: floorColor }}></span>
+          <span className="text-[10px] text-gray-300 font-medium">Floor</span>
         </div>
       </div>
 

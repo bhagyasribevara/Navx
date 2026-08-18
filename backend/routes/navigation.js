@@ -397,11 +397,11 @@ router.post('/route-to-room', async (req, res, next) => {
     const summary = computeRouteSummary(directions);
 
     // Add final "walk to destination" step if route ends at nearby node, not the actual room
-    if (routeType === 'nearest_reachable' && destX !== null && destY !== null) {
+    if (destX !== null && destY !== null) {
       const lastNode = result.path[result.path.length - 1];
       const walkDist = haversineDistMeters(lastNode.x, lastNode.y, destX, destY);
 
-      if (walkDist > 5) {
+      if (walkDist > 1) {
         const walkSteps = Math.max(1, Math.round(walkDist / 0.72));
         const walkEta   = Math.round(walkDist / 1.2);
 
