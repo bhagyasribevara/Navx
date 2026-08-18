@@ -22,6 +22,7 @@ import TimetableAllocation from './pages/TimetableAllocation';
 import AdminReports from './pages/AdminReports';
 import AdminAiAssistant from './pages/AdminAiAssistant';
 import SpatialStudioDashboard from './pages/SpatialStudioDashboard';
+import StreetViewManager from './pages/StreetViewManager';
 import { getCampusByCode } from './api';
 
 const isCampusAdminRole = (role) => 
@@ -244,6 +245,7 @@ function App() {
           <Route path="reports" element={<AdminReports admin={admin} />} />
           <Route path="ai-assistant" element={<AdminAiAssistant admin={admin} />} />
           <Route path="spatial-studio" element={<SpatialStudioDashboard admin={admin} />} />
+          <Route path="street-view" element={<StreetViewManager admin={admin} />} />
         </Route>
       </Routes>
     </AdminPageProvider>
@@ -424,6 +426,10 @@ function Sidebar({ admin, onLogout, campusCode }) {
             <NavLink to={`${prefix}/spatial-studio`} className={({ isActive }) => `sidebar-nav-link ${isActive ? 'active' : ''}`}>
               <FiBox className="sidebar-icon" />
               {!collapsed && <span>Spatial Studio (3D)</span>}
+            </NavLink>
+            <NavLink to={`${prefix}/street-view`} className={({ isActive }) => `sidebar-nav-link ${isActive ? 'active' : ''}`}>
+              <FiMap className="sidebar-icon" />
+              {!collapsed && <span>Street View</span>}
             </NavLink>
             <NavLink to={`${prefix}/ai-assistant`} className={({ isActive }) => `sidebar-nav-link ${isActive ? 'active' : ''}`}>
               <FiCpu className="sidebar-icon" />

@@ -266,4 +266,10 @@ export const logAnalytics = (data) =>
 export const chatWithAI = (message, sessionId, campusId, context) =>
   api.post("/ai/chat", { message, sessionId, campusId, context }).then((r) => r.data);
 
+// Street View
+export const getStreetViewSessions = (params) =>
+  api.get('/streetView/sessions', { params }).then((r) => r.data);
+export const getStreetViewGraph = (floorId) =>
+  api.get(`/streetView/graph/${floorId}`).then((r) => r.data);
+
 export default api;

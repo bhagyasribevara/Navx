@@ -116,6 +116,16 @@ async function getCampusContext(campusId) {
   }
 }
 
+// ─── 0. GET /api/adminAi/chat/history ──────────────────────────────────────
+router.get('/chat/history', async (req, res) => {
+  try {
+    // Chat history is in-memory per session — return empty for now
+    res.json({ success: true, history: [] });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 // ─── 1. POST /api/adminAi/chat ─────────────────────────────────────────────
 router.post('/chat', async (req, res, next) => {
   try {

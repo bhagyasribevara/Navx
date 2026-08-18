@@ -83,9 +83,9 @@ export default function DashboardScreen({ navigation }) {
 
   const modules = [
     {
-      title: 'AR Workspace (Studio)',
+      title: 'Street View Capture',
       desc: 'Walk through the building with your camera. Our AI maps the space, detects rooms, measures width and builds the navigation graph automatically.',
-      icon: 'cube',
+      icon: 'camera',
       color: '#8b5cf6',
       route: 'SpatialStudio',
       badge: 'New',

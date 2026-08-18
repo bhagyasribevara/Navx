@@ -232,5 +232,10 @@ export const uploadImage = (file) => {
   });
 };
 
-export default api;
+// Street View
+export const getStreetViewGraph = (sessionId) => api.get(`/streetView/graph/${sessionId}`);
+export const getStreetViewSessions = (params) => api.get('/streetView/sessions', { params });
+export const publishStreetViewSession = (id) => api.patch(`/streetView/session/${id}/publish`);
+export const deleteStreetViewSession = (id) => api.delete(`/streetView/session/${id}`);
 
+export default api;

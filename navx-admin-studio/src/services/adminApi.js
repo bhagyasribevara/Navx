@@ -181,4 +181,54 @@ export const deleteSpatialSession = (sessionId) =>
 export const sendScanToWeb = (sessionId, data) =>
   api.post(`/spatialStudio/session/${sessionId}/send-to-web`, data).then(r => r.data);
 
+// ─── Street View ─────────────────────────────────────────────────────────────
+export const uploadStreetViewSession = (formData, onProgress) => {
+  return new Promise(async (resolve, reject) => {
+    try {
+      const token = await safeStorage.getItem('navx_admin_studio_token');
+      const xhr = new XMLHttpRequest();
+      
+      xhr.upload.addEventListener('progress', (event) => {
+        if (event.lengthComputable && onProgress) {
+          onProgress(event);
+        }
+      });
+      
+      xhr.addEventListener('load', () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            resolve({ data: JSON.parse(xhr.responseText) });
+          } catch (e) {
+            resolve({ data: xhr.responseText });
+          }
+        } else {
+          // Format error to match Axios structure for the catch block
+          const error = new Error('Upload failed');
+          error.response = { status: xhr.status, data: xhr.responseText };
+          reject(error);
+        }
+      });
+      
+      xhr.addEventListener('error', () => {
+        reject(new Error('Network Error'));
+      });
+      
+      xhr.addEventListener('timeout', () => {
+        reject(new Error('Upload Timeout'));
+      });
+      
+      xhr.open('POST', `${API_BASE}/streetView/upload-session`);
+      if (token) {
+        xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+      }
+      xhr.timeout = 300000; // 5 minutes
+      xhr.send(formData);
+    } catch (err) {
+      reject(err);
+    }
+  });
+};
+export const getStreetViewSessions = (params) => api.get('/streetView/sessions', { params });
+export const deleteStreetViewSession = (id) => api.delete(`/streetView/session/${id}`);
+
 export default api;
