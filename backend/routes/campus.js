@@ -430,9 +430,19 @@ router.get('/geojson/:id', async (req, res, next) => {
               type: 'Feature',
               geometry: { type: 'Polygon', coordinates: [[c1, c2, c3, c4, c1]] },
               properties: {
-                id: r._id + '_step_' + i, name: r.name, type: 'room', category: 'stairs',
-                floorId: r.floorId, color: r.color || '#f97316',
-                min_height: hMin, height: hMax + 0.05, isStairs: true
+                id: r._id + '_step_' + i,
+                stairId: r._id.toString(),
+                roomId: r._id.toString(),
+                name: r.name,
+                type: 'room',
+                category: 'stairs',
+                floorId: r.floorId,
+                startFloorId: startFloorId,
+                endFloorId: endFloorId,
+                color: r.color || '#f97316',
+                min_height: hMin,
+                height: hMax + 0.05,
+                isStairs: true
               }
             });
           }

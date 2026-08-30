@@ -1,7 +1,11 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
-import { FiX, FiSave, FiLayers, FiInfo } from 'react-icons/fi';
+import { 
+  FiX, FiSave, FiLayers, FiInfo, FiRotateCcw, FiRotateCw, 
+  FiEye, FiCompass, FiZoomIn, FiZoomOut, FiChevronUp, FiChevronDown, 
+  FiMove, FiCrosshair, FiMaximize2, FiNavigation, FiSquare
+} from 'react-icons/fi';
 import { updateNode, updatePath, createNode, createPath, deleteNode, deletePath } from '../api';
 
 const generateNodePolygon = (center, radiusDeg) => {
@@ -19,9 +23,13 @@ export default function Admin3DViewer({ blocks, floors, rooms, nodes, paths, cam
   const [elevationLevel, setElevationLevel] = useState(0);
   const [selectedBlockId, setSelectedBlockId] = useState(null);
 
-  const [drawMode, setDrawMode] = useState('select'); // 'select' | 'addNode' | 'addPath'
+  const [drawMode, setDrawMode] = useState('select'); // 'select' | 'addNode' | 'addPath' | 'orbit'
   const [pathStartNode, setPathStartNode] = useState(null);
   const [targetFloorId, setTargetFloorId] = useState(activeFloor?._id || (floors[0]?._id || ''));
+  const [cameraState, setCameraState] = useState({ pitch: 60, bearing: -17.6, zoom: 18 });
+
+  const isOrbitingRef = useRef(false);
+  const orbitStartRef = useRef({ x: 0, y: 0, bearing: 0, pitch: 0 });
 
   const drawModeRef = useRef(drawMode);
   const pathStartNodeRef = useRef(pathStartNode);
@@ -29,7 +37,18 @@ export default function Admin3DViewer({ blocks, floors, rooms, nodes, paths, cam
   const selectedBlockIdRef = useRef(selectedBlockId);
   const campusRef = useRef(campus);
 
-  useEffect(() => { drawModeRef.current = drawMode; }, [drawMode]);
+  useEffect(() => { 
+    drawModeRef.current = drawMode; 
+    if (map.current) {
+      if (drawMode === 'orbit') {
+        map.current.getCanvas().style.cursor = 'grab';
+        map.current.dragPan.disable();
+      } else {
+        map.current.getCanvas().style.cursor = '';
+        map.current.dragPan.enable();
+      }
+    }
+  }, [drawMode]);
   useEffect(() => { pathStartNodeRef.current = pathStartNode; }, [pathStartNode]);
   useEffect(() => { targetFloorIdRef.current = targetFloorId; }, [targetFloorId]);
   useEffect(() => { selectedBlockIdRef.current = selectedBlockId; }, [selectedBlockId]);
@@ -49,6 +68,55 @@ export default function Admin3DViewer({ blocks, floors, rooms, nodes, paths, cam
     return 0;
   };
 
+  const setCameraPreset = (preset) => {
+    if (!map.current) return;
+    switch (preset) {
+      case '3d':
+        map.current.easeTo({ pitch: 60, bearing: -17.6, duration: 600 });
+        break;
+      case 'top':
+        map.current.easeTo({ pitch: 0, bearing: 0, duration: 600 });
+        break;
+      case 'front':
+        map.current.easeTo({ pitch: 75, bearing: 0, duration: 600 });
+        break;
+      case 'side':
+        map.current.easeTo({ pitch: 75, bearing: 90, duration: 600 });
+        break;
+      case 'focus':
+        if (nodes && nodes.length > 0) {
+          const bounds = new mapboxgl.LngLatBounds();
+          nodes.forEach(n => bounds.extend([n.y, n.x]));
+          map.current.fitBounds(bounds, { padding: 80, maxZoom: 22, duration: 600, pitch: 60 });
+        } else if (campus?.location) {
+          map.current.easeTo({ center: [campus.location.lng, campus.location.lat], zoom: 19, pitch: 60, duration: 600 });
+        }
+        break;
+      default:
+        break;
+    }
+  };
+
+  const adjustBearing = (delta) => {
+    if (!map.current) return;
+    const current = map.current.getBearing();
+    map.current.easeTo({ bearing: current + delta, duration: 300 });
+  };
+
+  const adjustPitch = (delta) => {
+    if (!map.current) return;
+    const current = map.current.getPitch();
+    const newPitch = Math.max(0, Math.min(85, current + delta));
+    map.current.easeTo({ pitch: newPitch, duration: 300 });
+  };
+
+  const adjustZoom = (delta) => {
+    if (!map.current) return;
+    const current = map.current.getZoom();
+    const newZoom = Math.max(0, Math.min(25, current + delta));
+    map.current.easeTo({ zoom: newZoom, duration: 300 });
+  };
+
   useEffect(() => {
     if (map.current) return; // initialize map only once
     const tokenMatch = mapboxUrl.match(/access_token=([^&]+)/);
@@ -62,9 +130,20 @@ export default function Admin3DViewer({ blocks, floors, rooms, nodes, paths, cam
       style: 'mapbox://styles/mapbox/dark-v11',
       center: center,
       zoom: 18,
+      minZoom: 0,
+      maxZoom: 25, // Deep zoom level (up to 25x) for close-up stairs and node placement
       pitch: 60,
+      minPitch: 0,
+      maxPitch: 85, // Max pitch up to 85° for side floor inspection
       bearing: -17.6,
-      antialias: true
+      antialias: true,
+      dragRotate: true,
+      pitchWithRotate: true,
+      touchPitch: true,
+      touchZoomRotate: true,
+      dragPan: true,
+      keyboard: true,
+      attributionControl: false
     });
 
     // Save camera views only when altered manually by the user
@@ -78,6 +157,25 @@ export default function Admin3DViewer({ blocks, floors, rooms, nodes, paths, cam
             zoom: map.current.getZoom()
           };
         }
+      }
+    });
+
+    map.current.on('rotate', () => {
+      if (map.current) {
+        setCameraState(prev => ({
+          ...prev,
+          bearing: Math.round(map.current.getBearing() * 10) / 10,
+          pitch: Math.round(map.current.getPitch() * 10) / 10
+        }));
+      }
+    });
+
+    map.current.on('zoom', () => {
+      if (map.current) {
+        setCameraState(prev => ({
+          ...prev,
+          zoom: Math.round(map.current.getZoom() * 10) / 10
+        }));
       }
     });
 
@@ -770,9 +868,166 @@ export default function Admin3DViewer({ blocks, floors, rooms, nodes, paths, cam
     }
   };
 
+  const handleMouseDown = (e) => {
+    // If left click in 'orbit' mode OR right-click OR Alt+Left-click OR middle-click
+    const isOrbitAction = (drawModeRef.current === 'orbit' && e.button === 0) || e.button === 2 || (e.altKey && e.button === 0) || e.button === 1;
+    if (isOrbitAction && map.current) {
+      isOrbitingRef.current = true;
+      orbitStartRef.current = {
+        x: e.clientX,
+        y: e.clientY,
+        bearing: map.current.getBearing(),
+        pitch: map.current.getPitch()
+      };
+      if (map.current.dragPan) map.current.dragPan.disable();
+    }
+  };
+
+  const handleMouseMove = (e) => {
+    if (isOrbitingRef.current && map.current) {
+      const dx = e.clientX - orbitStartRef.current.x;
+      const dy = e.clientY - orbitStartRef.current.y;
+      
+      const newBearing = orbitStartRef.current.bearing + dx * 0.4;
+      const newPitch = Math.max(0, Math.min(85, orbitStartRef.current.pitch - dy * 0.35));
+      
+      map.current.setBearing(newBearing);
+      map.current.setPitch(newPitch);
+    }
+  };
+
+  const handleMouseUp = () => {
+    if (isOrbitingRef.current) {
+      isOrbitingRef.current = false;
+      if (map.current && map.current.dragPan && drawModeRef.current !== 'orbit') {
+        map.current.dragPan.enable();
+      }
+    }
+  };
+
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
-      <div ref={mapContainer} style={{ width: '100%', height: '100%' }} />
+      <div 
+        ref={mapContainer} 
+        style={{ width: '100%', height: '100%' }}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onContextMenu={(e) => e.preventDefault()}
+      />
+
+      {/* 3D Camera Controls & Viewport Gimbal */}
+      <div style={{
+        position: 'absolute',
+        top: 20,
+        right: 60,
+        zIndex: 10,
+        background: 'rgba(17,24,39,0.92)',
+        backdropFilter: 'blur(12px)',
+        padding: '10px',
+        borderRadius: '12px',
+        border: '1px solid #374151',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '8px',
+        color: 'white',
+        boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+        minWidth: '160px'
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #374151', paddingBottom: '6px' }}>
+          <span style={{ fontSize: '11px', fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Camera</span>
+          <span style={{ fontSize: '10px', color: '#60a5fa', fontWeight: 600 }}>{cameraState.pitch}° / {cameraState.bearing}°</span>
+        </div>
+
+        {/* Camera Preset Angles */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px' }}>
+          <button
+            onClick={() => setCameraPreset('3d')}
+            title="Isometric 3D Perspective"
+            style={{ background: '#374151', color: '#f3f4f6', border: 'none', borderRadius: '6px', padding: '5px 8px', fontSize: '11px', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+          >
+            🏛️ 3D Iso
+          </button>
+          <button
+            onClick={() => setCameraPreset('top')}
+            title="Top-down 2D Floor Plan"
+            style={{ background: '#374151', color: '#f3f4f6', border: 'none', borderRadius: '6px', padding: '5px 8px', fontSize: '11px', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+          >
+            📐 Top 2D
+          </button>
+          <button
+            onClick={() => setCameraPreset('front')}
+            title="Front Elevation (Look North)"
+            style={{ background: '#374151', color: '#f3f4f6', border: 'none', borderRadius: '6px', padding: '5px 8px', fontSize: '11px', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+          >
+            🏢 Front
+          </button>
+          <button
+            onClick={() => setCameraPreset('side')}
+            title="Side Elevation (Look East)"
+            style={{ background: '#374151', color: '#f3f4f6', border: 'none', borderRadius: '6px', padding: '5px 8px', fontSize: '11px', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+          >
+            🏬 Side
+          </button>
+        </div>
+
+        {/* Orbit / Rotation Buttons */}
+        <div style={{ display: 'flex', gap: '4px', borderTop: '1px solid #374151', paddingTop: '6px' }}>
+          <button
+            onClick={() => adjustBearing(-30)}
+            title="Rotate Left 30°"
+            style={{ flex: 1, background: '#1f2937', color: 'white', border: '1px solid #4b5563', borderRadius: '6px', padding: '5px', fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          >
+            <FiRotateCcw size={13} />
+          </button>
+          <button
+            onClick={() => adjustBearing(30)}
+            title="Rotate Right 30°"
+            style={{ flex: 1, background: '#1f2937', color: 'white', border: '1px solid #4b5563', borderRadius: '6px', padding: '5px', fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          >
+            <FiRotateCw size={13} />
+          </button>
+          <button
+            onClick={() => adjustPitch(15)}
+            title="Tilt Up (+15° pitch)"
+            style={{ flex: 1, background: '#1f2937', color: 'white', border: '1px solid #4b5563', borderRadius: '6px', padding: '5px', fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          >
+            <FiChevronUp size={13} />
+          </button>
+          <button
+            onClick={() => adjustPitch(-15)}
+            title="Tilt Down (-15° pitch)"
+            style={{ flex: 1, background: '#1f2937', color: 'white', border: '1px solid #4b5563', borderRadius: '6px', padding: '5px', fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          >
+            <FiChevronDown size={13} />
+          </button>
+        </div>
+
+        {/* Zoom & Fit Focus */}
+        <div style={{ display: 'flex', gap: '4px' }}>
+          <button
+            onClick={() => adjustZoom(1)}
+            title="Zoom In (Deep Zoom up to 25x)"
+            style={{ flex: 1, background: '#1f2937', color: 'white', border: '1px solid #4b5563', borderRadius: '6px', padding: '4px', fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2px' }}
+          >
+            <FiZoomIn size={12} /> In
+          </button>
+          <button
+            onClick={() => adjustZoom(-1)}
+            title="Zoom Out"
+            style={{ flex: 1, background: '#1f2937', color: 'white', border: '1px solid #4b5563', borderRadius: '6px', padding: '4px', fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2px' }}
+          >
+            <FiZoomOut size={12} /> Out
+          </button>
+          <button
+            onClick={() => setCameraPreset('focus')}
+            title="Center and Focus on Current Content"
+            style={{ flex: 1, background: '#1e3a8a', color: '#93c5fd', border: '1px solid #3b82f6', borderRadius: '6px', padding: '4px', fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2px', fontWeight: 600 }}
+          >
+            <FiCrosshair size={12} /> Focus
+          </button>
+        </div>
+      </div>
 
       {/* 3D Editor Toolbar Overlay */}
       <div style={{
@@ -781,15 +1036,16 @@ export default function Admin3DViewer({ blocks, floors, rooms, nodes, paths, cam
         left: '50%',
         transform: 'translateX(-50%)',
         zIndex: 10,
-        background: 'rgba(17,24,39,0.9)',
+        background: 'rgba(17,24,39,0.92)',
         backdropFilter: 'blur(10px)',
         padding: '10px 16px',
         borderRadius: '12px',
         border: '1px solid #374151',
         display: 'flex',
         alignItems: 'center',
-        gap: '12px',
-        color: 'white'
+        gap: '10px',
+        color: 'white',
+        boxShadow: '0 8px 24px rgba(0,0,0,0.3)'
       }}>
         <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#9ca3af' }}>3D Editor:</span>
         
@@ -821,6 +1077,17 @@ export default function Admin3DViewer({ blocks, floors, rooms, nodes, paths, cam
           }}
         >
           ⛓️ Add Path
+        </button>
+
+        <button
+          onClick={(e) => { e.preventDefault(); setDrawMode('orbit'); setPathStartNode(null); }}
+          style={{
+            background: drawMode === 'orbit' ? '#f59e0b' : 'rgba(255,255,255,0.08)',
+            color: 'white', border: 'none', borderRadius: '6px', padding: '6px 12px', cursor: 'pointer', fontWeight: 600, fontSize: '12px', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '5px'
+          }}
+          title="Orbit Mode: Left-click and drag anywhere on map to rotate & tilt 360°"
+        >
+          <FiRotateCw size={12} /> Orbit View
         </button>
         
         {drawMode === 'addNode' && (
@@ -871,6 +1138,14 @@ export default function Admin3DViewer({ blocks, floors, rooms, nodes, paths, cam
         <p style={{ margin: 0, fontSize: '12px', color: '#9ca3af', lineHeight: 1.5 }}>
           Specify navigation nodes and paths directly in 3D. Add nodes to correct floor elevations and click start/end nodes to draw vertical stairs paths.
         </p>
+
+        {/* 3D Navigation Controls Guide */}
+        <div style={{ marginTop: '10px', padding: '8px 10px', background: 'rgba(31,41,55,0.7)', borderRadius: '6px', border: '1px solid #374151', fontSize: '11px', color: '#9ca3af', display: 'flex', flexDirection: 'column', gap: '3px' }}>
+          <div style={{ fontWeight: 600, color: '#e5e7eb', marginBottom: '2px' }}>💡 3D Navigation Tips:</div>
+          <div>• <b>Right-Click + Drag</b> (or <b>Ctrl+Drag</b>): Free 360° Rotate & Tilt</div>
+          <div>• <b>Scroll Wheel</b>: Deep Zoom (up to 25x)</div>
+          <div>• <b>Orbit View</b> tool: Left-click drag to rotate</div>
+        </div>
 
         {selectedEntity ? (
           <div style={{ marginTop: '16px', background: '#1f2937', padding: '12px', borderRadius: '8px' }}>

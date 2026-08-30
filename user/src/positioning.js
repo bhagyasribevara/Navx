@@ -6,7 +6,7 @@ const PIXEL_PER_METER = 20; // Scale factor
 
 export class PositionEngine {
   constructor() {
-    this.position = { x: 0, y: 0, floor: null };
+    this.position = { x: 0, y: 0, z: 0, floor: null };
     this.heading = 0; // degrees
     this.isCalibrated = false;
     this.lastQRTime = 0;
@@ -14,6 +14,8 @@ export class PositionEngine {
     this.listeners = [];
     this.bleBeacons = [];
     this.driftCorrection = { x: 0, y: 0 };
+    // Vertical tracking state
+    this.verticalTrackingActive = false;
   }
 
   // Subscribe to position updates
@@ -98,6 +100,23 @@ export class PositionEngine {
     this.heading = heading;
   }
 
+  // Update vertical position (elevation) — called by VerticalTracker during staircase progress
+  updateVerticalPosition(z, floorId) {
+    this.position.z = z;
+    if (floorId !== undefined && floorId !== null) {
+      this.position.floor = floorId;
+    }
+    this.verticalTrackingActive = true;
+    this.notify();
+  }
+
+  // Set floor explicitly (e.g., after floor transition completes)
+  setFloor(floorId) {
+    this.position.floor = floorId;
+    this.verticalTrackingActive = false;
+    this.notify();
+  }
+
   // BLE Beacon positioning - correction & accuracy improvement
   setBLEBeacons(beacons) {
     this.bleBeacons = beacons;
@@ -177,11 +196,12 @@ export class PositionEngine {
   }
 
   reset() {
-    this.position = { x: 0, y: 0, floor: null };
+    this.position = { x: 0, y: 0, z: 0, floor: null };
     this.heading = 0;
     this.isCalibrated = false;
     this.stepCount = 0;
     this.driftCorrection = { x: 0, y: 0 };
+    this.verticalTrackingActive = false;
   }
 }
 

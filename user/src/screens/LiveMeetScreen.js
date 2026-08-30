@@ -73,9 +73,19 @@ var map = new mapboxgl.Map({
   style: 'mapbox://styles/mapbox/dark-v11',
   center: [${center[1]}, ${center[0]}],
   zoom: 18,
+  minZoom: 0,
+  maxZoom: 25, // Enable deep zooming into blocks, rooms, and stairs
   pitch: 60,
+  minPitch: 0,
+  maxPitch: 85, // Enable full 3D pitch and tilt
   bearing: -17.6,
   antialias: true,
+  dragRotate: true,
+  pitchWithRotate: true,
+  touchPitch: true,
+  touchZoomRotate: true,
+  dragPan: true,
+  keyboard: true,
   attributionControl: false
 });
 

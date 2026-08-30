@@ -374,7 +374,7 @@ export default function AIChatOverlay() {
     );
   };
 
-  const hiddenScreens = ['QRScan', 'LiveMeet', 'ARMeet'];
+  const hiddenScreens = ['QRScan', 'LiveMeet', 'ARMeet', 'AR'];
   const isHidden = hiddenScreens.includes(currentRouteName) || showMeetModal || !activeCampusId;
 
   if (isHidden) {

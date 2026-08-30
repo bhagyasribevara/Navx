@@ -434,6 +434,53 @@ router.post('/route-to-room', async (req, res, next) => {
     // Count floor transitions
     const totalFloorTransitions = directions.filter(d => d.isFloorChange).length;
 
+    // Extract staircase metadata for vertical navigation tracking
+    const staircaseMetadata = [];
+    for (let i = 0; i < result.path.length - 1; i++) {
+      const currNode = result.path[i];
+      const nextNode = result.path[i + 1];
+      const isStairsEdge = currNode.segmentType === 'stairs' || nextNode.segmentType === 'stairs' ||
+                           currNode.type === 'stairs' || nextNode.type === 'stairs';
+      const currLevel = currNode.floorLevel !== undefined ? currNode.floorLevel : (cached.floorMap[(currNode.floorId || '').toString()] ?? null);
+      const nextLevel = nextNode.floorLevel !== undefined ? nextNode.floorLevel : (cached.floorMap[(nextNode.floorId || '').toString()] ?? null);
+      const isLevelChange = currLevel !== null && nextLevel !== null && currLevel !== nextLevel;
+
+      if (isStairsEdge || isLevelChange) {
+        // Find matching stair room for step count
+        let stepCount = 20; // default
+        if (cached.rooms) {
+          const stairRoom = cached.rooms.find(r => {
+            if (r.type !== 'stairs') return false;
+            const pts = r.shape?.points || [];
+            if (pts.length === 0) return false;
+            const d = haversineDistMeters(pts[0].x, pts[0].y, currNode.x, currNode.y);
+            return d < 30;
+          });
+          if (stairRoom?.stairsConfig?.stepCount) {
+            stepCount = stairRoom.stairsConfig.stepCount;
+          }
+        }
+
+        const startElev = currNode.z || (currLevel !== null ? currLevel * 3.5 + 0.5 : 0);
+        const endElev = nextNode.z || (nextLevel !== null ? nextLevel * 3.5 + 0.5 : 0);
+
+        // Only add if not a duplicate of the previous entry (same staircase)
+        const prev = staircaseMetadata[staircaseMetadata.length - 1];
+        if (!prev || prev.endNodeId !== currNode.nodeId) {
+          staircaseMetadata.push({
+            pathIndex: i,
+            startNodeId: currNode.nodeId,
+            endNodeId: nextNode.nodeId,
+            totalSteps: stepCount,
+            startFloorId: (currNode.floorId || '').toString(),
+            endFloorId: (nextNode.floorId || '').toString(),
+            startElevation: startElev,
+            endElevation: endElev,
+          });
+        }
+      }
+    }
+
     res.json({
       ...result,
       distance: summary.totalDistance,
@@ -441,6 +488,7 @@ router.post('/route-to-room', async (req, res, next) => {
       eta: summary.totalEta,
       totalSteps: summary.totalSteps,
       totalFloorTransitions,
+      staircaseMetadata,
       roomId,
       algorithm: 'astar',
       routeType,

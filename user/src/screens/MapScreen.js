@@ -59,9 +59,19 @@ var map = new mapboxgl.Map({
   style: initialStyle,
   center: [${center[1]}, ${center[0]}], // [lng, lat]
   zoom: 17,
+  minZoom: 0,
+  maxZoom: 25, // Enable deep zooming into blocks, rooms, and stairs
   pitch: ${initialPitch},
+  minPitch: 0,
+  maxPitch: 85, // Enable full 3D pitch and tilt
   bearing: ${initialBearing},
   antialias: true,
+  dragRotate: true,
+  pitchWithRotate: true,
+  touchPitch: true,
+  touchZoomRotate: true,
+  dragPan: true,
+  keyboard: true,
   attributionControl: false
 });
 

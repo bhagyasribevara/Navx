@@ -305,6 +305,15 @@ function autoConnectGraph(graph) {
           for (const bId of components[j]) {
             const nodeA = graph[aId];
             const nodeB = graph[bId];
+            
+            // STRICT RULE: Only auto-connect components on the SAME floor.
+            // Never bridge different floors with virtual teleportation edges.
+            const isSameFloor = (nodeA.floorId && nodeB.floorId && nodeA.floorId === nodeB.floorId) ||
+              (nodeA.floorLevel != null && nodeB.floorLevel != null && nodeA.floorLevel === nodeB.floorLevel) ||
+              (!nodeA.floorId && !nodeB.floorId);
+
+            if (!isSameFloor) continue;
+
             const dist = haversineDistMeters(nodeA.x, nodeA.y, nodeB.x, nodeB.y);
             if (dist < bestDist) {
               bestDist = dist;
@@ -321,10 +330,8 @@ function autoConnectGraph(graph) {
     if (bestA && bestB) {
       const nodeA = graph[bestA];
       const nodeB = graph[bestB];
-      const levelDiff = Math.abs((nodeA.floorLevel || 0) - (nodeB.floorLevel || 0));
-      const verticalDist = levelDiff * 3.5;
-      const virtualDistance = Math.sqrt(bestDist * bestDist + verticalDist * verticalDist) || 0.1; // avoid 0
-      const virtualWeight = virtualDistance * 5.0; // Heavily penalize virtual teleportation edges
+      const virtualDistance = bestDist || 0.1; // avoid 0
+      const virtualWeight = virtualDistance * 3.0; // Slightly penalize virtual edges over real paths
 
       graph[bestA].neighbors.push({
         nodeId: bestB,
@@ -341,11 +348,12 @@ function autoConnectGraph(graph) {
         accessible: true
       });
 
-      console.log(`[Pathfinding] Connected component ${bestI} <-> ${bestJ} via virtual edge (${Math.round(bestDist)}m)`);
+      console.log(`[Pathfinding] Connected component ${bestI} <-> ${bestJ} on floor ${nodeA.floorLevel ?? nodeA.floorId} via virtual edge (${Math.round(bestDist)}m)`);
 
       components[bestI] = components[bestI].concat(components[bestJ]);
       components.splice(bestJ, 1);
     } else {
+      // If no same-floor components can be merged, stop auto-connect loop
       break;
     }
   }

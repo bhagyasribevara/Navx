@@ -232,6 +232,14 @@ function autoConnectGraph(graph) {
           const nodeA = graph[aId];
           for (const bId of samplesJ) {
             const nodeB = graph[bId];
+
+            // STRICT RULE: Only auto-connect components on the SAME floor.
+            const isSameFloor = (nodeA.floorId && nodeB.floorId && nodeA.floorId === nodeB.floorId) ||
+              (nodeA.floorLevel != null && nodeB.floorLevel != null && nodeA.floorLevel === nodeB.floorLevel) ||
+              (!nodeA.floorId && !nodeB.floorId);
+
+            if (!isSameFloor) continue;
+
             const dist = geoDistMeters(nodeA.x, nodeA.y, nodeB.x, nodeB.y);
             if (dist < bestDist) {
               bestDist = dist;
@@ -246,7 +254,7 @@ function autoConnectGraph(graph) {
     }
 
     if (bestA && bestB) {
-      const virtualWeight = bestDist * 1.5;
+      const virtualWeight = bestDist * 2.0;
       graph[bestA].neighbors.push({
         nodeId: bestB, distance: bestDist, weight: virtualWeight,
         pathType: 'connector', accessible: true,

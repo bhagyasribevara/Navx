@@ -15,6 +15,10 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { findRouteToRoom, findRouteToExit, getGeoJSONMapData, SOCKET_URL, getCachedConfigValue } from "../api";
 import { io } from "socket.io-client";
 import { PositionEngine, StepDetector } from "../positioning";
+import BarometerService from "../sensors/BarometerService";
+import SensorFusion from "../sensors/SensorFusion";
+import VerticalTracker from "../navigation/VerticalTracker";
+import StaircaseExtractor from "../navigation/StaircaseExtractor";
 import { SHADOWS, RADIUS, ROOM_COLORS } from "../theme/designSystem";
 import AnimatedPressable from "../components/AnimatedPressable";
 
@@ -103,71 +107,158 @@ function buildNavMapHTML(geoJSONData, pathPoints, initialPos, targetRoom, mapbox
   const destX = targetRoom?.shape?.points?.[0]?.x || targetRoom?.shape?.x;
   const destY = targetRoom?.shape?.points?.[0]?.y || targetRoom?.shape?.y;
 
-  // Collect all floor IDs the route passes through for multi-floor visibility
+  // Build a floor level lookup map
+  const floorLevelMap = {};
+  if (floors && floors.length > 0) {
+    floors.forEach(f => {
+      const fid = (f._id || f).toString();
+      floorLevelMap[fid] = f.level !== undefined ? f.level : 0;
+    });
+  }
+
+  // Collect all floor IDs the route passes through
   const routeFloorIds = new Set();
   
-  // First pass: extract base heights and types
-  const pathData = pathPoints ? pathPoints.map(p => {
+  // First pass: extract base heights, floorIds, and levels
+  const rawPathData = pathPoints ? pathPoints.map(p => {
     let level = p.floorLevel;
-    if (level === undefined && floors) {
-      const f = floors.find(fl => fl._id.toString() === (p.floorId?._id || p.floorId)?.toString());
-      if (f && f.level !== undefined) level = f.level;
+    const fid = p.floorId?._id?.toString() || p.floorId?.toString() || null;
+    if (level === undefined && fid && floorLevelMap[fid] !== undefined) {
+      level = floorLevelMap[fid];
     }
-    const fid = p.floorId?._id || p.floorId;
-    if (fid) routeFloorIds.add(fid.toString());
-    const baseH = (level || 0) * 3.5 + 0.5;
-    return { ...p, level, baseH };
+    if (level === undefined || level === null) level = 0;
+    if (fid) routeFloorIds.add(fid);
+    const baseH = level * 3.5 + 0.5;
+    return { ...p, floorIdStr: fid, level, baseH };
   }) : [];
 
-  // Second pass: smooth out stairs/elevator transitions
-  if (pathData.length > 0) {
-    let i = 0;
-    while (i < pathData.length) {
-      const isTransition = (n) => n && (n.type === 'stairs' || n.type === 'elevator' || n.segmentType === 'stairs' || n.segmentType === 'elevator');
-      if (isTransition(pathData[i])) {
-        let start = i;
-        let end = i;
-        while (end + 1 < pathData.length && isTransition(pathData[end + 1])) {
-          end++;
-        }
-        
-        const hStart = pathData[start].baseH;
-        const hEnd = pathData[end].baseH;
-        
-        if (hStart !== hEnd) {
-          let totalDist = 0;
-          const dists = [0];
-          for (let j = start; j < end; j++) {
-            const d = Math.hypot(pathData[j+1].x - pathData[j].x, pathData[j+1].y - pathData[j].y);
-            totalDist += d;
-            dists.push(totalDist);
-          }
-          
-          if (totalDist > 0) {
-            for (let j = start; j <= end; j++) {
-              const fraction = dists[j - start] / totalDist;
-              pathData[j].adjustedH = hStart + fraction * (hEnd - hStart);
-            }
-          } else {
-            for (let j = start; j <= end; j++) {
-              const fraction = (j - start) / (end - start);
-              pathData[j].adjustedH = hStart + fraction * (hEnd - hStart);
-            }
-          }
-        }
-        i = end + 1;
-      } else {
-        i++;
+  // Determine active floor transitions (staircase connections) in the route
+  const activeStairTransitions = []; // Array of { startFloorId, endFloorId, startLevel, endLevel }
+  if (rawPathData.length > 1) {
+    for (let i = 0; i < rawPathData.length - 1; i++) {
+      const curr = rawPathData[i];
+      const next = rawPathData[i + 1];
+      const isLevelChange = curr.level !== next.level;
+      const isFloorChange = curr.floorIdStr && next.floorIdStr && curr.floorIdStr !== next.floorIdStr;
+      const isStairsEdge = next.segmentType === 'stairs' || next.type === 'stairs' || curr.type === 'stairs' || curr.segmentType === 'stairs';
+
+      if (isLevelChange || isFloorChange || isStairsEdge) {
+        activeStairTransitions.push({
+          startFloorId: curr.floorIdStr || '',
+          endFloorId: next.floorIdStr || '',
+          startLevel: curr.level,
+          endLevel: next.level
+        });
       }
     }
   }
 
-  const pathCoordinates = pathData.map(p => {
-    const h = p.adjustedH !== undefined ? p.adjustedH : p.baseH;
-    return `[${p.y}, ${p.x}, ${h}]`;
-  }).join(',');
+  const isSingleFloorRoute = (activeStairTransitions.length === 0);
 
+  // Extract all staircase rooms from GeoJSON features for local footprint matching
+  const allStairFeatures = (geoJSONData?.features || []).filter(f => f.properties?.type === 'room' && (f.properties?.category === 'stairs' || f.properties?.isStairs));
+
+  // Second pass: smooth out stairs incline across all intermediate nodes leading up/down the flight
+  const pathData = [...rawPathData];
+  let pIdx = 0;
+  while (pIdx < pathData.length) {
+    let nextIdx = pIdx;
+    while (nextIdx + 1 < pathData.length && pathData[nextIdx + 1].level === pathData[pIdx].level) {
+      nextIdx++;
+    }
+
+    if (nextIdx + 1 < pathData.length && pathData[nextIdx + 1].level !== pathData[pIdx].level) {
+      // Transition from level A to level B
+      const transNode = pathData[nextIdx];
+      const targetNode = pathData[nextIdx + 1];
+
+      // Find matching stairs within 35 meters
+      const localStairFeats = allStairFeatures.filter(sf => {
+        const coords = sf.geometry?.coordinates?.[0] || [];
+        if (coords.length === 0) return false;
+        const c0 = coords[0]; // [lng, lat]
+        const d = haversine(transNode.x, transNode.y, c0[1], c0[0]);
+        return d < 35;
+      });
+
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      localStairFeats.forEach(sf => {
+        (sf.geometry?.coordinates?.[0] || []).forEach(c => {
+          const lat = c[1], lng = c[0];
+          if (lat < minX) minX = lat;
+          if (lat > maxX) maxX = lat;
+          if (lng < minY) minY = lng;
+          if (lng > maxY) maxY = lng;
+        });
+      });
+
+      const pad = 0.00003;
+      minX -= pad; maxX += pad; minY -= pad; maxY += pad;
+      const isNodeInStairBox = (n) => (n.x >= minX && n.x <= maxX && n.y >= minY && n.y <= maxY);
+
+      let chainStart = nextIdx;
+      while (chainStart > pIdx && isNodeInStairBox(pathData[chainStart])) {
+        chainStart--;
+      }
+      if (!isNodeInStairBox(pathData[chainStart]) && chainStart < nextIdx) {
+        chainStart++;
+      }
+
+      const chainEnd = nextIdx + 1;
+      const hStart = pathData[chainStart].baseH;
+      const hEnd = pathData[chainEnd].baseH;
+
+      let totalDist = 0;
+      const dists = [0];
+      for (let k = chainStart; k < chainEnd; k++) {
+        const d = haversine(pathData[k].x, pathData[k].y, pathData[k + 1].x, pathData[k + 1].y);
+        totalDist += d;
+        dists.push(totalDist);
+      }
+
+      if (totalDist > 0) {
+        for (let k = chainStart; k <= chainEnd; k++) {
+          const frac = dists[k - chainStart] / totalDist;
+          pathData[k].adjustedH = hStart + frac * (hEnd - hStart);
+        }
+      }
+      pIdx = chainEnd;
+    } else {
+      pIdx++;
+    }
+  }
+
+  // Generate smooth 3D route coordinates by subdividing stair inclines
+  const interpolated3DCoords = [];
+  if (pathData.length > 0) {
+    for (let i = 0; i < pathData.length; i++) {
+      const curr = pathData[i];
+      const currH = curr.adjustedH !== undefined ? curr.adjustedH : curr.baseH;
+      if (i === 0) {
+        interpolated3DCoords.push([curr.y, curr.x, currH]);
+      } else {
+        const prev = pathData[i - 1];
+        const prevH = prev.adjustedH !== undefined ? prev.adjustedH : prev.baseH;
+        if (Math.abs(prevH - currH) > 0.05) {
+          // Subdivide the stair incline into smooth steps
+          const N = 8;
+          for (let step = 1; step <= N; step++) {
+            const t = step / N;
+            const y = prev.y + t * (curr.y - prev.y);
+            const x = prev.x + t * (curr.x - prev.x);
+            const h = prevH + t * (currH - prevH);
+            interpolated3DCoords.push([y, x, h]);
+          }
+        } else {
+          interpolated3DCoords.push([curr.y, curr.x, currH]);
+        }
+      }
+    }
+  }
+
+  const pathCoordinates = interpolated3DCoords.map(p => `[${p[0]}, ${p[1]}, ${p[2]}]`).join(',');
   const routeFloorIdsJSON = JSON.stringify([...routeFloorIds]);
+  const activeStairTransitionsJSON = JSON.stringify(activeStairTransitions);
 
   const targetFloorId = targetRoom?.floorId
     ? (typeof targetRoom.floorId === 'object' ? targetRoom.floorId._id : targetRoom.floorId)
@@ -217,9 +308,19 @@ var map = new mapboxgl.Map({
   style: initialStyle,
   center: [${center[1]}, ${center[0]}], // [lng, lat]
   zoom: 19,
+  minZoom: 0,
+  maxZoom: 25, // Enable deep zooming into blocks, rooms, and stairs
   pitch: ${initialPitch},
+  minPitch: 0,
+  maxPitch: 85, // Enable full 3D pitch and tilt
   bearing: ${initialBearing},
   antialias: true,
+  dragRotate: true,
+  pitchWithRotate: true,
+  touchPitch: true,
+  touchZoomRotate: true,
+  dragPan: true,
+  keyboard: true,
   attributionControl: false
 });
 
@@ -227,6 +328,8 @@ var currentMapMode = '${mapMode || "3D"}';
 var currentGeoData = ${geoJSONData ? JSON.stringify(geoJSONData) : 'null'};
 var currentFloorId = '${targetFloorId || ""}';
 window._routeFloorIds = ${routeFloorIdsJSON || '[]'};
+window._activeStairTransitions = ${activeStairTransitionsJSON || '[]'};
+window._isSingleFloorRoute = ${isSingleFloorRoute ? 'true' : 'false'};
 
 window.setMapMode = function(mode) {
   if (!map) return;
@@ -274,7 +377,7 @@ function generate3DRouteFeatures(coords, width, thickness) {
     var ny = -ux;
     var nx = uy;
 
-    var N = 10;
+    var N = 4;
     for (var i = 0; i < N; i++) {
       var tStart = i / N;
       var tEnd = (i + 1) / N;
@@ -334,9 +437,11 @@ map.on('load', () => {
   }
 });
 
-window.updateGeoJSON = function(data, floorId, activeFloorId) {
+window.updateGeoJSON = function(data, floorId, activeFloorId, activeStairTransitions, isSingleFloorRoute) {
   currentGeoData = data;
   currentFloorId = floorId;
+  if (activeStairTransitions !== undefined) window._activeStairTransitions = activeStairTransitions;
+  if (isSingleFloorRoute !== undefined) window._isSingleFloorRoute = isSingleFloorRoute;
   window.renderGeoJSONLayers(data, floorId, activeFloorId);
 };
 
@@ -344,22 +449,59 @@ window.renderGeoJSONLayers = function(data, floorId, activeFloorId) {
   if (!map || !data || !data.features) return;
 
   var is2D = (currentMapMode === '2D');
+  var singleFloorNav = window._isSingleFloorRoute;
+  var stairTransitions = window._activeStairTransitions || [];
 
   var polyFeatures = data.features.filter(function(f) {
     if (f.properties.type === 'path' || f.properties.type === 'node') return false;
     if (f.properties.category === 'parking' || (f.properties.name && f.properties.name.toLowerCase().includes('parking'))) {
       if (f.properties.id !== '${targetRoom?._id || ''}') return false;
     }
+
     if (f.properties.type === 'room') {
-      if (f.properties.category === 'stairs') {
-        if (activeFloorId) {
-          return f.properties.floorId === activeFloorId;
-        } else {
-          return f.properties.floorId === floorId;
+      var isStairs = (f.properties.category === 'stairs' || f.properties.isStairs === true);
+
+      if (isStairs) {
+        // 1. If navigation is on a single floor (e.g. Ground to Ground), HIDE ALL STAIRCASES
+        if (singleFloorNav || stairTransitions.length === 0) {
+          return false;
         }
+
+        // 2. If multi-floor navigation, ONLY render the staircase connecting the floors in activeStairTransitions
+        var sFloorId = (f.properties.startFloorId || f.properties.floorId || '').toString();
+        var eFloorId = (f.properties.endFloorId || '').toString();
+        var fMinH = f.properties.min_height !== undefined ? f.properties.min_height : 0;
+        var fMaxH = f.properties.height !== undefined ? f.properties.height : 3.5;
+
+        var matchesTransition = stairTransitions.some(function(tr) {
+          var trStart = (tr.startFloorId || '').toString();
+          var trEnd = (tr.endFloorId || '').toString();
+          var minLevel = Math.min(tr.startLevel || 0, tr.endLevel || 0);
+          var maxLevel = Math.max(tr.startLevel || 0, tr.endLevel || 0);
+
+          // Strictly bound elevation range within this transition (e.g. Ground -> 1F is [0m, 3.5m])
+          var minAllowedH = minLevel * 3.5 - 0.2;
+          var maxAllowedH = maxLevel * 3.5 + 0.2;
+          if (fMinH > maxAllowedH || fMaxH < minAllowedH) {
+            return false;
+          }
+
+          // Direct floor ID match
+          if (trStart && trEnd && sFloorId && eFloorId) {
+            return (sFloorId === trStart && eFloorId === trEnd) || (sFloorId === trEnd && eFloorId === trStart);
+          }
+
+          // Height match if floor IDs are not fully tagged
+          return (fMinH >= minAllowedH && fMaxH <= maxAllowedH && maxLevel > minLevel);
+        });
+
+        return matchesTransition;
       } else {
+        // Regular rooms: show ONLY rooms on the active target floor (destination floor)
+        // to prevent stacking ground floor and 1st floor rooms together in the 3D block
         if (!floorId) return false;
-        if (f.properties.floorId !== floorId) return false;
+        var rFloorId = (f.properties.floorId || '').toString();
+        return (rFloorId === floorId.toString());
       }
     }
     return true;
@@ -563,13 +705,20 @@ ${destX && destY ? `
   new mapboxgl.Marker({ element: destEl }).setLngLat([${destY}, ${destX}]).addTo(map);
 ` : ''}
 
-window.updateUserPos = function(lat, lng, heading) {
+window.updateUserPos = function(lat, lng, heading, elevation) {
+  var elev = elevation || 0;
   if (!window.userMarker) {
     window.userMarker = new mapboxgl.Marker({ element: userIconEl, pitchAlignment: 'map' })
       .setLngLat([lng, lat])
       .addTo(map);
   } else {
     window.userMarker.setLngLat([lng, lat]);
+  }
+  if (currentMapMode === '3D' && elev > 0) {
+    var pixelOffset = elev * -8;
+    userIconEl.style.transform = 'translateY(' + pixelOffset + 'px)';
+  } else {
+    userIconEl.style.transform = '';
   }
   if (heading !== undefined && heading !== null) {
     window.updateUserHeading(heading);
@@ -663,6 +812,24 @@ export default function NavigationScreen({ navigation, route }) {
   const routeDataStableRef = useRef(routeData);
   const mapboxUrl = getCachedConfigValue("EXPO_PUBLIC_MAPBOX_URL", "https://api.mapbox.com/styles/v1/mapbox/streets-v11/tiles/256/{z}/{x}/{y}@2x?access_token=pk.eyJ1IjoidmVua2F0YS1rcmlzaG5hIiwiYSI6ImNtZnYycHN0bTAzY28yanFxeG4wOXVsenAifQ.w1yd6XuvWvarYj33rP1LkA");
 
+  // Vertical navigation tracking
+  const verticalTrackerRef = useRef(new VerticalTracker());
+  const sensorFusionRef = useRef(new SensorFusion());
+  const staircaseConnectorsRef = useRef([]);
+  const [verticalMovementState, setVerticalMovementState] = useState(null);
+
+  // Extract staircase connectors whenever route or map floors change
+  useEffect(() => {
+    if (routeData && routeData.path && mapData?.floors) {
+      const connectors = StaircaseExtractor.extract(
+        routeData.path,
+        mapData.floors,
+        routeData.staircaseMetadata || []
+      );
+      staircaseConnectorsRef.current = connectors;
+    }
+  }, [routeData, mapData]);
+
   const mapHtml = React.useMemo(() => {
     const geoDataToUse = geoJSONData || { type: 'FeatureCollection', features: [] };
     return buildNavMapHTML(geoDataToUse, routeData?.path, initialUserPosRef.current, targetRoom, mapboxUrl, mapData?.floors, mapMode);
@@ -677,15 +844,48 @@ export default function NavigationScreen({ navigation, route }) {
     };
     const targetFloorId = getFloorIdString(targetRoom?.floorId) || getFloorIdString(currentFloor) || getFloorIdString(route.params?.floorId) || getFloorIdString(mapData?.floors?.[0]?._id);
     const currentFloorId = getFloorIdString(currentFloor);
+
+    // Compute active stair transitions from current routeData
+    const floorLevelMap = {};
+    if (mapData?.floors && mapData.floors.length > 0) {
+      mapData.floors.forEach(f => {
+        const fid = (f._id || f).toString();
+        floorLevelMap[fid] = f.level !== undefined ? f.level : 0;
+      });
+    }
+
+    const activeStairs = [];
+    if (routeData?.path && routeData.path.length > 1) {
+      for (let i = 0; i < routeData.path.length - 1; i++) {
+        const curr = routeData.path[i];
+        const next = routeData.path[i + 1];
+        const currFid = curr.floorId?._id?.toString() || curr.floorId?.toString() || '';
+        const nextFid = next.floorId?._id?.toString() || next.floorId?.toString() || '';
+        const currLevel = curr.floorLevel !== undefined && curr.floorLevel !== null ? curr.floorLevel : (floorLevelMap[currFid] ?? 0);
+        const nextLevel = next.floorLevel !== undefined && next.floorLevel !== null ? next.floorLevel : (floorLevelMap[nextFid] ?? 0);
+        const isStairsEdge = next.segmentType === 'stairs' || next.type === 'stairs' || curr.type === 'stairs' || curr.segmentType === 'stairs';
+
+        if (currLevel !== nextLevel || (currFid && nextFid && currFid !== nextFid) || isStairsEdge) {
+          activeStairs.push({
+            startFloorId: currFid,
+            endFloorId: nextFid,
+            startLevel: currLevel,
+            endLevel: nextLevel
+          });
+        }
+      }
+    }
+    const isSingleFloor = (activeStairs.length === 0);
+
     if (geoJSONData && webViewRef.current) {
       webViewRef.current.injectJavaScript(`
         if (typeof window.updateGeoJSON === 'function') {
-          window.updateGeoJSON(${JSON.stringify(geoJSONData)}, '${targetFloorId || ''}', '${currentFloorId || ''}');
+          window.updateGeoJSON(${JSON.stringify(geoJSONData)}, '${targetFloorId || ''}', '${currentFloorId || ''}', ${JSON.stringify(activeStairs)}, ${isSingleFloor ? 'true' : 'false'});
         }
         true;
       `);
     }
-  }, [geoJSONData, currentFloor, targetRoom, mapData, route.params?.floorId]);
+  }, [geoJSONData, currentFloor, targetRoom, mapData, route.params?.floorId, routeData]);
 
   // Load GeoJSON and socket connection
   useEffect(() => {
@@ -703,13 +903,14 @@ export default function NavigationScreen({ navigation, route }) {
     }
   }, [campusId]);
 
-  // Push user location updates directly into the WebView via JS (with route-snapping)
+  // Push user location updates directly into the WebView via JS (with route-snapping and elevation)
   useEffect(() => {
     if (userPos && webViewRef.current) {
       const snappedPos = snapPositionToRoute(userPos, routeData?.path, currentStep);
+      const elev = posEngine.position.z || 0;
       webViewRef.current.injectJavaScript(`
         if (typeof window.updateUserPos === 'function') {
-          window.updateUserPos(${snappedPos.x}, ${snappedPos.y}, ${posEngine.heading});
+          window.updateUserPos(${snappedPos.x}, ${snappedPos.y}, ${posEngine.heading}, ${elev});
         }
         true;
       `);
@@ -946,8 +1147,36 @@ export default function NavigationScreen({ navigation, route }) {
     let mag;
     const accelYRef = { current: 0 };
     if (isNavigating) {
-      // Step detector for dead reckoning bridging
-      stepDetector.current = new StepDetector(() => posEngine.processStep(posEngine.heading));
+      // 1. Start barometer service if available on device
+      BarometerService.isAvailable().then(avail => {
+        if (avail) {
+          BarometerService.start(data => {
+            sensorFusionRef.current.processBarometer(data.pressure, data.relativeAltitude);
+            const trend = BarometerService.getPressureTrend();
+            sensorFusionRef.current.setPressureTrend(trend);
+          });
+        }
+      }).catch(console.warn);
+
+      // 2. Step detector for dead reckoning bridging & vertical staircase progress
+      stepDetector.current = new StepDetector(() => {
+        posEngine.processStep(posEngine.heading);
+        sensorFusionRef.current.onStep();
+        const fusion = sensorFusionRef.current.getMovementState();
+        setVerticalMovementState(fusion.state);
+
+        if (verticalTrackerRef.current.state.isActive) {
+          verticalTrackerRef.current.onStep(fusion);
+          const vertPos = verticalTrackerRef.current.getPosition();
+          if (vertPos) {
+            posEngine.updateVerticalPosition(vertPos.z, vertPos.floorId);
+            posEngine.position.x = vertPos.x;
+            posEngine.position.y = vertPos.y;
+            setUserPos({ ...posEngine.position });
+          }
+        }
+      });
+
       accel = Accelerometer.addListener(d => {
         accelYRef.current = d.y;
         stepDetector.current?.processAccelerometer(d.x, d.y, d.z);
@@ -1076,6 +1305,9 @@ export default function NavigationScreen({ navigation, route }) {
         if (accel) accel.remove();
         if (mag) mag.remove();
         if (locationWatcher) locationWatcher.remove();
+        BarometerService.stop();
+        verticalTrackerRef.current.deactivate();
+        sensorFusionRef.current.reset();
       };
     }
   }, [isNavigating, locationPerm, targetRoom]);
@@ -1149,6 +1381,37 @@ export default function NavigationScreen({ navigation, route }) {
       }
     }
   }, [userPos, isNavigating, arrived]);
+
+  // ── Staircase Vertical Navigation Activation / Deactivation
+  useEffect(() => {
+    if (!isNavigating || !routeData) return;
+    const connectors = staircaseConnectorsRef.current || [];
+    const activeConnector = connectors.find(
+      c => currentStep >= c.startNodeIndex && currentStep <= c.endNodeIndex
+    );
+
+    if (activeConnector) {
+      if (!verticalTrackerRef.current.state.isActive) {
+        console.log("[NavX] Activating VerticalTracker for staircase:", activeConnector.direction);
+        verticalTrackerRef.current.activate(activeConnector);
+        sensorFusionRef.current.setStaircaseContext(true, activeConnector.direction);
+
+        verticalTrackerRef.current.onFloorReached = (newFloorId) => {
+          console.log("[NavX] Floor reached via vertical tracking:", newFloorId);
+          if (newFloorId) {
+            setCurrentFloor(newFloorId);
+            posEngine.setFloor(newFloorId);
+          }
+        };
+      }
+    } else {
+      if (verticalTrackerRef.current.state.isActive) {
+        console.log("[NavX] Deactivating VerticalTracker - exited staircase");
+        verticalTrackerRef.current.deactivate();
+        sensorFusionRef.current.setStaircaseContext(false);
+      }
+    }
+  }, [currentStep, isNavigating, routeData]);
 
   useEffect(() => {
     if (offRoute && isNavigating && userPos) {

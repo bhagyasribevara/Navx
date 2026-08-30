@@ -16,8 +16,14 @@ import * as Location from "expo-location";
 import { PositionEngine, StepDetector } from "../positioning";
 import { ThemeContext } from "../context/ThemeContext";
 import ARRobotGuide from "../components/ARRobotGuide";
+import FloatingMiniMap from "../components/FloatingMiniMap";
 import { SHADOWS, RADIUS } from "../theme/designSystem";
 import { getCachedConfigValue } from "../api";
+
+// Memoized AR camera feed to prevent unnecessary camera layer re-renders
+const ARCameraFeed = React.memo(() => (
+  <CameraView style={StyleSheet.absoluteFill} facing="back" />
+));
 
 const { width: SW, height: SH } = Dimensions.get("window");
 
@@ -107,221 +113,7 @@ function getTurnIcon(instruction = "") {
   return "↑";
 }
 
-// ─── Mini-Map HTML (Leaflet + Mapbox, same pattern as NavigationScreen) ───────
-function buildMiniMapHTML(pathPoints, userPos, targetRoom, geoJSONData, mapboxUrl) {
-  const center = userPos
-    ? [userPos.x, userPos.y]
-    : (pathPoints?.length ? [pathPoints[0].x, pathPoints[0].y] : [18.4665, 83.6629]);
 
-  const pathCoordinates = pathPoints
-    ? pathPoints.map(p => `[${p.y}, ${p.x}]`).join(",")
-    : "";
-
-  const destX = targetRoom?.shape?.points?.[0]?.x || targetRoom?.shape?.x;
-  const destY = targetRoom?.shape?.points?.[0]?.y || targetRoom?.shape?.y;
-
-  return `<!DOCTYPE html>
-<html><head>
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<link href="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css" rel="stylesheet">
-<script src="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js"></script>
-<style>
-  html,body{margin:0;padding:0;background:#0a0e17;overflow:hidden;}
-  #map{width:100%;height:100vh;background:#0a0e17;}
-  .mapboxgl-ctrl-logo { display: none !important; }
-  @keyframes miniPulseGlow {
-    0% { transform: scale(0.85); opacity: 0.7; }
-    50% { transform: scale(1.3); opacity: 0.2; }
-    100% { transform: scale(0.85); opacity: 0.7; }
-  }
-  .room-label { background: transparent; border: none; box-shadow: none; color: #1e293b; font-weight: bold; font-size: 10px; text-shadow: 0 1px 2px rgba(255,255,255,0.8); }
-  .target-room-label { background: transparent; border: none; box-shadow: none; color: #ffffff; font-weight: bold; font-size: 11px; text-shadow: 0 1px 2px rgba(0,0,0,0.8); }
-  .user-marker {
-    position: relative; width: 50px; height: 50px; display: flex; align-items: center; justify-content: center;
-  }
-  .pulse {
-    position: absolute; width: 100%; height: 100%; background: radial-gradient(circle, rgba(139, 92, 246, 0.4) 0%, rgba(139, 92, 246, 0) 60%); border-radius: 50%; animation: miniPulseGlow 2.5s infinite;
-  }
-  .puck {
-    position: relative; width: 24px; height: 24px; background: linear-gradient(135deg, #A855F7, #6D28D9); border-radius: 50%; box-shadow: 0 4px 12px rgba(109, 40, 217, 0.6); display: flex; align-items: center; justify-content: center; border: 2px solid rgba(255,255,255,0.5); transition: transform 0.3s ease-out;
-  }
-  .dest-marker {
-    width: 14px; height: 14px; background-color: #22c55e; border: 2px solid white; border-radius: 50%; box-shadow: 0 2px 4px rgba(0,0,0,0.4);
-  }
-</style>
-</head><body><div id="map"></div>
-<script>
-const tokenMatch = '${mapboxUrl}'.match(/access_token=([^&]+)/);
-mapboxgl.accessToken = tokenMatch ? tokenMatch[1] : 'YOUR_TOKEN_HERE';
-
-var map = new mapboxgl.Map({
-  container: 'map',
-  style: 'mapbox://styles/mapbox/dark-v11',
-  center: [${center[1]}, ${center[0]}],
-  zoom: 19,
-  pitch: 50,
-  bearing: 0,
-  antialias: true,
-  attributionControl: false
-});
-
-map.on('load', () => {
-  map.addLayer({
-    'id': '3d-buildings',
-    'source': 'composite',
-    'source-layer': 'building',
-    'filter': ['==', 'extrude', 'true'],
-    'type': 'fill-extrusion',
-    'minzoom': 15,
-    'paint': {
-      'fill-extrusion-color': '#1f2937',
-      'fill-extrusion-height': ['get', 'height'],
-      'fill-extrusion-base': ['get', 'min_height'],
-      'fill-extrusion-opacity': 0.6
-    }
-  });
-
-  ${geoJSONData ? `window.updateGeoJSON(${JSON.stringify(geoJSONData)}, '${targetRoom?.floorId || ''}');` : ''}
-
-  ${pathCoordinates ? `
-    map.addSource('route', {
-      'type': 'geojson',
-      'data': {
-        'type': 'Feature',
-        'properties': {},
-        'geometry': {
-          'type': 'LineString',
-          'coordinates': [${pathCoordinates}]
-        }
-      }
-    });
-    map.addLayer({
-      'id': 'route-bg',
-      'type': 'line',
-      'source': 'route',
-      'layout': { 'line-join': 'round', 'line-cap': 'round' },
-      'paint': { 'line-color': '#818cf8', 'line-width': 10, 'line-opacity': 0.25 }
-    });
-    map.addLayer({
-      'id': 'route-line',
-      'type': 'line',
-      'source': 'route',
-      'layout': { 'line-join': 'round', 'line-cap': 'round' },
-      'paint': { 'line-color': '#6366f1', 'line-width': 4 }
-    });
-  ` : ''}
-});
-
-window.updateGeoJSON = function(data, floorId) {
-  if (!map.isStyleLoaded()) return;
-
-  const features = data.features.filter(f => {
-    if (f.properties.type === 'path' || f.properties.type === 'node') return false;
-    if (f.properties.category === 'parking' || (f.properties.name && f.properties.name.toLowerCase().includes('parking'))) {
-      if (f.properties.id !== '${targetRoom?._id || ''}') return false;
-    }
-    if (f.properties.type === 'room' && f.properties.floorId) {
-      if (floorId && f.properties.floorId !== floorId) return false;
-    }
-    return true;
-  });
-  data.features = features;
-
-  if (map.getSource('campus-data')) {
-    map.getSource('campus-data').setData(data);
-  } else {
-    map.addSource('campus-data', {
-      type: 'geojson',
-      data: data
-    });
-
-    map.addLayer({
-      'id': 'campus-polygons',
-      'type': 'fill-extrusion',
-      'source': 'campus-data',
-      'paint': {
-        'fill-extrusion-color': [
-          'case',
-          ['==', ['get', 'id'], '${targetRoom?._id || ''}'], '#3b82f6',
-          ['coalesce', ['get', 'color'], '#64748b']
-        ],
-        'fill-extrusion-height': [
-          'case',
-          ['==', ['get', 'type'], 'block'], 15,
-          ['==', ['get', 'type'], 'room'], 3,
-          2
-        ],
-        'fill-extrusion-base': 0,
-        'fill-extrusion-opacity': [
-          'case',
-          ['==', ['get', 'id'], '${targetRoom?._id || ''}'], 0.8,
-          0.4
-        ]
-      }
-    });
-
-    map.addLayer({
-      'id': 'campus-labels',
-      'type': 'symbol',
-      'source': 'campus-data',
-      'filter': ['!=', ['get', 'type'], 'room'],
-      'layout': {
-        'text-field': ['get', 'name'],
-        'text-size': 10,
-        'text-anchor': 'top',
-        'text-offset': [0, 1]
-      },
-      'paint': {
-        'text-color': '#ffffff',
-        'text-halo-color': 'rgba(10, 14, 23, 0.8)',
-        'text-halo-width': 2
-      }
-    });
-  }
-};
-
-const userIconEl = document.createElement('div');
-userIconEl.className = 'user-marker';
-userIconEl.innerHTML = '<div class="pulse"></div><div id="mini-user-arrow" class="puck"><svg width="12" height="12" viewBox="0 0 24 24" fill="white"><path d="M12 2L4 20l8-4 8 4z"/></svg></div>';
-
-window.userMarker = null;
-
-${userPos ? `
-  window.userMarker = new mapboxgl.Marker({ element: userIconEl, pitchAlignment: 'map' })
-    .setLngLat([${userPos.y}, ${userPos.x}])
-    .addTo(map);
-` : ''}
-
-${destX && destY ? `
-  const destEl = document.createElement('div');
-  destEl.className = 'dest-marker';
-  new mapboxgl.Marker({ element: destEl }).setLngLat([${destY}, ${destX}]).addTo(map);
-` : ''}
-
-window.updateUserPos = function(lat, lng, heading) {
-  if (!window.userMarker) {
-    window.userMarker = new mapboxgl.Marker({ element: userIconEl, pitchAlignment: 'map' })
-      .setLngLat([lng, lat])
-      .addTo(map);
-  } else {
-    window.userMarker.setLngLat([lng, lat]);
-  }
-  if (heading !== undefined && heading !== null) {
-    window.updateUserHeading(heading);
-  }
-  map.flyTo({ center: [lng, lat], animate: false });
-};
-
-window.updateUserHeading = function(heading) {
-  if (heading !== undefined && heading !== null) {
-    const arrow = document.getElementById('mini-user-arrow');
-    if (arrow) {
-      arrow.style.transform = 'rotate(' + heading + 'deg)';
-    }
-  }
-};
-</script></body></html>`;
-}
 
 // ─── AR Path Canvas HTML — Floor-Anchored Chevron System ────────────────────────
 // Renders wide, glowing chevron arrows projected onto the floor plane.
@@ -676,19 +468,13 @@ export default function ARScreen({ navigation, route }) {
   const [isNearTurn, setIsNearTurn] = useState(false);
   const [distToTurn, setDistToTurn] = useState(999);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
-  const [showMiniMap, setShowMiniMap] = useState(false);
   const [pitch, setPitch] = useState(25);
   const [roll, setRoll] = useState(0);
-
-  // Tilt detection for auto mini-map (0=upright/AR, 1=partial, 2=horizontal/map)
-  const [tiltLevel, setTiltLevel] = useState(0);
 
   const arrivedAnim = useRef(new Animated.Value(0)).current;
   const arrivedScale = useRef(new Animated.Value(0.5)).current;
   const dirCardAnim = useRef(new Animated.Value(0)).current;
-  const miniMapHeight = useRef(new Animated.Value(0)).current;
 
-  const miniMapRef = useRef(null);
   const arPathRef = useRef(null);
   const accelSub = useRef(null);
   const gyroSub = useRef(null);
@@ -778,14 +564,6 @@ export default function ARScreen({ navigation, route }) {
 
       const rollRad = Math.atan2(x, Math.abs(y) + 0.001);
       accelRollRef.current = rollRad * (180 / Math.PI);
-
-      // Tilt level for auto mini-map
-      const absY = Math.abs(y);
-      let newTilt;
-      if      (absY > 0.72) newTilt = 0;   
-      else if (absY > 0.38) newTilt = 1;   
-      else                  newTilt = 2;   
-      setTiltLevel(prev => prev === newTilt ? prev : newTilt);
     });
 
     Gyroscope.setUpdateInterval(50);
@@ -855,19 +633,7 @@ export default function ARScreen({ navigation, route }) {
     };
   }, []);
 
-  // ── Tilt-based auto mini-map + manual toggle
-  useEffect(() => {
-    // Auto-show based on tilt: upright=0, partial=18%, full=28%
-    const autoHeight = tiltLevel === 0 ? 0 : tiltLevel === 1 ? SH * 0.18 : SH * 0.28;
-    // Manual toggle overrides: if user explicitly toggled, respect that
-    const targetH = showMiniMap ? Math.max(SH * 0.25, autoHeight) : autoHeight;
-    Animated.spring(miniMapHeight, {
-      toValue: targetH,
-      friction: 10,
-      tension: 70,
-      useNativeDriver: false,
-    }).start();
-  }, [tiltLevel, showMiniMap]);
+
 
   // ── Compute AR direction shape and true bearing diff
   useEffect(() => {
@@ -935,33 +701,7 @@ export default function ARScreen({ navigation, route }) {
     }
   }, [userPos]);
 
-  // ── Sync user position & heading to mini-map WebView (with route-snapping)
-  useEffect(() => {
-    if (!userPos || !miniMapRef.current) return;
-    // Update mini-map whenever it's visible (tilt-based or manual toggle)
-    if (tiltLevel > 0 || showMiniMap) {
-      const snappedPos = snapPositionToRoute(userPos, routeData?.path, currentStep);
-      miniMapRef.current.injectJavaScript(`
-        if (typeof window.updateUserPos === 'function') {
-          window.updateUserPos(${snappedPos.x}, ${snappedPos.y}, ${heading});
-        }
-        true;
-      `);
-    }
-  }, [userPos, heading, tiltLevel, showMiniMap, routeData, currentStep]);
 
-  // ── Sync GeoJSON map layer to mini-map WebView
-  useEffect(() => {
-    if (geoJSONData && miniMapRef.current) {
-      const activeFloorId = targetRoom?.floorId || userPos?.floor;
-      miniMapRef.current.injectJavaScript(`
-        if (typeof window.updateGeoJSON === 'function') {
-          window.updateGeoJSON(${JSON.stringify(geoJSONData)}, '${activeFloorId || ''}');
-        }
-        true;
-      `);
-    }
-  }, [geoJSONData, userPos?.floor, targetRoom]);
 
   // ── Update AR path canvas
   useEffect(() => {
@@ -973,12 +713,6 @@ export default function ARScreen({ navigation, route }) {
       true;
     `);
   }, [arDirType, isNearTurn, pitch, bearingDiff, roll]);
-
-  const mapboxUrl = getCachedConfigValue("EXPO_PUBLIC_MAPBOX_URL", "https://api.mapbox.com/styles/v1/mapbox/streets-v11/tiles/256/{z}/{x}/{y}@2x?access_token=pk.eyJ1IjoidmVua2F0YS1rcmlzaG5hIiwiYSI6ImNtZnYycHN0bTAzY28yanFxeG4wOXVsenAifQ.w1yd6XuvWvarYj33rP1LkA");
-  const miniMapHtml = React.useMemo(() =>
-    buildMiniMapHTML(routeData?.path, initialUserPos, targetRoom, geoJSONData, mapboxUrl),
-    [routeData, initialUserPos, targetRoom, geoJSONData, mapboxUrl]
-  );
 
   const arPathHtml = React.useMemo(() =>
     buildARPathHTML(),
@@ -1025,8 +759,8 @@ export default function ARScreen({ navigation, route }) {
     <View style={styles.root}>
       <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
 
-      {/* ── CAMERA BACKGROUND ── */}
-      <CameraView style={StyleSheet.absoluteFill} facing="back" />
+      {/* ── CAMERA BACKGROUND (Memoized to prevent unnecessary re-renders) ── */}
+      <ARCameraFeed />
 
       {/* ── AR PATH CANVAS OVERLAY ── */}
       <View
@@ -1100,23 +834,7 @@ export default function ARScreen({ navigation, route }) {
             color={voiceEnabled ? "#4ade80" : "#64748b"}
           />
         </TouchableOpacity>
-
-        {/* Mini-map toggle */}
-        <TouchableOpacity
-          style={[styles.fabBtn, (showMiniMap || tiltLevel > 0) && styles.fabBtnActive]}
-          onPress={() => setShowMiniMap(v => !v)}
-          activeOpacity={0.8}
-        >
-          <Ionicons name="map" size={20} color={(showMiniMap || tiltLevel > 0) ? "#818cf8" : "#94a3b8"} />
-        </TouchableOpacity>
       </View>
-
-      {/* ── TILT HINT ── */}
-      {!arrived && tiltLevel === 0 && !showMiniMap && (
-        <View style={styles.tiltHint}>
-          <Text style={styles.tiltHintText}>Tilt phone ↓ for mini-map</Text>
-        </View>
-      )}
 
       {/* ── NEAR-TURN ALERT ── */}
       {isNearTurn && !arrived && (
@@ -1128,11 +846,26 @@ export default function ARScreen({ navigation, route }) {
         </View>
       )}
 
-      {/* ── ROBOT GUIDE ── */}
+      {/* ── ROBOT GUIDE (Fixed at Bottom-Left with preserved layout & animations) ── */}
       {!arrived && (
         <ARRobotGuide
           dirType={arDirType}
           instructionText={currentDir?.instruction || "Follow the highlighted path"}
+        />
+      )}
+
+      {/* ── FLOATING CIRCULAR MINI-MAP (Bottom-Right, anchored above bottom navigation bar) ── */}
+      {!arrived && (
+        <FloatingMiniMap
+          routeData={routeData}
+          targetRoom={targetRoom}
+          geoJSONData={geoJSONData}
+          initialPos={initialUserPos}
+          initialHeading={initialHeading}
+          posEngine={posEngine}
+          bottomOffset={(insets.bottom > 0 ? insets.bottom + 8 : 18) + 76}
+          rightOffset={16}
+          size={136}
         />
       )}
 
@@ -1174,43 +907,6 @@ export default function ARScreen({ navigation, route }) {
           </View>
         </Animated.View>
       )}
-
-      {/* ── MINI-MAP OVERLAY (toggle-controlled) ── */}
-      <Animated.View style={[styles.miniMapContainer, { height: miniMapHeight }]}>
-        <View style={styles.miniMapHandle}>
-          <View style={styles.miniMapHandleBar} />
-          <Text style={styles.miniMapLabel}>
-            <Ionicons name="map" size={11} color="#818cf8" /> Live Route Map
-          </Text>
-        </View>
-        <View style={{ flex: 1 }}>
-          <WebView
-            ref={miniMapRef}
-            source={{ html: miniMapHtml }}
-            style={{ flex: 1, backgroundColor: "#0a0e17" }}
-            scrollEnabled={false}
-            bounces={false}
-            javaScriptEnabled={true}
-            domStorageEnabled={true}
-            originWhitelist={["*"]}
-            showsHorizontalScrollIndicator={false}
-            showsVerticalScrollIndicator={false}
-            mixedContentMode="always"
-            allowsInlineMediaPlayback={true}
-            startInLoadingState={false}
-            onLoadEnd={() => {
-              if (userPos && miniMapRef.current) {
-                miniMapRef.current.injectJavaScript(`
-                  if (typeof window.updateUserPos === 'function') {
-                    window.updateUserPos(${userPos.x}, ${userPos.y}, ${heading});
-                  }
-                  true;
-                `);
-              }
-            }}
-          />
-        </View>
-      </Animated.View>
     </View>
   );
 }
@@ -1375,22 +1071,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
 
-  // ── TILT HINT ──
-  tiltHint: {
-    position: "absolute",
-    bottom: Platform.OS === "ios" ? 90 : 76,
-    alignSelf: "center",
-    backgroundColor: "rgba(15, 23, 42, 0.6)",
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  tiltHintText: {
-    color: "#64748b",
-    fontSize: 11,
-    fontWeight: "500",
-  },
-
   // ── ARRIVED OVERLAY ──
   arrivedOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -1422,31 +1102,4 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.md,
   },
   arrivedBtnText: { color: "#fff", fontWeight: "800", fontSize: 15 },
-
-  // ── MINI-MAP ──
-  miniMapContainer: {
-    position: "absolute",
-    bottom: 0, left: 0, right: 0,
-    backgroundColor: "#0a0e17",
-    borderTopLeftRadius: RADIUS.xl,
-    borderTopRightRadius: RADIUS.xl,
-    overflow: "hidden",
-    borderTopWidth: 1,
-    borderTopColor: "rgba(99,102,241,0.35)",
-    ...SHADOWS.lg,
-    zIndex: 50,
-  },
-  miniMapHandle: {
-    paddingTop: 8, paddingBottom: 4,
-    alignItems: "center",
-    backgroundColor: "rgba(7,11,20,0.95)",
-  },
-  miniMapHandleBar: {
-    width: 36, height: 4, borderRadius: 2,
-    backgroundColor: "#1e2d40", marginBottom: 4,
-  },
-  miniMapLabel: {
-    fontSize: 11, color: "#818cf8", fontWeight: "700",
-    letterSpacing: 0.5,
-  },
 });
