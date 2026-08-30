@@ -78,21 +78,17 @@ export default function QRScanScreen({ navigation }) {
         let userLat = null, userLng = null;
         try {
           const { status } = await Location.requestForegroundPermissionsAsync();
-          if (status !== "granted") {
-            setError("Location permission is required to verify campus access.");
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-            return;
+          if (status === "granted") {
+            const loc = await Location.getCurrentPositionAsync({
+              accuracy: Location.Accuracy.High,
+              timeout: 10000,
+            });
+            userLat = loc.coords.latitude;
+            userLng = loc.coords.longitude;
           }
-          const loc = await Location.getCurrentPositionAsync({
-            accuracy: Location.Accuracy.High,
-            timeout: 10000,
-          });
-          userLat = loc.coords.latitude;
-          userLng = loc.coords.longitude;
         } catch (locErr) {
-          setError("Unable to determine your location. Please enable GPS.");
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-          return;
+          console.warn("Location error:", locErr);
+          // Proceed with null location (backend handles geofence bypassed campuses)
         }
 
         const verifyResult = await verifyCampusGeofence(campusId, userLat, userLng);
@@ -232,14 +228,14 @@ export default function QRScanScreen({ navigation }) {
           {/* Status Capsule Badge */}
           <View style={s.statusPill}>
             <Ionicons 
-              name={scanned ? (error ? "alert-circle" : "checkmark-circle") : "scan-circle"} 
+              name={scanned ? ((error || geofenceDenied) ? "alert-circle" : "checkmark-circle") : "scan-circle"} 
               size={18} 
-              color={scanned ? (error ? "#EF4444" : "#22C55E") : "#8B5CF6"} 
+              color={scanned ? ((error || geofenceDenied) ? "#EF4444" : "#22C55E") : "#8B5CF6"} 
               style={{ marginRight: 6 }} 
             />
             <Text style={s.statusPillText}>
               {scanned 
-                ? (error ? "QR Not Recognized" : "Saved to MongoDB Atlas — ready to use")
+                ? (error ? error : (geofenceDenied ? "Geofence Access Denied" : "Saved to MongoDB Atlas — ready to use"))
                 : "Point camera at a NavX Campus QR"}
             </Text>
           </View>
@@ -256,14 +252,25 @@ export default function QRScanScreen({ navigation }) {
                 <Ionicons name="business" size={18} color="#8B5CF6" />
               </View>
               <Text style={s.campusCardTitle}>
-                Campus Detected <Ionicons name="checkmark-circle" size={16} color="#22C55E" />
+                {isCampusQR ? "Campus Detected" : "Location QR Detected"} <Ionicons name="checkmark-circle" size={16} color="#22C55E" />
               </Text>
               <TouchableOpacity 
                 style={s.viewDetailsBtn} 
-                onPress={() => navigation.navigate("MainTabs", { screen: "Home", params: { campusId: result._id } })}
+                onPress={() => {
+                  const targetCampusId = isCampusQR ? result._id : (result.blockId?.campusId || result.campusId);
+                  navigation.navigate("MainTabs", { 
+                    screen: "Home", 
+                    params: { 
+                      campusId: targetCampusId,
+                      scannedNode: !isCampusQR ? result.nearestNodeId : null
+                    } 
+                  });
+                }}
                 activeOpacity={0.8}
               >
-                <Text style={s.viewDetailsText}>View Details ›</Text>
+                <Text style={s.viewDetailsText}>
+                  {isCampusQR ? "View Details ›" : "Open Map ›"}
+                </Text>
               </TouchableOpacity>
             </View>
 
@@ -277,29 +284,102 @@ export default function QRScanScreen({ navigation }) {
               />
 
               <View style={{ flex: 1 }}>
-                <Text style={s.campusNameText}>{result.name || result.campusName || "GMRIT"}</Text>
+                <Text style={s.campusNameText}>
+                  {isCampusQR ? (result.name || result.campusName || "Campus") : (result.label || "Location Point")}
+                </Text>
                 <Text style={s.campusDescText} numberOfLines={1}>
-                  {result.description || result.address || "GMR Institute of Technology"}
+                  {isCampusQR 
+                    ? (result.description || result.address || "Campus Details") 
+                    : `Code: ${result.code || "Unknown"}`}
                 </Text>
                 
                 <View style={s.metaItemRow}>
                   <Ionicons name="location-outline" size={13} color="#94A3B8" />
-                  <Text style={s.metaItemText}>{result.address || "Rajam, Andhra Pradesh"}</Text>
+                  <Text style={s.metaItemText}>
+                    {isCampusQR 
+                      ? (result.address || "Location Details") 
+                      : (result.blockId?.name ? `${result.blockId.name} • ${result.floorId?.name || ''}` : "Location Details")}
+                  </Text>
                 </View>
 
                 <View style={s.metaStatsRow}>
                   <View style={s.metaStatItem}>
-                    <Ionicons name="layers-outline" size={13} color="#94A3B8" />
-                    <Text style={s.metaStatText}>Floors: {result.floors || 6}</Text>
+                    <Ionicons name={isCampusQR ? "layers-outline" : "qr-code-outline"} size={13} color="#94A3B8" />
+                    <Text style={s.metaStatText}>
+                      {isCampusQR ? `Floors: ${result.floors || '-'}` : "Ready to navigate"}
+                    </Text>
                   </View>
-                  <View style={s.metaStatItem}>
-                    <Ionicons name="grid-outline" size={13} color="#94A3B8" />
-                    <Text style={s.metaStatText}>Rooms: {result.rooms || 142}</Text>
-                  </View>
+                  {isCampusQR && (
+                    <View style={s.metaStatItem}>
+                      <Ionicons name="grid-outline" size={13} color="#94A3B8" />
+                      <Text style={s.metaStatText}>Rooms: {result.rooms || '-'}</Text>
+                    </View>
+                  )}
                 </View>
               </View>
             </View>
 
+          </Animated.View>
+        )}
+
+        {/* Geofence Denied Card */}
+        {geofenceDenied && (
+          <Animated.View style={[s.campusCard, { opacity: successAnim, borderColor: 'rgba(239, 68, 68, 0.3)' }]}>
+            <View style={s.campusCardHeader}>
+              <View style={[s.campusIconWrap, { backgroundColor: 'rgba(239, 68, 68, 0.15)' }]}>
+                <Ionicons name="lock-closed" size={18} color="#EF4444" />
+              </View>
+              <Text style={s.campusCardTitle}>
+                Access Denied <Ionicons name="close-circle" size={16} color="#EF4444" />
+              </Text>
+              <TouchableOpacity 
+                style={s.viewDetailsBtn} 
+                onPress={resetScan}
+                activeOpacity={0.8}
+              >
+                <Text style={[s.viewDetailsText, { color: '#EF4444' }]}>Try Again ›</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={[s.campusInfoRow, { backgroundColor: 'rgba(239, 68, 68, 0.05)' }]}>
+              <View style={{ flex: 1, padding: 4 }}>
+                <Text style={s.campusNameText}>{geofenceDenied.campusName || "Campus"}</Text>
+                <Text style={[s.campusDescText, { color: '#FCA5A5', marginTop: 8, fontSize: 13, lineHeight: 18 }]} numberOfLines={3}>
+                  {geofenceDenied.message}
+                </Text>
+                
+                <View style={[s.metaItemRow, { marginTop: 12 }]}>
+                  <Ionicons name="navigate-outline" size={14} color="#FCA5A5" />
+                  <Text style={[s.metaItemText, { color: '#FCA5A5' }]}>
+                    Distance: {geofenceDenied.distance}m / Allowed: {geofenceDenied.radius}m
+                  </Text>
+                </View>
+              </View>
+            </View>
+          </Animated.View>
+        )}
+
+        {/* Error Card */}
+        {error && (
+          <Animated.View style={[s.campusCard, { opacity: successAnim, borderColor: 'rgba(239, 68, 68, 0.3)' }]}>
+             <View style={s.campusCardHeader}>
+              <View style={[s.campusIconWrap, { backgroundColor: 'rgba(239, 68, 68, 0.15)' }]}>
+                <Ionicons name="warning" size={18} color="#EF4444" />
+              </View>
+              <Text style={s.campusCardTitle}>
+                Scan Failed
+              </Text>
+              <TouchableOpacity 
+                style={s.viewDetailsBtn} 
+                onPress={resetScan}
+                activeOpacity={0.8}
+              >
+                <Text style={[s.viewDetailsText, { color: '#EF4444' }]}>Retry ›</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={{ padding: 12 }}>
+              <Text style={{ color: '#FCA5A5', fontSize: 14 }}>{error}</Text>
+            </View>
           </Animated.View>
         )}
 

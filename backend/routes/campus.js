@@ -228,9 +228,7 @@ router.get('/qr/:campusId', async (req, res, next) => {
 router.post('/qr/:campusId/verify', async (req, res, next) => {
   try {
     const { lat, lng } = req.body;
-    if (lat == null || lng == null) {
-      return res.status(400).json({ authorized: false, message: 'User location (lat, lng) is required.' });
-    }
+
 
     const campus = await Campus.findById(req.params.campusId);
     if (!campus || !campus.isActive) {
@@ -264,6 +262,16 @@ router.post('/qr/:campusId/verify', async (req, res, next) => {
         authorized: true,
         campus: campusData,
         message: 'No geofence configured — access granted.',
+      });
+    }
+
+    if (lat == null || lng == null) {
+      return res.json({ 
+        authorized: false, 
+        distance: 0,
+        radius: campus.radius,
+        campusName: campus.name,
+        message: 'Unable to determine your location. GPS is required to verify access to this campus.' 
       });
     }
 
