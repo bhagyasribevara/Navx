@@ -71,11 +71,13 @@ const VENUE_ICONS_MAP = { campus: 'school', hospital: 'medkit', airport: 'airpla
 import { useAuth } from "../context/AuthContext";
 import { useLiveMeet } from "../context/LiveMeetContext";
 
-export default function HomeScreen({ navigation }) {
+export default function HomeScreen({ navigation, route }) {
   const { colors } = useContext(ThemeContext);
   const { user } = useAuth();
-  const { activeCampusId, deactivateCampus } = useGeofence();
+  const { activeCampus, activeCampusId, activateCampus, deactivateCampus } = useGeofence();
   const { enterMeetSession, showMeetModal, setShowMeetModal } = useLiveMeet() || {};
+
+  const routeCampusId = route?.params?.campusId;
 
   const [studentData, setStudentData] = useState(null);
   const [loadingStudent, setLoadingStudent] = useState(false);
@@ -96,17 +98,32 @@ export default function HomeScreen({ navigation }) {
     }
   }, [user]);
 
+  // Synchronize route.params.campusId with GeofenceContext if passed
+  useEffect(() => {
+    if (routeCampusId && routeCampusId !== activeCampusId) {
+      getCampuses()
+        .then(list => {
+          const matched = list.find(c => c._id === routeCampusId);
+          if (matched && activateCampus) {
+            activateCampus(matched);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [routeCampusId, activeCampusId, activateCampus]);
+
   const handleNavigateToRoom = async (roomName) => {
-    if (!activeCampusId) {
-      alert("You must be on campus to use navigation features.");
+    const currentCampusId = activeCampusId || routeCampusId;
+    if (!currentCampusId) {
+      alert("Please scan a campus QR code to use navigation features.");
       return;
     }
     try {
-      const res = await api.get(`/rooms?campusId=${activeCampusId}`);
+      const res = await api.get(`/rooms?campusId=${currentCampusId}`);
       const rooms = res.data;
       const targetRoom = rooms.find(r => r.name.toLowerCase() === roomName.toLowerCase());
       if (targetRoom) {
-        navigation.navigate("Navigation", { room: targetRoom, campusId: activeCampusId });
+        navigation.navigate("Navigation", { room: targetRoom, campusId: currentCampusId });
       } else {
         alert(`Room ${roomName} not found on the campus map.`);
       }
@@ -139,7 +156,7 @@ export default function HomeScreen({ navigation }) {
       else setRecentRooms([]);
     }).catch(() => { });
     return () => cardAnims.forEach(a => a.setValue(0));
-  }, [activeCampusId]));
+  }, [activeCampusId, routeCampusId]));
 
   const fetchData = useCallback(async (force = false) => {
     try {
@@ -164,14 +181,15 @@ export default function HomeScreen({ navigation }) {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
+    const targetId = activeCampusId || routeCampusId;
     try {
       // Force fresh campus data
       await fetchData(true);
       await fetchStudentDashboard();
       // Force fresh campaigns if campus is active
-      if (activeCampusId) {
+      if (targetId) {
         try {
-          const fresh = await getCampaigns(activeCampusId);
+          const fresh = await getCampaigns(targetId);
           setCampaigns(fresh || []);
         } catch (e) {
           console.log("Failed to refresh campaigns:", e);
@@ -185,7 +203,7 @@ export default function HomeScreen({ navigation }) {
     } finally {
       setRefreshing(false);
     }
-  }, [activeCampusId, fetchData, fetchStudentDashboard]);
+  }, [activeCampusId, routeCampusId, fetchData, fetchStudentDashboard]);
 
   useEffect(() => {
     Animated.timing(headerAnim, { toValue: 1, duration: 500, useNativeDriver: true }).start();
@@ -201,25 +219,26 @@ export default function HomeScreen({ navigation }) {
   }, [fetchStudentDashboard]);
 
   useEffect(() => {
-    if (activeCampusId) {
-      AsyncStorage.getItem(`navx_offline_${activeCampusId}`).then(res => {
-        if (res) setDownloadedStatus(prev => ({ ...prev, [activeCampusId]: true }));
+    const targetId = activeCampusId || routeCampusId;
+    if (targetId) {
+      AsyncStorage.getItem(`navx_offline_${targetId}`).then(res => {
+        if (res) setDownloadedStatus(prev => ({ ...prev, [targetId]: true }));
       }).catch(() => { });
 
-      getCampaigns(activeCampusId)
+      getCampaigns(targetId)
         .then(d => setCampaigns(d || []))
         .catch(e => console.log('Failed to fetch campaigns', e));
     } else {
       setCampaigns([]);
     }
-  }, [activeCampusId]);
+  }, [activeCampusId, routeCampusId]);
 
   useEffect(() => {
-    if (user?.isGuest && !activeCampusId) {
+    if (user?.isGuest && !activeCampusId && !routeCampusId) {
       console.log("Redirecting guest to QR Scan screen");
       navigation.navigate("QRScan");
     }
-  }, [user?.isGuest, activeCampusId, navigation]);
+  }, [user?.isGuest, activeCampusId, routeCampusId, navigation]);
 
   const [showNotifs, setShowNotifs] = useState(false);
   const { notifications, markNotifRead, hasUnread } = useLiveMeet() || { notifications: [], markNotifRead: () => {}, hasUnread: false };
@@ -776,7 +795,7 @@ export default function HomeScreen({ navigation }) {
         </View>
 
         {/* 🔥 Active Updates */}
-        {activeCampusId && campaigns.length > 0 && (
+        {(activeCampusId || routeCampusId) && campaigns.length > 0 && (
           <View style={s.section}>
             <View style={s.secRow}>
               <View>
@@ -822,7 +841,7 @@ export default function HomeScreen({ navigation }) {
         )}
 
         {/* Banner */}
-        <AnimatedPressable style={s.banner} onPress={() => navigation.navigate("Map", { campusId: activeCampusId })}>
+        <AnimatedPressable style={s.banner} onPress={() => navigation.navigate("Map", { campusId: activeCampusId || routeCampusId })}>
           <LinearGradient
             colors={[colors.secondary || '#d946ef', colors.primary || '#8b5cf6']}
             start={{ x: 0, y: 0 }}
@@ -838,7 +857,7 @@ export default function HomeScreen({ navigation }) {
             </View>
             <Text style={s.bannerTitle}>Interactive Floor Map</Text>
             <Text style={s.bannerSub}>Explore with real-time indoor positioning</Text>
-            <AnimatedPressable style={s.bannerBtn} onPress={() => navigation.navigate("Map", { campusId: activeCampusId })}>
+            <AnimatedPressable style={s.bannerBtn} onPress={() => navigation.navigate("Map", { campusId: activeCampusId || routeCampusId })}>
               <Ionicons name="map" size={16} color={colors.secondary || "#8b5cf6"} />
               <Text style={s.bannerBtnText}>Open Map</Text>
             </AnimatedPressable>
@@ -851,11 +870,12 @@ export default function HomeScreen({ navigation }) {
             <Text style={s.secTitle}>Browse by Category</Text>
           </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20 }}>
-            {(VENUE_CATS[campuses.find(c => c._id === activeCampusId)?.venueType] || VENUE_CATS.campus).map((c, i) => (
+            {(VENUE_CATS[(campuses.find(c => c._id === (activeCampusId || routeCampusId)) || activeCampus)?.venueType] || VENUE_CATS.campus).map((c, i) => (
               <AnimatedPressable key={i} style={s.catChip} onPress={async () => {
-                if (c.filter === 'parking' && activeCampusId) {
+                const currentCampusId = activeCampusId || routeCampusId;
+                if (c.filter === 'parking' && currentCampusId) {
                   try {
-                    const rooms = await getRoomsByCat(activeCampusId, 'parking');
+                    const rooms = await getRoomsByCat(currentCampusId, 'parking');
                     if (rooms && rooms.length > 0) {
                       let closest = rooms[0];
                       const storedScan = await AsyncStorage.getItem('navx_last_scan');
@@ -868,7 +888,7 @@ export default function HomeScreen({ navigation }) {
                           if (d < minD) { minD = d; closest = r; }
                         });
                       }
-                      navigation.navigate("Navigation", { room: closest, campusId: closest.campusId || activeCampusId });
+                      navigation.navigate("Navigation", { room: closest, campusId: closest.campusId || currentCampusId });
                       return;
                     }
                   } catch (e) { }
@@ -883,7 +903,7 @@ export default function HomeScreen({ navigation }) {
         </View>
 
         {/* Recently Visited */}
-        {activeCampusId && recentRooms.length > 0 && (
+        {(activeCampusId || routeCampusId) && recentRooms.length > 0 && (
           <View style={s.section}>
             <View style={s.secRow}>
               <Text style={s.secTitle}>Recently Visited</Text>
@@ -891,7 +911,7 @@ export default function HomeScreen({ navigation }) {
             {recentRooms.map(rm => {
               const roomColor = ROOM_COLORS[rm.type] || colors.primary;
               return (
-                <AnimatedPressable key={rm._id} style={s.recentCard} onPress={() => navigation.navigate("Navigation", { room: rm, campusId: rm.campusId })}>
+                <AnimatedPressable key={rm._id} style={s.recentCard} onPress={() => navigation.navigate("Navigation", { room: rm, campusId: rm.campusId || activeCampusId || routeCampusId })}>
                   <View style={[s.recentIcon, { backgroundColor: roomColor + "20" }]}>
                     <Ionicons name="location" size={22} color={roomColor} />
                   </View>
@@ -912,24 +932,32 @@ export default function HomeScreen({ navigation }) {
         <View style={s.section}>
           <View style={s.secRow}>
             <Text style={s.secTitle}>Your Venue</Text>
-            <Ionicons name={VENUE_ICONS_MAP[campuses.find(c => c._id === activeCampusId)?.venueType] || "business-outline"} size={18} color={colors.textMuted} />
+            <Ionicons name={VENUE_ICONS_MAP[(campuses.find(c => c._id === (activeCampusId || routeCampusId)) || activeCampus)?.venueType] || "business-outline"} size={18} color={colors.textMuted} />
           </View>
-          {campuses.filter(c => c._id === activeCampusId).map((campus, i) => {
-            const g = GRAD_BARS[i % GRAD_BARS.length];
+          {(() => {
+            const currentCampusId = activeCampusId || routeCampusId;
+            let displayCampus = campuses.find(c => c._id === currentCampusId) || (activeCampus?.id === currentCampusId || activeCampus?._id === currentCampusId ? activeCampus : null) || (campuses.length > 0 ? campuses[0] : activeCampus);
+            if (!displayCampus && currentCampusId) {
+              displayCampus = activeCampus || { _id: currentCampusId, name: 'Campus Venue', description: 'Tap to explore campus map' };
+            }
+            if (!displayCampus) return null;
+
+            const g = GRAD_BARS[0];
+            const cId = displayCampus._id || displayCampus.id;
             return (
-              <AnimatedPressable key={campus._id} style={s.campusCard} onPress={() => navigation.navigate("Map", { campusId: campus._id, campusName: campus.name })}>
+              <AnimatedPressable key={cId || 'venue'} style={s.campusCard} onPress={() => navigation.navigate("Map", { campusId: cId, campusName: displayCampus.name })}>
                 <View style={[s.campusBar, { backgroundColor: colors.secondary || g[0] }]} />
                 <View style={s.campusBody}>
-                  <Text style={s.campusName}>{campus.name}</Text>
-                  <Text style={s.campusDesc}>{campus.description || "Tap to explore campus map"}</Text>
-                  {campus.address && (
+                  <Text style={s.campusName}>{displayCampus.name}</Text>
+                  <Text style={s.campusDesc}>{displayCampus.description || "Tap to explore campus map"}</Text>
+                  {displayCampus.address ? (
                     <View style={s.campusAddr}>
                       <Ionicons name="location" size={12} color={colors.textMuted} />
-                      <Text style={{ fontSize: 12, color: colors.textMuted, marginLeft: 4 }}>{campus.address}</Text>
+                      <Text style={{ fontSize: 12, color: colors.textMuted, marginLeft: 4 }}>{displayCampus.address}</Text>
                     </View>
-                  )}
+                  ) : null}
                   <View style={s.campusActions}>
-                    <AnimatedPressable style={s.mapBtn} onPress={() => navigation.navigate("Map", { campusId: campus._id })}>
+                    <AnimatedPressable style={s.mapBtn} onPress={() => navigation.navigate("Map", { campusId: cId, campusName: displayCampus.name })}>
                       <Ionicons name="map" size={16} color="#fff" />
                       <Text style={{ color: "#fff", fontWeight: "700", fontSize: 13, marginLeft: 6 }}>Explore Map</Text>
                     </AnimatedPressable>
@@ -937,7 +965,7 @@ export default function HomeScreen({ navigation }) {
                 </View>
               </AnimatedPressable>
             );
-          })}
+          })()}
         </View>
 
         {activeCampusId && (

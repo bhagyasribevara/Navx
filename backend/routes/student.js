@@ -61,233 +61,242 @@ const authenticateStudent = async (req, res, next) => {
 
 // Helper to auto-seed mock data for a student if none exists
 const autoSeedStudentData = async (student) => {
-  const campusId = await getStudentCampusId(student);
-  if (!campusId) return;
+  try {
+    const campusId = await getStudentCampusId(student);
+    if (!campusId) return;
 
-  // Check if timetable exists for this student's department/semester (try all format variants)
-  const semVariants = getSemesterVariants(student.semester);
-  const count = await Timetable.countDocuments({ campusId, department: student.department, semester: { $in: semVariants } });
-  if (count > 0) return; // real or previously-seeded timetable already exists
+    // Check if timetable exists for this student's department/semester (try all format variants)
+    const semVariants = getSemesterVariants(student.semester);
+    const count = await Timetable.countDocuments({ campusId, department: student.department, semester: { $in: semVariants } });
+    if (count > 0) return; // real or previously-seeded timetable already exists
 
-  // Create mock Faculty
-  let faculty = await Faculty.findOne({ campusId, employeeId: 'EMP1001' });
-  if (!faculty) {
-    faculty = new Faculty({
-      campusId,
-      name: 'Dr. Ganesh Prasad',
-      employeeId: 'EMP1001',
-      department: 'CSE',
-      designation: 'Professor & HOD',
-      email: 'ganesh@institution.edu',
-      phone: '9876543210',
-      facultyRoom: 'F-12',
-      subjects: ['DBMS', 'OS'],
-      assignedSections: ['A'],
-      username: 'ganesh_hod',
-      password: 'hashedpassword',
-      leaveStatus: 'Present',
-      officeHours: '11:00 AM - 1:00 PM'
-    });
-    await faculty.save();
-  }
-
-  // Create another faculty
-  let faculty2 = await Faculty.findOne({ campusId, employeeId: 'EMP1002' });
-  if (!faculty2) {
-    faculty2 = new Faculty({
-      campusId,
-      name: 'Dr. Sarma HOD',
-      employeeId: 'EMP1002',
-      department: 'CSE',
-      designation: 'HOD CSE',
-      email: 'sarma@institution.edu',
-      phone: '9876543211',
-      facultyRoom: 'F-05',
-      subjects: ['Computer Networks', 'AI'],
-      assignedSections: ['A'],
-      username: 'sarma_hod',
-      password: 'hashedpassword',
-      leaveStatus: 'Present',
-      officeHours: '10:00 AM - 12:00 PM'
-    });
-    await faculty2.save();
-  }
-
-  // Create Timetable for Monday - Friday
-  const dbRooms = await Room.find({ campusId });
-  const classrooms = dbRooms.filter(r => ['classroom', 'auditorium'].includes(r.type));
-  const labs = dbRooms.filter(r => r.type === 'lab');
-
-  const classroomName = classrooms.length > 0 ? classrooms[0].name : 'CS Lecture Hall 1';
-  const classroomId = classrooms.length > 0 ? classrooms[0]._id : null;
-
-  const labName = labs.length > 0 ? labs[0].name : 'Robotics Lab';
-  const labId = labs.length > 0 ? labs[0]._id : null;
-
-  const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
-  const subjectsList = [
-    { name: 'DBMS', room: classroomName, roomId: classroomId, faculty: faculty },
-    { name: 'OS', room: classroomName, roomId: classroomId, faculty: faculty },
-    { name: 'Computer Networks', room: classroomName, roomId: classroomId, faculty: faculty2 },
-    { name: 'AI & ML', room: labName, roomId: labId, faculty: faculty2 },
-    { name: 'Theory of Computation', room: classroomName, roomId: classroomId, faculty: faculty }
-  ];
-
-  for (const day of days) {
-    for (let p = 1; p <= 5; p++) {
-      const sub = subjectsList[(p + days.indexOf(day)) % subjectsList.length];
-      const startHours = 8 + p;
-      const endHours = 9 + p;
-      
-      const timetableEntry = new Timetable({
+    // Create mock Faculty
+    let faculty = await Faculty.findOne({ employeeId: 'EMP1001' }) || await Faculty.findOne({ campusId });
+    if (!faculty) {
+      faculty = new Faculty({
         campusId,
-        department: student.department,
-        semester: student.semester,
-        section: student.section,
-        dayOfWeek: day,
-        period: p,
-        subject: sub.name,
-        roomName: sub.room,
-        roomId: sub.roomId,
-        facultyId: sub.faculty._id,
-        facultyName: sub.faculty.name,
-        startTime: `${startHours.toString().padStart(2, '0')}:00 AM`,
-        endTime: `${endHours.toString().padStart(2, '0')}:00 AM`
+        name: 'Dr. Ganesh Prasad',
+        employeeId: 'EMP1001',
+        department: 'CSE',
+        designation: 'Professor & HOD',
+        email: 'ganesh@institution.edu',
+        phone: '9876543210',
+        facultyRoom: 'F-12',
+        subjects: ['DBMS', 'OS'],
+        assignedSections: ['A'],
+        username: 'ganesh_hod',
+        password: 'hashedpassword',
+        leaveStatus: 'Present',
+        officeHours: '11:00 AM - 1:00 PM'
       });
-      await timetableEntry.save();
+      await faculty.save();
     }
-  }
 
-  // Create Attendance logs (Subject-wise)
-  const subjects = ['DBMS', 'OS', 'Computer Networks', 'AI & ML', 'Theory of Computation'];
-  for (const sub of subjects) {
-    for (let d = 1; d <= 15; d++) {
-      const log = new Attendance({
+    // Create another faculty
+    let faculty2 = await Faculty.findOne({ employeeId: 'EMP1002' }) || faculty;
+    if (!faculty2 || faculty2._id.toString() === faculty._id.toString()) {
+      const existingFaculty2 = await Faculty.findOne({ employeeId: 'EMP1002' });
+      if (existingFaculty2) {
+        faculty2 = existingFaculty2;
+      } else {
+        faculty2 = new Faculty({
+          campusId,
+          name: 'Dr. Sarma HOD',
+          employeeId: 'EMP1002',
+          department: 'CSE',
+          designation: 'HOD CSE',
+          email: 'sarma@institution.edu',
+          phone: '9876543211',
+          facultyRoom: 'F-05',
+          subjects: ['Computer Networks', 'AI'],
+          assignedSections: ['A'],
+          username: 'sarma_hod',
+          password: 'hashedpassword',
+          leaveStatus: 'Present',
+          officeHours: '10:00 AM - 12:00 PM'
+        });
+        await faculty2.save();
+      }
+    }
+
+    // Create Timetable for Monday - Friday
+    const dbRooms = await Room.find({ campusId });
+    const classrooms = dbRooms.filter(r => ['classroom', 'auditorium'].includes(r.type));
+    const labs = dbRooms.filter(r => r.type === 'lab');
+
+    const classroomName = classrooms.length > 0 ? classrooms[0].name : 'CS Lecture Hall 1';
+    const classroomId = classrooms.length > 0 ? classrooms[0]._id : null;
+
+    const labName = labs.length > 0 ? labs[0].name : 'Robotics Lab';
+    const labId = labs.length > 0 ? labs[0]._id : null;
+
+    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+    const subjectsList = [
+      { name: 'DBMS', room: classroomName, roomId: classroomId, faculty: faculty },
+      { name: 'OS', room: classroomName, roomId: classroomId, faculty: faculty },
+      { name: 'Computer Networks', room: classroomName, roomId: classroomId, faculty: faculty2 },
+      { name: 'AI & ML', room: labName, roomId: labId, faculty: faculty2 },
+      { name: 'Theory of Computation', room: classroomName, roomId: classroomId, faculty: faculty }
+    ];
+
+    for (const day of days) {
+      for (let p = 1; p <= 5; p++) {
+        const sub = subjectsList[(p + days.indexOf(day)) % subjectsList.length];
+        const startHours = 8 + p;
+        const endHours = 9 + p;
+        
+        const timetableEntry = new Timetable({
+          campusId,
+          department: student.department,
+          semester: student.semester,
+          section: student.section,
+          dayOfWeek: day,
+          period: p,
+          subject: sub.name,
+          roomName: sub.room,
+          roomId: sub.roomId,
+          facultyId: sub.faculty._id,
+          facultyName: sub.faculty.name,
+          startTime: `${startHours.toString().padStart(2, '0')}:00 AM`,
+          endTime: `${endHours.toString().padStart(2, '0')}:00 AM`
+        });
+        await timetableEntry.save();
+      }
+    }
+
+    // Create Attendance logs (Subject-wise)
+    const subjects = ['DBMS', 'OS', 'Computer Networks', 'AI & ML', 'Theory of Computation'];
+    for (const sub of subjects) {
+      for (let d = 1; d <= 15; d++) {
+        const log = new Attendance({
+          campusId,
+          studentId: student._id,
+          subject: sub,
+          date: new Date(Date.now() - d * 24 * 60 * 60 * 1000),
+          status: Math.random() > 0.15 ? 'Present' : 'Absent',
+          period: 1
+        });
+        await log.save();
+      }
+    }
+
+    // Create Marks
+    for (const sub of subjects) {
+      const internalMark = new Mark({
         campusId,
         studentId: student._id,
         subject: sub,
-        date: new Date(Date.now() - d * 24 * 60 * 60 * 1000),
-        status: Math.random() > 0.15 ? 'Present' : 'Absent',
-        period: 1
+        marksType: 'Internal',
+        obtainedMarks: Math.floor(Math.random() * 5) + 18, // 18 to 23
+        totalMarks: 25,
+        comments: 'Good Performance'
       });
-      await log.save();
+      await internalMark.save();
+
+      const semMark = new Mark({
+        campusId,
+        studentId: student._id,
+        subject: sub,
+        marksType: 'Semester',
+        obtainedMarks: Math.floor(Math.random() * 20) + 65, // 65 to 85
+        totalMarks: 100,
+        comments: 'Passed'
+      });
+      await semMark.save();
     }
+
+    // Create Fees
+    const feesList = [
+      { title: 'Tution Fee Sem 6', amount: 75000, status: 'Pending', dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) },
+      { title: 'Examination Fee Sem 6', amount: 2500, status: 'Pending', dueDate: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000) },
+      { title: 'Library Membership Fee', amount: 1500, status: 'Paid', dueDate: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000), paidDate: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000), transactionId: 'TXN8912381', paymentMethod: 'UPI' }
+    ];
+    for (const f of feesList) {
+      const feeItem = new Fee({
+        campusId,
+        studentId: student._id,
+        title: f.title,
+        amount: f.amount,
+        status: f.status,
+        dueDate: f.dueDate,
+        paidDate: f.paidDate || null,
+        transactionId: f.transactionId || null,
+        paymentMethod: f.paymentMethod || null
+      });
+      await feeItem.save();
+    }
+
+    // Create Assignments
+    for (const sub of subjects) {
+      const assign = new Assignment({
+        campusId,
+        department: student.department,
+        semester: student.semester,
+        subject: sub,
+        title: `${sub} Assignment 1`,
+        description: 'Please submit unit 1 and unit 2 answers in PDF format.',
+        dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        maxMarks: 10
+      });
+      await assign.save();
+    }
+
+    // Create Study Material
+    for (const sub of subjects) {
+      const sm = new StudyMaterial({
+        campusId,
+        department: student.department,
+        semester: student.semester,
+        subject: sub,
+        title: `${sub} - Unit 1 Notes`,
+        description: 'Introductory notes and slides for unit 1.',
+        fileUrl: '/uploads/unit_1_notes.pdf',
+        uploadedBy: faculty._id,
+        uploadedByName: faculty.name
+      });
+      await sm.save();
+    }
+
+    // Create Academic Calendar events
+    const calEvents = [
+      { title: 'Semester Exams Start', description: 'Regular exams for sem 6', startDate: new Date(Date.now() + 45 * 24 * 60 * 60 * 1000), endDate: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000), type: 'Exam' },
+      { title: 'Independence Day Holiday', description: 'National holiday', startDate: new Date('2026-08-15'), endDate: new Date('2026-08-15'), type: 'Holiday' },
+      { title: 'Technical Symposium', description: 'Tech Fest', startDate: new Date(Date.now() + 20 * 24 * 60 * 60 * 1000), endDate: new Date(Date.now() + 22 * 24 * 60 * 60 * 1000), type: 'Event' }
+    ];
+    for (const ev of calEvents) {
+      const calendarItem = new AcademicCalendar({
+        campusId,
+        title: ev.title,
+        description: ev.description,
+        startDate: ev.startDate,
+        endDate: ev.endDate,
+        type: ev.type
+      });
+      await calendarItem.save();
+    }
+
+    // Seed Announcements
+    const announcementsList = [
+      { title: 'AI Symposium Registrations Open', desc: 'Students can register for the symposium on student portal.' },
+      { title: 'Fee Payment Deadline Extension', desc: 'Semester 6 fee payment deadline extended by 10 days.' }
+    ];
+    for (const ann of announcementsList) {
+      const announcementItem = new Announcement({
+        campusId,
+        announcementData: {
+          title: ann.title,
+          message: ann.desc,
+          createdAt: new Date()
+        },
+        isActive: true
+      });
+      await announcementItem.save();
+    }
+
+    console.log(`Auto-seeded data for student: ${student.username}`);
+  } catch (err) {
+    console.warn('Auto-seed mock data encountered non-critical error:', err.message);
   }
-
-  // Create Marks
-  for (const sub of subjects) {
-    const internalMark = new Mark({
-      campusId,
-      studentId: student._id,
-      subject: sub,
-      marksType: 'Internal',
-      obtainedMarks: Math.floor(Math.random() * 5) + 18, // 18 to 23
-      totalMarks: 25,
-      comments: 'Good Performance'
-    });
-    await internalMark.save();
-
-    const semMark = new Mark({
-      campusId,
-      studentId: student._id,
-      subject: sub,
-      marksType: 'Semester',
-      obtainedMarks: Math.floor(Math.random() * 20) + 65, // 65 to 85
-      totalMarks: 100,
-      comments: 'Passed'
-    });
-    await semMark.save();
-  }
-
-  // Create Fees
-  const feesList = [
-    { title: 'Tution Fee Sem 6', amount: 75000, status: 'Pending', dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) },
-    { title: 'Examination Fee Sem 6', amount: 2500, status: 'Pending', dueDate: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000) },
-    { title: 'Library Membership Fee', amount: 1500, status: 'Paid', dueDate: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000), paidDate: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000), transactionId: 'TXN8912381', paymentMethod: 'UPI' }
-  ];
-  for (const f of feesList) {
-    const feeItem = new Fee({
-      campusId,
-      studentId: student._id,
-      title: f.title,
-      amount: f.amount,
-      status: f.status,
-      dueDate: f.dueDate,
-      paidDate: f.paidDate || null,
-      transactionId: f.transactionId || null,
-      paymentMethod: f.paymentMethod || null
-    });
-    await feeItem.save();
-  }
-
-  // Create Assignments
-  for (const sub of subjects) {
-    const assign = new Assignment({
-      campusId,
-      department: student.department,
-      semester: student.semester,
-      subject: sub,
-      title: `${sub} Assignment 1`,
-      description: 'Please submit unit 1 and unit 2 answers in PDF format.',
-      dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-      maxMarks: 10
-    });
-    await assign.save();
-  }
-
-  // Create Study Material
-  for (const sub of subjects) {
-    const sm = new StudyMaterial({
-      campusId,
-      department: student.department,
-      semester: student.semester,
-      subject: sub,
-      title: `${sub} - Unit 1 Notes`,
-      description: 'Introductory notes and slides for unit 1.',
-      fileUrl: '/uploads/unit_1_notes.pdf',
-      uploadedBy: faculty._id,
-      uploadedByName: faculty.name
-    });
-    await sm.save();
-  }
-
-  // Create Academic Calendar events
-  const calEvents = [
-    { title: 'Semester Exams Start', description: 'Regular exams for sem 6', startDate: new Date(Date.now() + 45 * 24 * 60 * 60 * 1000), endDate: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000), type: 'Exam' },
-    { title: 'Independence Day Holiday', description: 'National holiday', startDate: new Date('2026-08-15'), endDate: new Date('2026-08-15'), type: 'Holiday' },
-    { title: 'Technical Symposium', description: 'Tech Fest', startDate: new Date(Date.now() + 20 * 24 * 60 * 60 * 1000), endDate: new Date(Date.now() + 22 * 24 * 60 * 60 * 1000), type: 'Event' }
-  ];
-  for (const ev of calEvents) {
-    const calendarItem = new AcademicCalendar({
-      campusId,
-      title: ev.title,
-      description: ev.description,
-      startDate: ev.startDate,
-      endDate: ev.endDate,
-      type: ev.type
-    });
-    await calendarItem.save();
-  }
-
-  // Seed Announcements
-  const announcementsList = [
-    { title: 'AI Symposium Registrations Open', desc: 'Students can register for the symposium on student portal.' },
-    { title: 'Fee Payment Deadline Extension', desc: 'Semester 6 fee payment deadline extended by 10 days.' }
-  ];
-  for (const ann of announcementsList) {
-    const announcementItem = new Announcement({
-      campusId,
-      announcementData: {
-        title: ann.title,
-        message: ann.desc,
-        createdAt: new Date()
-      },
-      isActive: true
-    });
-    await announcementItem.save();
-  }
-
-  console.log(`Auto-seeded data for student: ${student.username}`);
 };
 
 // GET /api/student/dashboard

@@ -52,7 +52,7 @@ export function GeofenceProvider({ children }) {
 
   const { user, token, logout, loading: authLoading } = require("./AuthContext").useAuth();
 
-  // Restore campus session from AsyncStorage on app launch — but VALIDATE location first
+  // Restore campus session from AsyncStorage on app launch
   useEffect(() => {
     const restoreSession = async () => {
       try {
@@ -60,57 +60,29 @@ export function GeofenceProvider({ children }) {
         if (!stored) return;
 
         const parsed = JSON.parse(stored);
-
-        // STRICT: require location + radius in the stored record to even attempt restore
-        if (!parsed.location?.lat || !parsed.location?.lng || !parsed.radius) {
-          console.warn("Stored session has no location/radius — wiping for safety.");
-          await wipeAllCampusData(parsed.id);
-          return;
-        }
+        if (!parsed || (!parsed.id && !parsed._id)) return;
 
         // Restore active campus immediately so the user can use the app without delay
         setActiveCampus(parsed);
 
-        // Require location permission
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== "granted") {
-          console.warn("Location permission denied on restore — wiping session.");
-          await wipeAllCampusData(parsed.id);
-          setActiveCampus(null);
-          return;
-        }
-
-        // Get current GPS position and verify user is still inside campus radius
+        // Optional GPS verification if location permissions exist
         try {
-          const loc = await Location.getCurrentPositionAsync({
-            accuracy: Location.Accuracy.Balanced,
-            timeout: 10000,
-          });
-          const dist = haversine(
-            loc.coords.latitude,
-            loc.coords.longitude,
-            parsed.location.lat,
-            parsed.location.lng
-          );
-          // Add a 200m buffer for GPS inaccuracy during app restore
-          if (dist > parsed.radius + 200) {
-            console.log(`🚫 User is off-campus: ${Math.round(dist)}m outside ${parsed.radius}m radius.`);
-            if (user?.isGuest) {
-              await wipeAllCampusData(parsed.id);
-              setActiveCampus(null);
-            } else {
-              // Registered student: delete only offline map data
-              await AsyncStorage.removeItem(`navx_offline_${parsed.id}`);
-              setActiveCampus(parsed);
-            }
-            return;
+          const { status } = await Location.getForegroundPermissionsAsync();
+          if (status === "granted" && parsed.location?.lat && parsed.location?.lng) {
+            const loc = await Location.getCurrentPositionAsync({
+              accuracy: Location.Accuracy.Balanced,
+              timeout: 6000,
+            });
+            const dist = haversine(
+              loc.coords.latitude,
+              loc.coords.longitude,
+              parsed.location.lat,
+              parsed.location.lng
+            );
+            console.log(`📍 Distance to campus ${parsed.name}: ${Math.round(dist)}m (radius: ${parsed.radius || 1000}m)`);
           }
-          // ✅ User is inside — safe to restore
-          console.log(`✅ Session restored: ${parsed.name} (${Math.round(dist)}m from center)`);
         } catch (locErr) {
-          // GPS timeout or unavailable — DO NOT wipe the campus data.
-          // Keep the restored session and let watchPositionAsync handle continuous checks.
-          console.warn("GPS check failed/timed out on restore — keeping session for safety:", locErr?.message);
+          console.warn("GPS check on restore skipped:", locErr?.message);
         }
       } catch (e) {
         console.warn("Failed to restore geofence session:", e);
@@ -314,11 +286,20 @@ export function GeofenceProvider({ children }) {
 
   // Activate a campus session (called after QR scan + geofence verification)
   const activateCampus = useCallback(async (campus) => {
+    if (!campus) return;
     const campusData = {
       id: campus._id || campus.id,
-      name: campus.name,
-      location: campus.location,
-      radius: campus.radius,
+      _id: campus._id || campus.id,
+      name: campus.name || campus.campusName || 'Campus',
+      campusName: campus.campusName || campus.name || 'Campus',
+      location: campus.location || { lat: 0, lng: 0 },
+      radius: campus.radius || 1000,
+      venueType: campus.venueType || 'campus',
+      description: campus.description || '',
+      address: campus.address || '',
+      image: campus.image || '',
+      floors: campus.floors,
+      rooms: campus.rooms
     };
 
     try {
@@ -330,7 +311,7 @@ export function GeofenceProvider({ children }) {
     setSessionRevoked(false);
     setRevokedCampusName(null);
     setActiveCampus(campusData);
-    console.log(`✅ Campus session activated: ${campusData.name}`);
+    console.log(`✅ Campus session activated: ${campusData.name} (${campusData.id})`);
   }, []);
 
   // Manually deactivate (e.g., user logs out)

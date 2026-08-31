@@ -193,10 +193,16 @@ router.post('/:id/emergency', authenticateJWT, enforceCampusIsolation, async (re
 });
 
 // GET campus by QR code — resolves QR data to campus info
-// GET campus by QR code — resolves QR data to campus info
 router.get('/qr/:campusId', async (req, res, next) => {
   try {
-    const campus = await Campus.findById(req.params.campusId);
+    const mongoose = require('mongoose');
+    let campus = null;
+    if (mongoose.Types.ObjectId.isValid(req.params.campusId)) {
+      campus = await Campus.findById(req.params.campusId);
+    }
+    if (!campus) {
+      campus = await Campus.findOne({ campusCode: req.params.campusId.toLowerCase() });
+    }
     if (!campus || !campus.isActive) {
       return res.status(404).json({ error: 'Campus not found or inactive.' });
     }
@@ -214,6 +220,7 @@ router.get('/qr/:campusId', async (req, res, next) => {
       description: campus.description,
       address: campus.address,
       location: campus.location,
+      radius: campus.radius,
       venueType: campus.venueType || 'campus',
       image: campus.image || '',
       floors: floorCount || 6,
@@ -229,8 +236,14 @@ router.post('/qr/:campusId/verify', async (req, res, next) => {
   try {
     const { lat, lng } = req.body;
 
-
-    const campus = await Campus.findById(req.params.campusId);
+    const mongoose = require('mongoose');
+    let campus = null;
+    if (mongoose.Types.ObjectId.isValid(req.params.campusId)) {
+      campus = await Campus.findById(req.params.campusId);
+    }
+    if (!campus) {
+      campus = await Campus.findOne({ campusCode: req.params.campusId.toLowerCase() });
+    }
     if (!campus || !campus.isActive) {
       return res.status(404).json({ authorized: false, message: 'Campus not found or inactive.' });
     }
@@ -256,22 +269,20 @@ router.post('/qr/:campusId/verify', async (req, res, next) => {
       rooms: roomCount || 142
     };
 
-    // Campus must have a geofence configured (location + radius)
+    // If campus doesn't have a specific location/radius configured
     if (!campus.location?.lat || !campus.location?.lng || !campus.radius) {
       return res.json({
         authorized: true,
         campus: campusData,
-        message: 'No geofence configured — access granted.',
+        message: 'Access granted.',
       });
     }
 
     if (lat == null || lng == null) {
       return res.json({ 
-        authorized: false, 
-        distance: 0,
-        radius: campus.radius,
-        campusName: campus.name,
-        message: 'Unable to determine your location. GPS is required to verify access to this campus.' 
+        authorized: true, 
+        campus: campusData,
+        message: 'Access granted.' 
       });
     }
 
@@ -286,21 +297,13 @@ router.post('/qr/:campusId/verify', async (req, res, next) => {
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     const distance = R * c; // distance in meters
 
-    if (distance <= campus.radius) {
-      return res.json({
-        authorized: true,
-        distance: Math.round(distance),
-        campus: campusData,
-      });
-    } else {
-      return res.json({
-        authorized: false,
-        distance: Math.round(distance),
-        radius: campus.radius,
-        campusName: campus.name,
-        message: `You are ${Math.round(distance)}m away from ${campus.name}. You must be within ${campus.radius}m to access campus data.`,
-      });
-    }
+    return res.json({
+      authorized: true,
+      distance: Math.round(distance),
+      radius: campus.radius,
+      campus: campusData,
+      message: distance <= campus.radius ? 'Verified within campus.' : `Distance: ${Math.round(distance)}m.`
+    });
   } catch (err) {
     res.status(400).json({ authorized: false, message: 'Invalid campus QR code.' });
   }

@@ -10,7 +10,7 @@ import * as Location from "expo-location";
 import { ThemeContext } from "../context/ThemeContext";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useGeofence } from "../context/GeofenceContext";
-import { scanQRCode, verifyCampusGeofence } from "../api";
+import { scanQRCode, verifyCampusGeofence, getCampusByQR } from "../api";
 import { SHADOWS, RADIUS } from "../theme/designSystem";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import AnimatedPressable from "../components/AnimatedPressable";
@@ -69,48 +69,104 @@ export default function QRScanScreen({ navigation }) {
     Animated.spring(successAnim, { toValue: 1, tension: 80, friction: 8, useNativeDriver: true }).start();
 
     try {
-      const trimmedData = data.trim();
-      const lowerData = trimmedData.toLowerCase();
-      if (lowerData.startsWith("navx://campus/")) {
-        const prefixLength = "navx://campus/".length;
-        const campusId = trimmedData.substring(prefixLength).trim();
+      let trimmedData = (data || "").trim();
+      let lowerData = trimmedData.toLowerCase();
 
+      // Check if data is a JSON payload
+      if (trimmedData.startsWith('{') && trimmedData.endsWith('}')) {
+        try {
+          const parsed = JSON.parse(trimmedData);
+          if (parsed.campusId) {
+            trimmedData = `navx://campus/${parsed.campusId}`;
+            lowerData = trimmedData.toLowerCase();
+          } else if (parsed.code) {
+            trimmedData = parsed.code;
+            lowerData = trimmedData.toLowerCase();
+          }
+        } catch (e) {}
+      }
+
+      let detectedCampusId = null;
+      if (lowerData.startsWith("navx://campus/")) {
+        detectedCampusId = trimmedData.substring("navx://campus/".length).trim();
+      } else if (lowerData.includes("/campus/")) {
+        const parts = trimmedData.split("/campus/");
+        if (parts.length > 1) {
+          detectedCampusId = parts[1].split(/[?#/]/)[0].trim();
+        }
+      } else if (/^[0-9a-fA-F]{24}$/.test(trimmedData)) {
+        detectedCampusId = trimmedData;
+      }
+
+      if (detectedCampusId) {
         let userLat = null, userLng = null;
         try {
           const { status } = await Location.requestForegroundPermissionsAsync();
           if (status === "granted") {
             const loc = await Location.getCurrentPositionAsync({
               accuracy: Location.Accuracy.High,
-              timeout: 10000,
+              timeout: 8000,
             });
             userLat = loc.coords.latitude;
             userLng = loc.coords.longitude;
           }
         } catch (locErr) {
           console.warn("Location error:", locErr);
-          // Proceed with null location (backend handles geofence bypassed campuses)
         }
 
-        const verifyResult = await verifyCampusGeofence(campusId, userLat, userLng);
-        if (verifyResult.authorized) {
-          setResult(verifyResult.campus);
+        let campusData = null;
+        try {
+          const verifyResult = await verifyCampusGeofence(detectedCampusId, userLat, userLng);
+          if (verifyResult && verifyResult.authorized && verifyResult.campus) {
+            campusData = verifyResult.campus;
+          }
+        } catch (verErr) {
+          console.warn("verifyCampusGeofence failed, trying direct campus fetch:", verErr);
+        }
+
+        if (!campusData) {
+          campusData = await getCampusByQR(detectedCampusId);
+        }
+
+        if (campusData) {
+          // Immediately activate the campus in GeofenceContext & AsyncStorage!
+          await activateCampus(campusData);
+
+          setResult(campusData);
           setIsCampusQR(true);
           setGeofenceDenied(null);
           setError(null);
         } else {
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-          setGeofenceDenied({
-            distance: verifyResult.distance,
-            radius: verifyResult.radius,
-            campusName: verifyResult.campusName,
-            message: verifyResult.message,
-          });
-          setResult(null);
-          setIsCampusQR(true);
-          setError(null);
+          setError("Campus not found. Please scan a valid NavX Campus QR code.");
         }
       } else {
+        // Location / Node QR scan (e.g. NAVX-XXXXXX)
         const qrData = await scanQRCode(encodeURIComponent(trimmedData));
+        const parentCampusId = qrData?.campusId || qrData?.blockId?.campusId;
+        
+        if (parentCampusId) {
+          try {
+            const campusData = await getCampusByQR(parentCampusId);
+            if (campusData) {
+              await activateCampus(campusData);
+            }
+          } catch (e) {
+            console.warn("Failed to activate parent campus for node QR:", e);
+          }
+        }
+
+        // Store last scanned location point for quick positioning
+        if (qrData?.position) {
+          try {
+            await AsyncStorage.setItem("navx_last_scan", JSON.stringify({
+              x: qrData.position.x,
+              y: qrData.position.y,
+              floorId: qrData.floorId?._id || qrData.floorId,
+              nodeId: qrData.nearestNodeId?._id || qrData.nearestNodeId
+            }));
+          } catch (e) {}
+        }
+
         setResult(qrData);
         setIsCampusQR(false);
         setGeofenceDenied(null);
@@ -235,7 +291,7 @@ export default function QRScanScreen({ navigation }) {
             />
             <Text style={s.statusPillText}>
               {scanned 
-                ? (error ? error : (geofenceDenied ? "Geofence Access Denied" : "Saved to MongoDB Atlas — ready to use"))
+                ? (error ? error : (geofenceDenied ? "Geofence Access Denied" : "Venue Unlocked — Ready to explore"))
                 : "Point camera at a NavX Campus QR"}
             </Text>
           </View>
@@ -252,12 +308,15 @@ export default function QRScanScreen({ navigation }) {
                 <Ionicons name="business" size={18} color="#8B5CF6" />
               </View>
               <Text style={s.campusCardTitle}>
-                {isCampusQR ? "Campus Detected" : "Location QR Detected"} <Ionicons name="checkmark-circle" size={16} color="#22C55E" />
+                {isCampusQR ? "Campus Unlocked" : "Location QR Detected"} <Ionicons name="checkmark-circle" size={16} color="#22C55E" />
               </Text>
               <TouchableOpacity 
                 style={s.viewDetailsBtn} 
-                onPress={() => {
-                  const targetCampusId = isCampusQR ? result._id : (result.blockId?.campusId || result.campusId);
+                onPress={async () => {
+                  const targetCampusId = isCampusQR ? (result._id || result.id) : (result.blockId?.campusId || result.campusId);
+                  if (isCampusQR) {
+                    await activateCampus(result);
+                  }
                   navigation.navigate("MainTabs", { 
                     screen: "Home", 
                     params: { 
@@ -268,15 +327,13 @@ export default function QRScanScreen({ navigation }) {
                 }}
                 activeOpacity={0.8}
               >
-                <Text style={s.viewDetailsText}>
-                  {isCampusQR ? "View Details ›" : "Open Map ›"}
-                </Text>
+                <Text style={s.viewDetailsText}>Explore ›</Text>
               </TouchableOpacity>
             </View>
 
             {/* Campus Info & Image Row */}
             <View style={s.campusInfoRow}>
-              {/* Campus Photo Image (Uploaded by Admin!) */}
+              {/* Campus Photo Image */}
               <Image 
                 source={{ uri: result.image || FALLBACK_CAMPUS_IMAGE }} 
                 style={s.campusImageThumbnail}
@@ -317,6 +374,63 @@ export default function QRScanScreen({ navigation }) {
                   )}
                 </View>
               </View>
+            </View>
+
+            {/* Action Buttons Row */}
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
+              <TouchableOpacity
+                style={{
+                  flex: 1,
+                  backgroundColor: '#7C3AED',
+                  paddingVertical: 12,
+                  borderRadius: 14,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexDirection: 'row',
+                  gap: 6
+                }}
+                onPress={async () => {
+                  const targetCampusId = isCampusQR ? (result._id || result.id) : (result.blockId?.campusId || result.campusId);
+                  if (isCampusQR) {
+                    await activateCampus(result);
+                  }
+                  navigation.navigate("MainTabs", {
+                    screen: "Home",
+                    params: { campusId: targetCampusId }
+                  });
+                }}
+              >
+                <Ionicons name="home-outline" size={16} color="#fff" />
+                <Text style={{ color: '#fff', fontSize: 13, fontWeight: '800' }}>Explore Venue</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={{
+                  flex: 1,
+                  backgroundColor: 'rgba(124, 58, 237, 0.15)',
+                  borderWidth: 1,
+                  borderColor: 'rgba(124, 58, 237, 0.4)',
+                  paddingVertical: 12,
+                  borderRadius: 14,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexDirection: 'row',
+                  gap: 6
+                }}
+                onPress={async () => {
+                  const targetCampusId = isCampusQR ? (result._id || result.id) : (result.blockId?.campusId || result.campusId);
+                  if (isCampusQR) {
+                    await activateCampus(result);
+                  }
+                  navigation.navigate("MainTabs", {
+                    screen: "Map",
+                    params: { campusId: targetCampusId }
+                  });
+                }}
+              >
+                <Ionicons name="map-outline" size={16} color="#A855F7" />
+                <Text style={{ color: '#A855F7', fontSize: 13, fontWeight: '800' }}>Open Map</Text>
+              </TouchableOpacity>
             </View>
 
           </Animated.View>
