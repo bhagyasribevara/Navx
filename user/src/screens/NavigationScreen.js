@@ -6,7 +6,10 @@ import {
 import { WebView } from "react-native-webview";
 import * as Location from "expo-location";
 import { Ionicons } from "@expo/vector-icons";
-import { Accelerometer, Magnetometer } from "expo-sensors";
+import { Accelerometer, Magnetometer, DeviceMotion } from "expo-sensors";
+import PedometerService from "../sensors/PedometerService";
+import GyroHeadingService from "../sensors/GyroHeadingService";
+import WiFiPositioningService from "../sensors/WiFiPositioningService";
 import * as Speech from "expo-speech";
 import * as Haptics from "expo-haptics";
 import { ThemeContext } from "../context/ThemeContext";
@@ -17,6 +20,7 @@ import { io } from "socket.io-client";
 import { PositionEngine, StepDetector } from "../positioning";
 import BarometerService from "../sensors/BarometerService";
 import SensorFusion from "../sensors/SensorFusion";
+import AmbientFloorDetector from "../sensors/AmbientFloorDetector";
 import VerticalTracker from "../navigation/VerticalTracker";
 import StaircaseExtractor from "../navigation/StaircaseExtractor";
 import { SHADOWS, RADIUS, ROOM_COLORS } from "../theme/designSystem";
@@ -342,7 +346,8 @@ window.setMapMode = function(mode) {
     map.easeTo({ pitch: 60, bearing: -17.6, duration: 600 });
   }
 
-  var layers3D = ['campus-blocks', 'campus-rooms', 'campus-stairs', '3d-buildings', 'route-bg', 'route-line'];
+  var layers3D = ['campus-blocks', 'campus-rooms', 'campus-stairs', '3d-buildings', 'route-bg', 'route-line',
+                   'user-shadow-layer', 'user-stem-layer', 'user-disc-layer', 'user-glow-layer'];
   layers3D.forEach(function(id) {
     if (map.getLayer(id)) {
       map.setLayoutProperty(id, 'visibility', is2D ? 'none' : 'visible');
@@ -686,53 +691,200 @@ window.renderGeoJSONLayers = function(data, floorId, activeFloorId) {
   window.setMapMode(currentMapMode);
 };
 
-const userIconEl = document.createElement('div');
-userIconEl.className = 'user-marker';
-userIconEl.innerHTML = '<div class="pulse"></div><div id="user-puck-inner" class="puck"><svg width="16" height="16" viewBox="0 0 24 24" fill="white" style="transform: translateY(-1px);"><path d="M12 2L4 20l8-4 8 4z"/></svg></div>';
+// ─────────────────────────────────────────────────────────────────────────────
+// 3D USER POSITION MARKER — Mapbox GL JS fill-extrusion based.
+// Shows the user as a glowing disc floating at their ACTUAL floor altitude.
+// A vertical stem connects the disc down to ground level.
+//
+// Altitude mapping:
+//   Ground floor (level 0) → altitude = 1.5m  (person standing on ground)
+//   1st floor   (level 1) → altitude = 5.0m  (3.5m floor + 1.5m person)
+//   2nd floor   (level 2) → altitude = 8.5m  (7.0m + 1.5m)
+//   etc.
+//
+// generateCirclePolygon: creates a GeoJSON polygon approximation of a circle
+// centered at (lng, lat) with given radius in meters, using numPts points.
+// ─────────────────────────────────────────────────────────────────────────────
+function generateCirclePolygon(lng, lat, radiusMeters, numPts) {
+  var pts = numPts || 20;
+  var coords = [];
+  var earthR = 6371000;
+  for (var i = 0; i <= pts; i++) {
+    var angle = (i / pts) * 2 * Math.PI;
+    var dx = radiusMeters * Math.cos(angle);
+    var dy = radiusMeters * Math.sin(angle);
+    var dLat = dy / earthR * (180 / Math.PI);
+    var dLng = dx / (earthR * Math.cos(lat * Math.PI / 180)) * (180 / Math.PI);
+    coords.push([lng + dLng, lat + dLat]);
+  }
+  return coords;
+}
 
-window.userMarker = null;
+function initUser3DMarker(map, lng, lat, elevation) {
+  var elev = elevation || 0;
+  var discR = 2.5;  // disc radius meters
+  var stemR = 0.6;  // stem radius meters
+  var discCoords = generateCirclePolygon(lng, lat, discR, 20);
+  var stemCoords = generateCirclePolygon(lng, lat, stemR, 12);
 
-${initialPos ? `
-  window.userMarker = new mapboxgl.Marker({ element: userIconEl, pitchAlignment: 'map' })
-    .setLngLat([${initialPos.y}, ${initialPos.x}])
-    .addTo(map);
-` : ''}
+  // ── Ground shadow circle (always at z=0, subtle) ──
+  var shadowCoords = generateCirclePolygon(lng, lat, discR * 1.4, 20);
+  if (!map.getSource('user-shadow')) {
+    map.addSource('user-shadow', {
+      type: 'geojson',
+      data: { type: 'Feature', geometry: { type: 'Polygon', coordinates: [shadowCoords] }, properties: { base: 0, top: 0.05 } }
+    });
+    map.addLayer({
+      id: 'user-shadow-layer',
+      type: 'fill-extrusion',
+      source: 'user-shadow',
+      paint: {
+        'fill-extrusion-color': '#7c3aed',
+        'fill-extrusion-base': 0,
+        'fill-extrusion-height': 0.05,
+        'fill-extrusion-opacity': 0.35
+      }
+    });
+  }
 
-// Destination marker
-${destX && destY ? `
-  const destEl = document.createElement('div');
-  destEl.className = 'dest-marker';
-  new mapboxgl.Marker({ element: destEl }).setLngLat([${destY}, ${destX}]).addTo(map);
-` : ''}
+  // ── Vertical stem: thin pillar from ground to disc height ──
+  if (!map.getSource('user-stem')) {
+    map.addSource('user-stem', {
+      type: 'geojson',
+      data: { type: 'Feature', geometry: { type: 'Polygon', coordinates: [stemCoords] }, properties: { base: 0, top: elev } }
+    });
+    map.addLayer({
+      id: 'user-stem-layer',
+      type: 'fill-extrusion',
+      source: 'user-stem',
+      paint: {
+        'fill-extrusion-color': '#a78bfa',
+        'fill-extrusion-base': ['get', 'base'],
+        'fill-extrusion-height': ['get', 'top'],
+        'fill-extrusion-opacity': 0.7
+      }
+    });
+  }
+
+  // ── User disc: glowing filled circle at their floor altitude ──
+  if (!map.getSource('user-disc')) {
+    map.addSource('user-disc', {
+      type: 'geojson',
+      data: { type: 'Feature', geometry: { type: 'Polygon', coordinates: [discCoords] }, properties: { base: elev, top: elev + 0.6 } }
+    });
+    map.addLayer({
+      id: 'user-disc-layer',
+      type: 'fill-extrusion',
+      source: 'user-disc',
+      paint: {
+        'fill-extrusion-color': '#8b5cf6',
+        'fill-extrusion-base': ['get', 'base'],
+        'fill-extrusion-height': ['get', 'top'],
+        'fill-extrusion-opacity': 1.0
+      }
+    });
+  }
+
+  // ── Outer glow ring: slightly larger, transparent disc ──
+  if (!map.getSource('user-glow')) {
+    var glowCoords = generateCirclePolygon(lng, lat, discR * 1.6, 20);
+    map.addSource('user-glow', {
+      type: 'geojson',
+      data: { type: 'Feature', geometry: { type: 'Polygon', coordinates: [glowCoords] }, properties: { base: elev - 0.1, top: elev + 0.15 } }
+    });
+    map.addLayer({
+      id: 'user-glow-layer',
+      type: 'fill-extrusion',
+      source: 'user-glow',
+      paint: {
+        'fill-extrusion-color': '#c4b5fd',
+        'fill-extrusion-base': ['get', 'base'],
+        'fill-extrusion-height': ['get', 'top'],
+        'fill-extrusion-opacity': 0.4
+      }
+    });
+  }
+
+  // Animate glow pulsing
+  var glowOpacity = 0.4;
+  var glowDir = -1;
+  setInterval(function() {
+    if (!map.getLayer('user-glow-layer')) return;
+    glowOpacity += glowDir * 0.04;
+    if (glowOpacity <= 0.15) { glowOpacity = 0.15; glowDir = 1; }
+    if (glowOpacity >= 0.55) { glowOpacity = 0.55; glowDir = -1; }
+    map.setPaintProperty('user-glow-layer', 'fill-extrusion-opacity', glowOpacity);
+  }, 80);
+}
+
+function updateUser3DMarker(map, lng, lat, elevation) {
+  var elev = Math.max(0, elevation || 0);
+  var discR = 2.5;
+  var stemR = 0.6;
+
+  var discCoords = generateCirclePolygon(lng, lat, discR, 20);
+  var stemCoords = generateCirclePolygon(lng, lat, stemR, 12);
+  var shadowCoords = generateCirclePolygon(lng, lat, discR * 1.4, 20);
+  var glowCoords = generateCirclePolygon(lng, lat, discR * 1.6, 20);
+
+  if (map.getSource('user-shadow')) {
+    map.getSource('user-shadow').setData({
+      type: 'Feature',
+      geometry: { type: 'Polygon', coordinates: [shadowCoords] },
+      properties: { base: 0, top: 0.05 }
+    });
+  }
+
+  if (map.getSource('user-stem')) {
+    map.getSource('user-stem').setData({
+      type: 'Feature',
+      geometry: { type: 'Polygon', coordinates: [stemCoords] },
+      properties: { base: 0, top: Math.max(0.1, elev) }
+    });
+  }
+
+  if (map.getSource('user-disc')) {
+    map.getSource('user-disc').setData({
+      type: 'Feature',
+      geometry: { type: 'Polygon', coordinates: [discCoords] },
+      properties: { base: elev, top: elev + 0.6 }
+    });
+  }
+
+  if (map.getSource('user-glow')) {
+    map.getSource('user-glow').setData({
+      type: 'Feature',
+      geometry: { type: 'Polygon', coordinates: [glowCoords] },
+      properties: { base: elev - 0.1, top: elev + 0.15 }
+    });
+  }
+}
+
+window._user3DMarkerInitialized = false;
+window.currentUserElevation = 0;
 
 window.updateUserPos = function(lat, lng, heading, elevation) {
-  var elev = elevation || 0;
-  if (!window.userMarker) {
-    window.userMarker = new mapboxgl.Marker({ element: userIconEl, pitchAlignment: 'map' })
-      .setLngLat([lng, lat])
-      .addTo(map);
-  } else {
-    window.userMarker.setLngLat([lng, lat]);
+  var elev = Math.max(0, elevation || 0);
+  window.currentUserElevation = elev;
+
+  if (!window._user3DMarkerInitialized && map.isStyleLoaded()) {
+    initUser3DMarker(map, lng, lat, elev);
+    window._user3DMarkerInitialized = true;
+  } else if (window._user3DMarkerInitialized) {
+    updateUser3DMarker(map, lng, lat, elev);
   }
-  if (currentMapMode === '3D' && elev > 0) {
-    var pixelOffset = elev * -8;
-    userIconEl.style.transform = 'translateY(' + pixelOffset + 'px)';
-  } else {
-    userIconEl.style.transform = '';
-  }
+
   if (heading !== undefined && heading !== null) {
     window.updateUserHeading(heading);
   }
-  map.flyTo({ center: [lng, lat], animate: false });
+
+  // Smoothly follow user (only pan, don't change zoom/pitch)
+  map.easeTo({ center: [lng, lat], duration: 400, easing: function(t) { return t; } });
 };
 
 window.updateUserHeading = function(heading) {
-  if (heading !== undefined && heading !== null) {
-    const puck = document.getElementById('user-puck-inner');
-    if (puck) {
-      puck.style.transform = 'rotate(' + heading + 'deg)';
-    }
-  }
+  // Heading is stored for future use in direction arrow layer
+  window._userHeading = heading || 0;
 };
 </script></body></html>`;
 }
@@ -817,6 +969,12 @@ export default function NavigationScreen({ navigation, route }) {
   const sensorFusionRef = useRef(new SensorFusion());
   const staircaseConnectorsRef = useRef([]);
   const [verticalMovementState, setVerticalMovementState] = useState(null);
+  const ambientAltRef = useRef(0); // live altitude from AmbientFloorDetector (meters)
+
+  // ── Block & Floor location state (shown on 3D map HUD)
+  const [currentBlock, setCurrentBlock] = useState(null);
+  const [ambientFloorIndex, setAmbientFloorIndex] = useState(0);
+  const geoJSONDataRef = useRef(null);
 
   // Extract staircase connectors whenever route or map floors change
   useEffect(() => {
@@ -829,6 +987,52 @@ export default function NavigationScreen({ navigation, route }) {
       staircaseConnectorsRef.current = connectors;
     }
   }, [routeData, mapData]);
+
+  // Keep geoJSONDataRef in sync (needed for block detection in sensor callbacks)
+  useEffect(() => {
+    geoJSONDataRef.current = geoJSONData;
+  }, [geoJSONData]);
+
+  // ── ALWAYS-ON: Start AmbientFloorDetector when component mounts ──
+  // Works without navigation, admin setup, or WiFi. Just the barometer.
+  useEffect(() => {
+    AmbientFloorDetector.isAvailable().then(avail => {
+      if (avail) {
+        AmbientFloorDetector.start(({ floorIndex, altitudeMeters }) => {
+          ambientAltRef.current = altitudeMeters;
+          setAmbientFloorIndex(floorIndex);
+          // If VerticalTracker is NOT active (not navigating stairs),
+          // use barometer altitude as the ground truth for the 3D marker
+          if (!verticalTrackerRef.current.state.isActive) {
+            posEngine.position.z = altitudeMeters;
+          }
+        });
+      }
+    }).catch(console.warn);
+
+    return () => AmbientFloorDetector.stop();
+  }, []);
+
+  // ── Sync Barometer baseline when known floor changes (e.g. QR calibration) ──
+  useEffect(() => {
+    if (currentFloor && mapData?.floors) {
+      const floorObj = mapData.floors.find(f =>
+        (f._id || f).toString() ===
+        (typeof currentFloor === 'object' ? currentFloor._id : currentFloor).toString()
+      );
+      if (floorObj && typeof floorObj.level === 'number') {
+        AmbientFloorDetector.setKnownFloor(floorObj.level);
+      }
+    }
+  }, [currentFloor, mapData]);
+
+  // ── Block detection: re-run point-in-polygon whenever user position changes
+  useEffect(() => {
+    if (userPos && geoJSONDataRef.current && posEngine.isCalibrated) {
+      const block = posEngine.getCurrentBlock(geoJSONDataRef.current);
+      setCurrentBlock(block);
+    }
+  }, [userPos]);
 
   const mapHtml = React.useMemo(() => {
     const geoDataToUse = geoJSONData || { type: 'FeatureCollection', features: [] };
@@ -907,7 +1111,10 @@ export default function NavigationScreen({ navigation, route }) {
   useEffect(() => {
     if (userPos && webViewRef.current) {
       const snappedPos = snapPositionToRoute(userPos, routeData?.path, currentStep);
-      const elev = posEngine.position.z || 0;
+      // Priority: VerticalTracker z (stair navigation) > AmbientFloorDetector (barometer)
+      const elev = posEngine.verticalTrackingActive
+        ? (posEngine.position.z || 0)
+        : ambientAltRef.current;
       webViewRef.current.injectJavaScript(`
         if (typeof window.updateUserPos === 'function') {
           window.updateUserPos(${snappedPos.x}, ${snappedPos.y}, ${posEngine.heading}, ${elev});
@@ -915,7 +1122,7 @@ export default function NavigationScreen({ navigation, route }) {
         true;
       `);
     }
-  }, [userPos, routeData, currentStep]);
+  }, [userPos, routeData, currentStep, ambientFloorIndex]);
 
   useEffect(() => {
     (async () => {
@@ -1144,10 +1351,10 @@ export default function NavigationScreen({ navigation, route }) {
   useEffect(() => {
     let locationWatcher;
     let accel;
-    let mag;
+    let deviceMotionSub;
     const accelYRef = { current: 0 };
     if (isNavigating) {
-      // 1. Start barometer service if available on device
+      // ── 1. Barometer (unchanged) ──
       BarometerService.isAvailable().then(avail => {
         if (avail) {
           BarometerService.start(data => {
@@ -1158,8 +1365,8 @@ export default function NavigationScreen({ navigation, route }) {
         }
       }).catch(console.warn);
 
-      // 2. Step detector for dead reckoning bridging & vertical staircase progress
-      stepDetector.current = new StepDetector(() => {
+      // ── 2. Step detection: try native Pedometer first, fall back to manual ──
+      const handleStep = () => {
         posEngine.processStep(posEngine.heading);
         sensorFusionRef.current.onStep();
         const fusion = sensorFusionRef.current.getMovementState();
@@ -1175,34 +1382,88 @@ export default function NavigationScreen({ navigation, route }) {
             setUserPos({ ...posEngine.position });
           }
         }
+      };
+
+      PedometerService.isAvailable().then(pedometerAvail => {
+        if (pedometerAvail) {
+          // ✅ Native hardware pedometer — most accurate
+          PedometerService.start(handleStep);
+          sensorFusionRef.current.hasNativePedometer = true;
+          console.log('[NavX] Using native hardware pedometer');
+        } else {
+          // ⚠️ Fallback: manual accelerometer peak detection
+          stepDetector.current = new StepDetector(handleStep);
+          accel = Accelerometer.addListener(d => {
+            accelYRef.current = d.y;
+            stepDetector.current?.processAccelerometer(d.x, d.y, d.z);
+          });
+          Accelerometer.setUpdateInterval(100);
+          console.log('[NavX] Fallback: manual accelerometer step detection');
+        }
+      }).catch(() => {
+        // Pedometer check failed — use manual fallback
+        stepDetector.current = new StepDetector(handleStep);
+        accel = Accelerometer.addListener(d => {
+          accelYRef.current = d.y;
+          stepDetector.current?.processAccelerometer(d.x, d.y, d.z);
+        });
+        Accelerometer.setUpdateInterval(100);
       });
 
-      accel = Accelerometer.addListener(d => {
-        accelYRef.current = d.y;
-        stepDetector.current?.processAccelerometer(d.x, d.y, d.z);
-      });
-      Accelerometer.setUpdateInterval(100);
+      // Also keep Accelerometer for GyroHeadingService tilt compensation
+      if (!accel) {
+        accel = Accelerometer.addListener(d => {
+          accelYRef.current = d.y;
+          GyroHeadingService.setAccelY(d.y);
+        });
+        Accelerometer.setUpdateInterval(100);
+      }
 
-      mag = Magnetometer.addListener(d => {
-        // Tilt-compensated compass logic
-        const gY = Math.min(1, Math.abs(accelYRef.current || 0));
-        const mForward = d.y * (1 - gY) + (-d.z) * gY;
-
-        const h = Math.atan2(mForward, d.x) * (180 / Math.PI);
-        const trueBearing = h - 90;
-        const normalizedH = (trueBearing + 360) % 360;
-
-        posEngine.updateHeading(normalizedH);
+      // ── 3. Gyroscope + Magnetometer complementary filter heading ──
+      GyroHeadingService.start((fusedHeading) => {
+        posEngine.updateHeading(fusedHeading);
         if (webViewRef.current) {
           webViewRef.current.injectJavaScript(`
             if (typeof window.updateUserHeading === 'function') {
-              window.updateUserHeading(${normalizedH});
+              window.updateUserHeading(${fusedHeading});
             }
             true;
           `);
         }
       });
-      Magnetometer.setUpdateInterval(100);
+
+      // ── 4. DeviceMotion → pitch angle for enhanced SensorFusion scoring ──
+      DeviceMotion.setUpdateInterval(200);
+      deviceMotionSub = DeviceMotion.addListener(({ rotation }) => {
+        if (rotation?.beta !== undefined) {
+          // beta = pitch in radians, convert to degrees
+          const pitchDeg = rotation.beta * (180 / Math.PI);
+          sensorFusionRef.current.setPitch(pitchDeg);
+        }
+      });
+
+      // ── 5. WiFi Fingerprinting: scan every 5s for drift correction ──
+      if (campusId && WiFiPositioningService.isAvailable()) {
+        WiFiPositioningService.start(campusId, (wifiPos) => {
+          if (wifiPos?.lat && wifiPos?.lng) {
+            posEngine.processWiFiPosition(
+              wifiPos.lat,
+              wifiPos.lng,
+              wifiPos.confidence || 0.5,
+              wifiPos.floorId || null
+            );
+            console.log(`[NavX WiFi] Position correction: ${wifiPos.lat.toFixed(6)}, ${wifiPos.lng.toFixed(6)} (conf: ${wifiPos.confidence})`);
+          }
+        });
+      }
+
+      // ── 6. Update SensorFusion cadence from PedometerService every 3s ──
+      const cadenceInterval = setInterval(() => {
+        if (PedometerService.isRunning) {
+          const cadence = PedometerService.getCadence();
+          sensorFusionRef.current.setStepCadence(cadence);
+        }
+      }, 3000);
 
       // GPS watch for live distance and map updates
       if (locationPerm) {
@@ -1303,9 +1564,13 @@ export default function NavigationScreen({ navigation, route }) {
 
       return () => {
         if (accel) accel.remove();
-        if (mag) mag.remove();
+        if (deviceMotionSub) deviceMotionSub.remove();
         if (locationWatcher) locationWatcher.remove();
+        clearInterval(cadenceInterval);
         BarometerService.stop();
+        PedometerService.stop();
+        GyroHeadingService.stop();
+        WiFiPositioningService.stop();
         verticalTrackerRef.current.deactivate();
         sensorFusionRef.current.reset();
       };
@@ -1639,6 +1904,28 @@ export default function NavigationScreen({ navigation, route }) {
       flexDirection: "row", alignItems: "center",
       borderWidth: 1, borderColor: colors.danger + "30",
     },
+    // Block & Floor HUD pill
+    blockFloorHUD: {
+      position: 'absolute',
+      bottom: 16,
+      left: 16,
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: 'rgba(10, 10, 20, 0.82)',
+      paddingHorizontal: 12,
+      paddingVertical: 7,
+      borderRadius: 20,
+      borderWidth: 1,
+      borderColor: 'rgba(167, 139, 250, 0.35)',
+      backdropFilter: 'blur(10px)',
+      ...SHADOWS.lg,
+    },
+    blockFloorText: {
+      color: '#e2e8f0',
+      fontSize: 12,
+      fontWeight: '700',
+      letterSpacing: 0.3,
+    },
   });
 
   return (
@@ -1715,6 +2002,45 @@ export default function NavigationScreen({ navigation, route }) {
             <Text style={[s.mapModeText, mapMode === '3D' && s.mapModeTextActive]}>3D</Text>
           </TouchableOpacity>
         </View>
+
+        {/* ── Block & Floor Location HUD (always visible, no admin needed) ── */}
+        {(currentBlock || ambientFloorIndex > 0 || currentFloor) && (() => {
+          // Resolve floor label: prefer route's floor (exact), fall back to barometer index
+          let floorLabel = '';
+          if (currentFloor && mapData?.floors) {
+            const floorObj = mapData.floors.find(f =>
+              (f._id || f).toString() ===
+              (typeof currentFloor === 'object' ? currentFloor._id : currentFloor).toString()
+            );
+            if (floorObj) {
+              floorLabel = floorObj.level === 0 ? ' · Ground' : ` · Floor ${floorObj.level}`;
+            }
+          } else if (ambientFloorIndex > 0) {
+            floorLabel = ` · Floor ${ambientFloorIndex}`;
+          } else {
+            floorLabel = ' · Ground';
+          }
+
+          const altMeters = Math.round(ambientAltRef.current * 10) / 10;
+          const showAlt = altMeters > 1.8; // only show if meaningfully above ground
+
+          return (
+            <View style={s.blockFloorHUD}>
+              <Ionicons name="location" size={13} color="#a78bfa" style={{ marginRight: 5 }} />
+              <View>
+                <Text style={s.blockFloorText}>
+                  {currentBlock ? currentBlock.blockName : (posEngine.isCalibrated ? 'Outdoor' : 'Campus')}{floorLabel}
+                </Text>
+                {showAlt && (
+                  <Text style={[s.blockFloorText, { fontSize: 10, color: '#a78bfa', marginTop: 1 }]}>
+                    ↑ {altMeters}m above ground
+                  </Text>
+                )}
+              </View>
+            </View>
+          );
+        })()}
+
 
         {/* Direction card */}
         {isNavigating && currentDir && !arrived && (

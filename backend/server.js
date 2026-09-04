@@ -173,6 +173,7 @@ app.use('/api/student', require('./routes/student'));
 app.use('/api/faculty', require('./routes/faculty'));
 app.use('/api/spatialStudio', require('./routes/spatialStudio'));
 app.use('/api/streetView', require('./routes/streetView'));
+app.use('/api/wifi-position', require('./routes/wifi-position')); // WiFi fingerprinting positioning
 
 // Health check (includes MongoDB status)
 app.get('/api/health', (req, res) => {

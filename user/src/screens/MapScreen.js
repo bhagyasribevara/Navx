@@ -7,6 +7,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { WebView } from "react-native-webview";
 import { ThemeContext } from "../context/ThemeContext";
 import { useGeofence } from "../context/GeofenceContext";
+import AmbientFloorDetector from "../sensors/AmbientFloorDetector";
 import { getMapData, getCampuses, getGeoJSONMapData, SOCKET_URL, getCachedConfigValue } from "../api";
 import { io } from "socket.io-client";
 import { SHADOWS, RADIUS, ROOM_COLORS } from "../theme/designSystem";
@@ -31,20 +32,6 @@ function buildCampusMapHTML(geoJSONData, centerCoords, mapboxUrl, mapMode = '3D'
   .mapboxgl-popup { max-width: 200px; }
   .mapboxgl-popup-content { background: rgba(10, 14, 23, 0.8); color: white; padding: 4px 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.2); font-size: 11px; font-weight: bold; }
   .mapboxgl-popup-tip { border-top-color: rgba(10, 14, 23, 0.8); }
-  .user-marker {
-    position: relative; width: 70px; height: 70px; display: flex; align-items: center; justify-content: center;
-  }
-  @keyframes pulseGlow {
-    0% { transform: scale(0.85); opacity: 0.8; }
-    50% { transform: scale(1.4); opacity: 0.3; }
-    100% { transform: scale(0.85); opacity: 0.8; }
-  }
-  .pulse {
-    position: absolute; width: 100%; height: 100%; background: radial-gradient(circle, rgba(139, 92, 246, 0.45) 0%, rgba(139, 92, 246, 0) 65%); border-radius: 50%; animation: pulseGlow 2.5s infinite;
-  }
-  .puck {
-    position: relative; width: 30px; height: 30px; background: linear-gradient(135deg, #A855F7, #6D28D9); border-radius: 50%; box-shadow: 0 6px 16px rgba(109, 40, 217, 0.6); display: flex; align-items: center; justify-content: center; border: 2px solid rgba(255,255,255,0.4); transition: transform 0.2s ease-out;
-  }
 </style>
 </head><body><div id="map"></div>
 <script>
@@ -249,26 +236,178 @@ window.renderGeoJSONLayers = function(data, floorId) {
   window.setMapMode(currentMapMode);
 };
 
-const userIconEl = document.createElement('div');
-userIconEl.className = 'user-marker';
-userIconEl.innerHTML = '<div class="pulse"></div><div id="user-puck-inner" class="puck"><svg width="16" height="16" viewBox="0 0 24 24" fill="white" style="transform: translateY(-1px);"><path d="M12 2L4 20l8-4 8 4z"/></svg></div>';
-
-window.userMarker = null;
-
-window.updateUserPos = function(lat, lng, heading) {
-  if (!window.userMarker) {
-    window.userMarker = new mapboxgl.Marker({ element: userIconEl, pitchAlignment: 'map' })
-      .setLngLat([lng, lat])
-      .addTo(map);
-  } else {
-    window.userMarker.setLngLat([lng, lat]);
+// ─────────────────────────────────────────────────────────────────────────────
+// 3D USER POSITION MARKER — Mapbox GL JS fill-extrusion based.
+// Shows the user as a glowing disc floating at their ACTUAL floor altitude.
+// ─────────────────────────────────────────────────────────────────────────────
+function generateCirclePolygon(lng, lat, radiusMeters, numPts) {
+  var pts = numPts || 20;
+  var coords = [];
+  var earthR = 6371000;
+  for (var i = 0; i <= pts; i++) {
+    var angle = (i / pts) * 2 * Math.PI;
+    var dx = radiusMeters * Math.cos(angle);
+    var dy = radiusMeters * Math.sin(angle);
+    var dLat = dy / earthR * (180 / Math.PI);
+    var dLng = dx / (earthR * Math.cos(lat * Math.PI / 180)) * (180 / Math.PI);
+    coords.push([lng + dLng, lat + dLat]);
   }
-  if (heading !== undefined && heading !== null) {
-    const puck = document.getElementById('user-puck-inner');
-    if (puck) {
-      puck.style.transform = 'rotate(' + heading + 'deg)';
-    }
+  return coords;
+}
+
+function initUser3DMarker(map, lng, lat, elevation) {
+  var elev = elevation || 0;
+  var discR = 2.5;  // disc radius meters
+  var stemR = 0.6;  // stem radius meters
+  var discCoords = generateCirclePolygon(lng, lat, discR, 20);
+  var stemCoords = generateCirclePolygon(lng, lat, stemR, 12);
+
+  // ── Ground shadow circle (always at z=0, subtle) ──
+  var shadowCoords = generateCirclePolygon(lng, lat, discR * 1.4, 20);
+  if (!map.getSource('user-shadow')) {
+    map.addSource('user-shadow', {
+      type: 'geojson',
+      data: { type: 'Feature', geometry: { type: 'Polygon', coordinates: [shadowCoords] }, properties: { base: 0, top: 0.05 } }
+    });
+    map.addLayer({
+      id: 'user-shadow-layer',
+      type: 'fill-extrusion',
+      source: 'user-shadow',
+      paint: {
+        'fill-extrusion-color': '#7c3aed',
+        'fill-extrusion-base': 0,
+        'fill-extrusion-height': 0.05,
+        'fill-extrusion-opacity': 0.35
+      }
+    });
   }
+
+  // ── Vertical stem: thin pillar from ground to disc height ──
+  if (!map.getSource('user-stem')) {
+    map.addSource('user-stem', {
+      type: 'geojson',
+      data: { type: 'Feature', geometry: { type: 'Polygon', coordinates: [stemCoords] }, properties: { base: 0, top: elev } }
+    });
+    map.addLayer({
+      id: 'user-stem-layer',
+      type: 'fill-extrusion',
+      source: 'user-stem',
+      paint: {
+        'fill-extrusion-color': '#a78bfa',
+        'fill-extrusion-base': ['get', 'base'],
+        'fill-extrusion-height': ['get', 'top'],
+        'fill-extrusion-opacity': 0.7
+      }
+    });
+  }
+
+  // ── User disc: glowing filled circle at their floor altitude ──
+  if (!map.getSource('user-disc')) {
+    map.addSource('user-disc', {
+      type: 'geojson',
+      data: { type: 'Feature', geometry: { type: 'Polygon', coordinates: [discCoords] }, properties: { base: elev, top: elev + 0.6 } }
+    });
+    map.addLayer({
+      id: 'user-disc-layer',
+      type: 'fill-extrusion',
+      source: 'user-disc',
+      paint: {
+        'fill-extrusion-color': '#8b5cf6',
+        'fill-extrusion-base': ['get', 'base'],
+        'fill-extrusion-height': ['get', 'top'],
+        'fill-extrusion-opacity': 1.0
+      }
+    });
+  }
+
+  // ── Outer glow ring: slightly larger, transparent disc ──
+  if (!map.getSource('user-glow')) {
+    var glowCoords = generateCirclePolygon(lng, lat, discR * 1.6, 20);
+    map.addSource('user-glow', {
+      type: 'geojson',
+      data: { type: 'Feature', geometry: { type: 'Polygon', coordinates: [glowCoords] }, properties: { base: elev - 0.1, top: elev + 0.15 } }
+    });
+    map.addLayer({
+      id: 'user-glow-layer',
+      type: 'fill-extrusion',
+      source: 'user-glow',
+      paint: {
+        'fill-extrusion-color': '#c4b5fd',
+        'fill-extrusion-base': ['get', 'base'],
+        'fill-extrusion-height': ['get', 'top'],
+        'fill-extrusion-opacity': 0.4
+      }
+    });
+  }
+
+  // Animate glow pulsing
+  var glowOpacity = 0.4;
+  var glowDir = -1;
+  setInterval(function() {
+    if (!map.getLayer('user-glow-layer')) return;
+    glowOpacity += glowDir * 0.04;
+    if (glowOpacity <= 0.15) { glowOpacity = 0.15; glowDir = 1; }
+    if (glowOpacity >= 0.55) { glowOpacity = 0.55; glowDir = -1; }
+    map.setPaintProperty('user-glow-layer', 'fill-extrusion-opacity', glowOpacity);
+  }, 80);
+}
+
+function updateUser3DMarker(map, lng, lat, elevation) {
+  var elev = Math.max(0, elevation || 0);
+  var discR = 2.5;
+  var stemR = 0.6;
+
+  var discCoords = generateCirclePolygon(lng, lat, discR, 20);
+  var stemCoords = generateCirclePolygon(lng, lat, stemR, 12);
+  var shadowCoords = generateCirclePolygon(lng, lat, discR * 1.4, 20);
+  var glowCoords = generateCirclePolygon(lng, lat, discR * 1.6, 20);
+
+  if (map.getSource('user-shadow')) {
+    map.getSource('user-shadow').setData({
+      type: 'Feature',
+      geometry: { type: 'Polygon', coordinates: [shadowCoords] },
+      properties: { base: 0, top: 0.05 }
+    });
+  }
+
+  if (map.getSource('user-stem')) {
+    map.getSource('user-stem').setData({
+      type: 'Feature',
+      geometry: { type: 'Polygon', coordinates: [stemCoords] },
+      properties: { base: 0, top: Math.max(0.1, elev) }
+    });
+  }
+
+  if (map.getSource('user-disc')) {
+    map.getSource('user-disc').setData({
+      type: 'Feature',
+      geometry: { type: 'Polygon', coordinates: [discCoords] },
+      properties: { base: elev, top: elev + 0.6 }
+    });
+  }
+
+  if (map.getSource('user-glow')) {
+    map.getSource('user-glow').setData({
+      type: 'Feature',
+      geometry: { type: 'Polygon', coordinates: [glowCoords] },
+      properties: { base: elev - 0.1, top: elev + 0.15 }
+    });
+  }
+}
+
+window._user3DMarkerInitialized = false;
+
+window.updateUserPos = function(lat, lng, heading, elevation) {
+  var elev = Math.max(0, elevation || 0);
+
+  if (!window._user3DMarkerInitialized && map.isStyleLoaded()) {
+    initUser3DMarker(map, lng, lat, elev);
+    window._user3DMarkerInitialized = true;
+  } else if (window._user3DMarkerInitialized) {
+    updateUser3DMarker(map, lng, lat, elev);
+  }
+
+  // Assuming you might use heading later, leaving it here
 };
 
 window.panTo = function(lat, lng) {
@@ -310,6 +449,30 @@ export default function MapScreen({ navigation, route }) {
   const webViewRef = useRef(null);
   const socketRef = useRef(null);
   const panelHeightAnim = useRef(new Animated.Value(SH * 0.45)).current; // Bottom sheet height
+
+  const ambientAltRef = useRef(0);
+  const [ambientFloorIndex, setAmbientFloorIndex] = useState(0);
+
+  // ── ALWAYS-ON: Start AmbientFloorDetector when component mounts ──
+  useEffect(() => {
+    AmbientFloorDetector.isAvailable().then(avail => {
+      if (avail) {
+        AmbientFloorDetector.start(({ floorIndex, altitudeMeters }) => {
+          ambientAltRef.current = altitudeMeters;
+          setAmbientFloorIndex(floorIndex);
+        });
+      }
+    }).catch(console.warn);
+
+    return () => AmbientFloorDetector.stop();
+  }, []);
+
+  // ── Sync Barometer baseline when known floor changes ──
+  useEffect(() => {
+    if (selectedFloor && typeof selectedFloor.level === 'number') {
+      AmbientFloorDetector.setKnownFloor(selectedFloor.level);
+    }
+  }, [selectedFloor]);
 
   const toggleMapMode = (mode) => {
     if (mode === mapMode) return;
@@ -488,14 +651,15 @@ export default function MapScreen({ navigation, route }) {
   // Push user location updates directly into the WebView via JS
   useEffect(() => {
     if (userPos && webViewRef.current) {
+      const elev = ambientAltRef.current;
       webViewRef.current.injectJavaScript(`
         if (typeof window.updateUserPos === 'function') {
-          window.updateUserPos(${userPos.x}, ${userPos.y}, ${heading});
+          window.updateUserPos(${userPos.x}, ${userPos.y}, ${heading}, ${elev});
         }
         true;
       `);
     }
-  }, [userPos, heading]);
+  }, [userPos, heading, ambientFloorIndex]);
 
 
   // Animate panel height based on state
