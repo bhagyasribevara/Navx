@@ -1,5 +1,5 @@
 // Indoor positioning fusion engine
-// Combines QR, BLE, and motion sensors for accurate indoor positioning
+// Combines QR, BLE, WiFi, and motion sensors for accurate indoor positioning
 
 const STEP_LENGTH = 0.7; // Average step length in meters
 const PIXEL_PER_METER = 20; // Scale factor
@@ -117,6 +117,27 @@ export class PositionEngine {
     this.notify();
   }
 
+  // WiFi Fingerprinting positioning — applies estimated position as drift correction
+  // confidence: 0.0–1.0 (from backend k-NN match quality)
+  processWiFiPosition(lat, lng, confidence = 0.5, floorId = null) {
+    if (!this.isCalibrated) return;
+
+    // Map confidence (0–1) to blend weight (0.05–0.35)
+    // Low confidence (0.3) → barely moves position
+    // High confidence (0.9) → meaningful correction
+    const weight = 0.05 + (confidence * 0.30);
+
+    this.position.x = this.position.x * (1 - weight) + lat * weight;
+    this.position.y = this.position.y * (1 - weight) + lng * weight;
+
+    // If backend identified a floor from WiFi fingerprint, update it
+    if (floorId && !this.verticalTrackingActive) {
+      this.position.floor = floorId;
+    }
+
+    this.notify();
+  }
+
   // BLE Beacon positioning - correction & accuracy improvement
   setBLEBeacons(beacons) {
     this.bleBeacons = beacons;
@@ -179,6 +200,76 @@ export class PositionEngine {
       x: (C * E - F * B) / denom,
       y: (A * F - C * D) / denom
     };
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  //  BLOCK DETECTION — Point-in-Polygon using GeoJSON campus data
+  //  Returns the name/id of the building/block the user is currently inside.
+  //  Called from NavigationScreen to show "You are in Block X, Floor Y" label.
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Determines which block/building the user is currently inside.
+   * Uses a ray-casting point-in-polygon algorithm against GeoJSON block features.
+   *
+   * @param {object} geoJSONData - GeoJSON FeatureCollection from campus data
+   * @returns {{ blockName: string, blockId: string } | null}
+   */
+  getCurrentBlock(geoJSONData) {
+    if (!geoJSONData?.features || !this.isCalibrated) return null;
+
+    const lat = this.position.x;
+    const lng = this.position.y;
+
+    // Filter to polygon features that are blocks or buildings
+    const blockFeatures = geoJSONData.features.filter(f =>
+      f.geometry?.type === 'Polygon' &&
+      (f.properties?.type === 'block' || f.properties?.type === 'building')
+    );
+
+    for (const feature of blockFeatures) {
+      const coords = feature.geometry?.coordinates?.[0]; // outer ring
+      if (!coords || coords.length < 3) continue;
+
+      if (this._pointInPolygon(lat, lng, coords)) {
+        return {
+          blockName: feature.properties?.name || feature.properties?.blockName || 'Unknown Block',
+          blockId: feature.properties?.id || feature.properties?._id || null,
+        };
+      }
+    }
+    return null; // User is outside all known blocks (outdoor)
+  }
+
+  /**
+   * Ray-casting algorithm: determines if point (lat, lng) is inside a polygon.
+   * Polygon coords are in GeoJSON format: [[lng, lat], [lng, lat], ...]
+   * @param {number} lat
+   * @param {number} lng
+   * @param {Array} coords - array of [lng, lat] pairs
+   * @returns {boolean}
+   */
+  _pointInPolygon(lat, lng, coords) {
+    let inside = false;
+    const n = coords.length;
+    let j = n - 1;
+
+    for (let i = 0; i < n; i++) {
+      // GeoJSON: coords[i] = [longitude, latitude]
+      const xi = coords[i][0]; // lng
+      const yi = coords[i][1]; // lat
+      const xj = coords[j][0];
+      const yj = coords[j][1];
+
+      // Ray cast from point horizontally
+      const intersect =
+        yi > lat !== yj > lat &&
+        lng < ((xj - xi) * (lat - yi)) / (yj - yi) + xi;
+
+      if (intersect) inside = !inside;
+      j = i;
+    }
+    return inside;
   }
 
   // Get time since last QR calibration
