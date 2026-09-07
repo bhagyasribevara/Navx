@@ -559,8 +559,12 @@ window.renderGeoJSONLayers = function(data, floorId, activeFloorId) {
       'source': 'campus-data',
       'layout': { 'visibility': is2D ? 'visible' : 'none' },
       'paint': {
-        'fill-color': ['coalesce', ['get', 'color'], '#3b82f6'],
-        'fill-opacity': 0.55
+        'fill-color': [
+          'case',
+          ['==', ['get', 'type'], 'block'], '#cbd5e1',
+          ['coalesce', ['get', 'color'], '#94a3b8']
+        ],
+        'fill-opacity': 0.35
       }
     });
   }
@@ -573,9 +577,13 @@ window.renderGeoJSONLayers = function(data, floorId, activeFloorId) {
       'source': 'campus-data',
       'layout': { 'visibility': is2D ? 'visible' : 'none' },
       'paint': {
-        'line-color': ['coalesce', ['get', 'color'], '#1d4ed8'],
-        'line-width': 2.5,
-        'line-opacity': 0.85
+        'line-color': [
+          'case',
+          ['==', ['get', 'type'], 'block'], '#94a3b8',
+          ['coalesce', ['get', 'color'], '#64748b']
+        ],
+        'line-width': 1.5,
+        'line-opacity': 0.7
       }
     });
   }
@@ -617,7 +625,7 @@ window.renderGeoJSONLayers = function(data, floorId, activeFloorId) {
     }, '3d-buildings');
   }
 
-  // ── 6A. 3D EXTRUSION LAYER FOR BLOCKS (TRANSLUCENT, DRAW AFTER ROOMS) ──
+  // ── 6A. 3D EXTRUSION LAYER FOR BLOCKS (MATCH 3D BUILDINGS STYLE) ──
   if (!map.getLayer('campus-blocks')) {
     map.addLayer({
       'id': 'campus-blocks',
@@ -626,10 +634,10 @@ window.renderGeoJSONLayers = function(data, floorId, activeFloorId) {
       'filter': ['==', ['get', 'type'], 'block'],
       'layout': { 'visibility': is2D ? 'none' : 'visible' },
       'paint': {
-        'fill-extrusion-color': ['coalesce', ['get', 'color'], '#64748b'],
-        'fill-extrusion-height': ['coalesce', ['get', 'height'], 2],
+        'fill-extrusion-color': '#1f2937',
+        'fill-extrusion-height': ['coalesce', ['get', 'height'], 6],
         'fill-extrusion-base': ['coalesce', ['get', 'min_height'], 0],
-        'fill-extrusion-opacity': 0.2
+        'fill-extrusion-opacity': 0.6
       }
     }, '3d-buildings');
   }

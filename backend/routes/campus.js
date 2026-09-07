@@ -338,10 +338,11 @@ router.get('/geojson/:id', async (req, res, next) => {
         if (coords[0][0] !== coords[coords.length - 1][0] || coords[0][1] !== coords[coords.length - 1][1]) {
           coords.push([...coords[0]]);
         }
+        const blockColor = (b.shape && b.shape.fill && b.shape.fill !== '#4A90D9' && b.shape.fill !== '#3b82f6') ? b.shape.fill : '#1f2937';
         features.push({
           type: 'Feature',
           geometry: { type: 'Polygon', coordinates: [coords] },
-          properties: { id: b._id, name: b.name, type: 'block', category: b.domain, color: b.shape.fill || '#64748b', min_height: 0, height: 2 }
+          properties: { id: b._id, name: b.name, type: 'block', category: b.domain, color: blockColor, min_height: 0, height: 6 }
         });
       }
     });

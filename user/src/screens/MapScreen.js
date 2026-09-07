@@ -77,15 +77,24 @@ window.setMapMode = function(mode) {
     map.easeTo({ pitch: 60, bearing: -17.6, duration: 600 });
   }
 
-  // Hide all block shapes, room polygons, steps, nodes, and custom layers in 2D mode for a pure clean Mapbox map tile view
-  var customLayers = [
-    'campus-2d-fill', 'campus-2d-line', 'campus-2d-paths', 'campus-2d-nodes',
-    'campus-blocks', 'campus-rooms', '3d-buildings', 'campus-labels'
+  // 3D layers: visible in 3D, hidden in 2D
+  var layers3D = [
+    'campus-blocks', 'campus-rooms', '3d-buildings',
+    'user-shadow-layer', 'user-stem-layer', 'user-disc-layer', 'user-glow-layer'
   ];
-
-  customLayers.forEach(function(id) {
+  layers3D.forEach(function(id) {
     if (map.getLayer(id)) {
       map.setLayoutProperty(id, 'visibility', is2D ? 'none' : 'visible');
+    }
+  });
+
+  // 2D layers: visible in 2D, hidden in 3D
+  var layers2D = [
+    'campus-2d-fill', 'campus-2d-line', 'campus-2d-paths', 'campus-2d-nodes', 'campus-labels'
+  ];
+  layers2D.forEach(function(id) {
+    if (map.getLayer(id)) {
+      map.setLayoutProperty(id, 'visibility', is2D ? 'visible' : 'none');
     }
   });
 };
@@ -152,8 +161,12 @@ window.renderGeoJSONLayers = function(data, floorId) {
       'source': 'campus-data',
       'layout': { 'visibility': is2D ? 'visible' : 'none' },
       'paint': {
-        'fill-color': ['coalesce', ['get', 'color'], '#3b82f6'],
-        'fill-opacity': 0.55
+        'fill-color': [
+          'case',
+          ['==', ['get', 'type'], 'block'], '#cbd5e1',
+          ['coalesce', ['get', 'color'], '#94a3b8']
+        ],
+        'fill-opacity': 0.35
       }
     });
   }
@@ -166,9 +179,13 @@ window.renderGeoJSONLayers = function(data, floorId) {
       'source': 'campus-data',
       'layout': { 'visibility': is2D ? 'visible' : 'none' },
       'paint': {
-        'line-color': ['coalesce', ['get', 'color'], '#1d4ed8'],
-        'line-width': 2.5,
-        'line-opacity': 0.85
+        'line-color': [
+          'case',
+          ['==', ['get', 'type'], 'block'], '#94a3b8',
+          ['coalesce', ['get', 'color'], '#64748b']
+        ],
+        'line-width': 1.5,
+        'line-opacity': 0.7
       }
     });
   }
@@ -203,10 +220,10 @@ window.renderGeoJSONLayers = function(data, floorId) {
       'filter': ['==', ['get', 'type'], 'block'],
       'layout': { 'visibility': is2D ? 'none' : 'visible' },
       'paint': {
-        'fill-extrusion-color': ['coalesce', ['get', 'color'], '#64748b'],
-        'fill-extrusion-height': ['coalesce', ['get', 'height'], 2],
+        'fill-extrusion-color': '#1f2937',
+        'fill-extrusion-height': ['coalesce', ['get', 'height'], 6],
         'fill-extrusion-base': ['coalesce', ['get', 'min_height'], 0],
-        'fill-extrusion-opacity': 0.2
+        'fill-extrusion-opacity': 0.6
       }
     }, '3d-buildings');
   }

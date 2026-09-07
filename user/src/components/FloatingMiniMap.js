@@ -292,9 +292,10 @@ function buildNavigation2DMapHTML(pathPoints, initialPos, targetRoom, geoJSONDat
           'fill-color': [
             'case',
             ['==', ['get', 'id'], '${targetRoom?._id || ''}'], '#3b82f6',
-            ['coalesce', ['get', 'color'], '#3b82f6']
+            ['==', ['get', 'type'], 'block'], '#cbd5e1',
+            ['coalesce', ['get', 'color'], '#94a3b8']
           ],
-          'fill-opacity': 0.55
+          'fill-opacity': 0.35
         }
       });
     }
@@ -306,9 +307,13 @@ function buildNavigation2DMapHTML(pathPoints, initialPos, targetRoom, geoJSONDat
         type: 'line',
         source: 'campus-data',
         paint: {
-          'line-color': ['coalesce', ['get', 'color'], '#1d4ed8'],
-          'line-width': 2.0,
-          'line-opacity': 0.85
+          'line-color': [
+            'case',
+            ['==', ['get', 'type'], 'block'], '#94a3b8',
+            ['coalesce', ['get', 'color'], '#64748b']
+          ],
+          'line-width': 1.5,
+          'line-opacity': 0.7
         }
       });
     }

@@ -14,8 +14,8 @@ const blockSchema = new mongoose.Schema({
     radius: { type: Number, default: 0 },
     points: [{ x: Number, y: Number }],
     rotation: { type: Number, default: 0 },
-    fill: { type: String, default: '#4A90D9' },
-    stroke: { type: String, default: '#2C5F8A' },
+    fill: { type: String, default: '#1f2937' },
+    stroke: { type: String, default: '#374151' },
     strokeWidth: { type: Number, default: 2 },
     opacity: { type: Number, default: 0.8 }
   },
