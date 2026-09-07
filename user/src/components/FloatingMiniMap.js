@@ -629,7 +629,7 @@ export default function FloatingMiniMap({
       <View style={[styles.mapClipper, { borderRadius: size / 2 }]}>
         <WebView
           ref={webViewRef}
-          source={{ html: miniMapHtml }}
+          source={{ html: miniMapHtml, baseUrl: '' }}
           style={styles.webView}
           scrollEnabled={false}
           bounces={false}

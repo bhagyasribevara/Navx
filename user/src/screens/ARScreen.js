@@ -769,7 +769,7 @@ export default function ARScreen({ navigation, route }) {
       >
         <WebView
           ref={arPathRef}
-          source={{ html: arPathHtml }}
+          source={{ html: arPathHtml, baseUrl: '' }}
           style={{ flex: 1, backgroundColor: "transparent" }}
           scrollEnabled={false}
           bounces={false}

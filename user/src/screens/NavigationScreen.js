@@ -1969,7 +1969,7 @@ export default function NavigationScreen({ navigation, route }) {
       <View style={s.mapArea}>
         <WebView
           ref={webViewRef}
-          source={{ html: mapHtml }}
+          source={{ html: mapHtml, baseUrl: '' }}
           style={{ flex: 1, backgroundColor: 'transparent' }}
           scrollEnabled={false}
           bounces={false}

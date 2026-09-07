@@ -973,7 +973,7 @@ export default function MapScreen({ navigation, route }) {
           <>
             <WebView
               ref={webViewRef}
-              source={{ html: mapHtml }}
+              source={{ html: mapHtml, baseUrl: '' }}
               style={{ flex: 1, backgroundColor: '#0a0e17' }}
               scrollEnabled={false}
               bounces={false}

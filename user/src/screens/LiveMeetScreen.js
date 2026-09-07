@@ -720,7 +720,7 @@ export default function LiveMeetScreen({ route, navigation }) {
         <WebView
           ref={webViewRef}
           originWhitelist={['*']}
-          source={{ html: htmlSource }}
+          source={{ html: htmlSource, baseUrl: '' }}
           style={{ flex: 1, backgroundColor: '#0a0e17' }}
           javaScriptEnabled={true}
           domStorageEnabled={true}
