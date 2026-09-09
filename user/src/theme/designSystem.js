@@ -168,3 +168,8 @@ export const QUICK_ACTIONS = [
   { icon: "qr-code", label: "Scan QR", color: "#22c55e", bg: "#22c55e15", screen: "QRScan" },
   { icon: "map", label: "Open Map", color: "#3b82f6", bg: "#3b82f615", screen: "Map" },
 ];
+
+export const STUDENT_QUICK_ACTIONS = [
+  { icon: "school", label: "Next Class", color: "#8b5cf6", bg: "#8b5cf615", screen: "NextClass" },
+  { icon: "calendar", label: "Timetable", color: "#f59e0b", bg: "#f59e0b15", screen: "Academics" },
+];

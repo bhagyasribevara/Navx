@@ -1,140 +1,7 @@
-import { useState, useEffect } from "react";
-import { useNavigate, useOutletContext } from "react-router-dom";
-import { FiMap, FiGrid, FiLayers, FiNavigation, FiPlus, FiUsers, FiCalendar, FiFileText, FiBox } from "react-icons/fi";
-import { getBlocks, getCampuses, getFloors } from "../api";
-import { useAdminPageContext } from '../components/AdminPageContext';
+const fs = require('fs');
+let code = fs.readFileSync('src/pages/Dashboard.jsx', 'utf8');
 
-export default function Dashboard({ admin }) {
-  const [campuses, setCampuses] = useState([]);
-  const [networkStats, setNetworkStats] = useState({
-    totalFloors: 0,
-    navReady: 0,
-  });
-  const [loading, setLoading] = useState(true);
-  const navigate = useNavigate();
-  const context = useOutletContext() || {};
-  const { setPageContext } = useAdminPageContext();
-
-  useEffect(() => {
-    let mounted = true;
-
-    const load = async () => {
-      try {
-        let campusList = [];
-        
-        if (context.campus) {
-          campusList = [context.campus];
-        } else {
-          const campusesRes = await getCampuses();
-          campusList = campusesRes.data;
-          
-          // Filter for CampusAdmin or VenueAdmin or campus_admin
-          if (admin && (admin.role === 'CampusAdmin' || admin.role === 'VenueAdmin' || admin.role === 'campus_admin') && admin.campusId) {
-            const cId = admin.campusId._id || admin.campusId;
-            campusList = campusList.filter(c => c._id === cId);
-          }
-        }
-
-        if (!mounted) return;
-        setCampuses(campusList);
-
-        const blocksByCampus = await Promise.all(
-          campusList.map(async (campus) => {
-            try {
-              const blocksRes = await getBlocks(campus._id);
-              return { campusId: campus._id, blocks: blocksRes.data };
-            } catch {
-              return { campusId: campus._id, blocks: [] };
-            }
-          }),
-        );
-
-        const floorCountsByCampus = await Promise.all(
-          blocksByCampus.map(async ({ campusId, blocks }) => {
-            if (!blocks.length) return { campusId, floorCount: 0 };
-            const floorsPerBlock = await Promise.all(
-              blocks.map(async (block) => {
-                try {
-                  const floorsRes = await getFloors(block._id, campusId);
-                  return floorsRes.data.length;
-                } catch {
-                  return 0;
-                }
-              }),
-            );
-            return {
-              campusId,
-              floorCount: floorsPerBlock.reduce((sum, count) => sum + count, 0),
-            };
-          }),
-        );
-
-        if (!mounted) return;
-        const totalFloors = floorCountsByCampus.reduce(
-          (sum, item) => sum + item.floorCount,
-          0,
-        );
-        const navReady = floorCountsByCampus.filter(
-          (item) => item.floorCount > 0,
-        ).length;
-        setNetworkStats({ totalFloors, navReady });
-      } catch {
-        if (!mounted) return;
-        setCampuses([]);
-        setNetworkStats({ totalFloors: 0, navReady: 0 });
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    };
-
-    load();
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  const stats = [
-    {
-      label: "Total Venues",
-      value: campuses.length,
-      icon: <FiGrid />,
-      color: "#6366f1",
-    },
-    {
-      label: "Active Maps",
-      value: campuses.filter((c) => c.isActive).length,
-      icon: <FiMap />,
-      color: "#22c55e",
-    },
-    {
-      label: "Navigation Ready",
-      value: networkStats.navReady,
-      icon: <FiNavigation />,
-      color: "#f59e0b",
-    },
-    {
-      label: "Total Floors",
-      value: networkStats.totalFloors,
-      icon: <FiLayers />,
-      color: "#3b82f6",
-    },
-  ];
-
-  useEffect(() => {
-    if (!loading) {
-      setPageContext({
-        pageName: 'Dashboard',
-        data: {
-          campuses: campuses.map(c => ({ id: c._id, name: c.name, type: c.venueType })),
-          networkStats,
-          widgets: stats.map(s => ({ label: s.label, value: s.value }))
-        }
-      });
-    }
-  }, [loading, campuses, networkStats]);
-
-  const prefix = context.campus ? `/campus/${context.campus.campusCode}` : '';
-
+const newReturn = `
   return (
     <div className="dashboard-landing">
       {/* Hero Section */}
@@ -146,37 +13,37 @@ export default function Dashboard({ admin }) {
         
         {/* Quick Links Row */}
         <div className="quick-links-scroll">
-          <div className="quick-link-card" onClick={() => navigate(prefix ? prefix + "/venues" : "/campus")}>
+          <div className="quick-link-card" onClick={() => navigate("/campus")}>
             <div className="quick-icon-wrapper venues">
               <FiGrid />
             </div>
             <span>Venues</span>
           </div>
-          <div className="quick-link-card" onClick={() => navigate(prefix ? prefix + "/campaigns" : "/campaigns")}>
+          <div className="quick-link-card" onClick={() => navigate("/campaigns")}>
             <div className="quick-icon-wrapper campaigns">
               <FiLayers />
             </div>
             <span>Campaigns</span>
           </div>
-          <div className="quick-link-card" onClick={() => navigate(prefix ? prefix + "/faculty" : "/faculty")}>
+          <div className="quick-link-card" onClick={() => navigate("/faculty")}>
             <div className="quick-icon-wrapper faculty">
               <FiUsers />
             </div>
             <span>Faculty</span>
           </div>
-          <div className="quick-link-card" onClick={() => navigate(prefix ? prefix + "/timetable" : "/timetable")}>
+          <div className="quick-link-card" onClick={() => navigate("/timetable")}>
             <div className="quick-icon-wrapper timetable">
               <FiCalendar />
             </div>
             <span>Timetable</span>
           </div>
-          <div className="quick-link-card" onClick={() => navigate(prefix ? prefix + "/reports" : "/reports")}>
+          <div className="quick-link-card" onClick={() => navigate("/reports")}>
             <div className="quick-icon-wrapper reports">
               <FiFileText />
             </div>
             <span>Reports</span>
           </div>
-          <div className="quick-link-card" onClick={() => navigate(prefix ? prefix + "/spatial-studio" : "/spatial-studio")}>
+          <div className="quick-link-card" onClick={() => navigate("/spatial-studio")}>
             <div className="quick-icon-wrapper spatial">
               <FiBox />
             </div>
@@ -193,20 +60,20 @@ export default function Dashboard({ admin }) {
         
         <div className="featured-grid">
           <div className="featured-card">
-            <img src="/featured_campus_1788892611450.jpg" alt="Campus Challenge" />
+            <img src="/public/featured_campus_1788892611450.jpg" alt="Campus Challenge" />
           </div>
           <div className="featured-card">
-            <img src="/featured_spatial_1788892645375.jpg" alt="Spatial AI Lab" />
+            <img src="/public/featured_spatial_1788892645375.jpg" alt="Spatial AI Lab" />
           </div>
           <div className="featured-card">
-            <img src="/featured_sprint_1788892705382.jpg" alt="Developer Sprint" />
+            <img src="/public/featured_sprint_1788892705382.jpg" alt="Developer Sprint" />
           </div>
         </div>
       </div>
       
       {/* Existing Content -> Your Venues */}
       <div className="venues-section">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, marginTop: 40 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
           <h2 style={{ fontSize: 18, fontWeight: 600 }}>Your Venues</h2>
           {(!admin || admin.role === 'SuperAdmin') && (
             <button className="btn btn-primary" onClick={() => navigate("/campus")}>
@@ -234,13 +101,13 @@ export default function Dashboard({ admin }) {
         ) : (
           <div className="card-grid">
             {campuses.map((c) => {
-              const itemPrefix = context.campus ? `/campus/${context.campus.campusCode}` : '';
+              const prefix = context.campus ? \`/campus/\${context.campus.campusCode}\` : '';
               return (
                 <div
                   className="card"
                   key={c._id}
                   style={{ cursor: "pointer" }}
-                  onClick={() => navigate(`${itemPrefix}/editor/${c._id}`)}
+                  onClick={() => navigate(\`\${prefix}/editor/\${c._id}\`)}
                 >
                   <div
                     style={{
@@ -290,7 +157,7 @@ export default function Dashboard({ admin }) {
                       className="btn btn-secondary btn-sm"
                       onClick={(e) => {
                         e.stopPropagation();
-                        navigate(`${itemPrefix}/editor/${c._id}`);
+                        navigate(\`\${prefix}/editor/\${c._id}\`);
                       }}
                     >
                       <FiMap /> Edit Map
@@ -299,7 +166,7 @@ export default function Dashboard({ admin }) {
                       className="btn btn-secondary btn-sm"
                       onClick={(e) => {
                         e.stopPropagation();
-                        navigate(`${itemPrefix}/positioning/${c._id}`);
+                        navigate(\`\${prefix}/positioning/\${c._id}\`);
                       }}
                     >
                       <FiNavigation /> Positioning
@@ -313,4 +180,18 @@ export default function Dashboard({ admin }) {
       </div>
     </div>
   );
+}
+`;
+
+const returnIndex = code.indexOf('  return (');
+if(returnIndex > -1) {
+  code = code.substring(0, returnIndex) + newReturn;
+  // Also add missing imports
+  if (!code.includes('FiUsers')) {
+    code = code.replace(/import {([^}]+)} from "react-icons\/fi";/, 'import { $1, FiUsers, FiCalendar, FiFileText, FiBox } from "react-icons/fi";');
+  }
+  fs.writeFileSync('src/pages/Dashboard.jsx', code, 'utf8');
+  console.log('Dashboard updated');
+} else {
+  console.log('Could not find return statement');
 }

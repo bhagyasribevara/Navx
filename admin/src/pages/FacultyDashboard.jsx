@@ -7,6 +7,7 @@ import {
   FiDownload, FiArrowRight, FiFileText, FiInfo, FiMenu, FiX, FiActivity
 } from 'react-icons/fi';
 import './SuperAdminDashboard.css';
+import ThemeToggle from '../components/ThemeToggle';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const PERIODS = [1, 2, 3, 4, 5, 6, 7];
@@ -696,7 +697,12 @@ export default function FacultyDashboard({ faculty, onLogout, token }) {
       </aside>
 
       {/* ═══════ MAIN CONTENT AREA (FLEX siblings alignment) ═══════ */}
-      <div className="main-content">
+      <div className="main-content" style={{ position: 'relative' }}>
+        {/* Top Right Controls */}
+        <div style={{ position: 'absolute', top: 24, right: 32, zIndex: 50 }}>
+          <ThemeToggle />
+        </div>
+
         <div className="page-container" style={{ padding: '24px 32px' }}>
 
           {/* TAB 1: CLASSES (DASHBOARD) */}

@@ -1,0 +1,120 @@
+[
+  {
+    "AllowMultiple": false,
+    "Description": "Add theme toggle animation keyframes and light-theme overrides for background decorations, headings, sidebar, cards, and tooltips.",
+    "EndLine": 1369,
+    "Instruction": "Append theme-related CSS to the end of the file: animation keyframe for the theme toggle panel fade-in, and light-theme overrides for body background elements, heading colors, sidebar styles, card styles, topbar, and tooltip backgrounds.",
+    "ReplacementContent": "\n/* Collapsed sidebar tooltips */\n.campus-sidebar.collapsed .sidebar-nav-link:hover::after {\n  content: attr(data-tooltip);\n  position: absolute;\n  left: calc(100% + 12px);\n  top: 50%;\n  transform: translateY(-50%);\n  background: rgba(15, 20, 40, 0.95);\n  border: 1px solid rgba(99, 102, 241, 0.2);\n  border-radius: 8px;\n  padding: 6px 12px;\n  font-size: 12.5px;\n  font-weight: 600;\n  color: #e0e7ff;\n  white-space: nowrap;\n  z-index: 9999;\n  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);\n  pointer-events: none;\n}\n\n/* ═══════════════════════════════════════════════════════════════════════\n   Theme Toggle Animation\n   ═══════════════════════════════════════════════════════════════════════ */\n@keyframes themeToggleFadeIn {\n  from { opacity: 0; transform: translateY(4px) scale(0.97); }\n  to { opacity: 1; transform: translateY(0) scale(1); }\n}\n\n/* ═══════════════════════════════════════════════════════════════════════\n   Light Theme Overrides — Arctic Light\n   ═══════════════════════════════════════════════════════════════════════ */\n[data-theme=\"light\"] body,\n:root[data-theme=\"light\"] ~ body {\n  background: #f8fafc !important;\n  background-image:\n    radial-gradient(ellipse at 15% 0%, rgba(139, 92, 246, 0.06) 0%, transparent 50%),\n    radial-gradient(ellipse at 85% 100%, rgba(139, 92, 246, 0.04) 0%, transparent 50%),\n    radial-gradient(ellipse at 50% 50%, rgba(255, 255, 255, 1) 0%, #f8fafc 100%) !important;\n}\n\n[data-theme=\"light\"] body::before {\n  background-image:\n    linear-gradient(rgba(139, 92, 246, 0.03) 1px, transparent 1px),\n    linear-gradient(90deg, rgba(139, 92, 246, 0.03) 1px, transparent 1px) !important;\n}\n\n[data-theme=\"light\"] body::after {\n  background: radial-gradient(circle, rgba(139, 92, 246, 0.04), transparent 70%) !important;\n}\n\n[data-theme=\"light\"] .app-layout::after,\n[data-theme=\"light\"] .superadmin-layout::after {\n  background: radial-gradient(circle, rgba(167, 139, 250, 0.03), transparent 70%) !important;\n}\n\n[data-theme=\"light\"] h1,\n[data-theme=\"light\"] h2,\n[data-theme=\"light\"] h3,\n[data-theme=\"light\"] h4,\n[data-theme=\"light\"] h5,\n[data-theme=\"light\"] h6 {\n  color: #0f172a;\n}\n\n/* Sidebar light-mode tweaks */\n[data-theme=\"light\"] .campus-sidebar {\n  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);\n  border-right-color: rgba(139, 92, 246, 0.12);\n}\n\n[data-theme=\"light\"] .campus-sidebar::before {\n  background: linear-gradient(180deg, rgba(139, 92, 246, 0.03), transparent) !important;\n}\n\n[data-theme=\"light\"] .sidebar-header {\n  border-bottom-color: rgba(139, 92, 246, 0.1);\n}\n\n[data-theme=\"light\"] .sidebar-title {\n  color: #0f172a;\n}\n\n[data-theme=\"light\"] .sidebar-subtitle {\n  color: #64748b;\n}\n\n[data-theme=\"light\"] .sidebar-section-label {\n  color: #94a3b8;\n}\n\n[data-theme=\"light\"] .sidebar-nav-link {\n  color: #475569;\n}\n\n[data-theme=\"light\"] .sidebar-nav-link:hover {\n  background: rgba(139, 92, 246, 0.06);\n  color: #1e293b;\n}\n\n[data-theme=\"light\"] .sidebar-nav-link.active {\n  background: linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(139, 92, 246, 0.06));\n  color: #8b5cf6;\n  border-color: rgba(139, 92, 246, 0.2);\n}\n\n[data-theme=\"light\"] .sidebar-username {\n  color: #0f172a;\n}\n\n[data-theme=\"light\"] .sidebar-user-role {\n  color: #8b5cf6;\n}\n\n[data-theme=\"light\"] .sidebar-toggle {\n  color: #475569;\n}\n\n[data-theme=\"light\"] .sidebar-logout-btn {\n  color: #dc2626;\n  background: rgba(220, 38, 38, 0.05) !important;\n  border-color: rgba(220, 38, 38, 0.12);\n}\n\n/* Top bar light-mode */\n[data-theme=\"light\"] .top-bar {\n  background: linear-gradient(180deg, rgba(255, 255, 255, 0.9) 0%, rgba(248, 250, 252, 0.85) 100%);\n  border-bottom-color: rgba(139, 92, 246, 0.1);\n}\n\n[data-theme=\"light\"] .breadcrumb {\n  color: #475569;\n}\n\n[data-theme=\"light\"] .breadcrumb.active {\n  color: #0f172a;\n}\n\n/* Cards light-mode */\n[data-theme=\"light\"] .stat-card,\n[data-theme=\"light\"] .card {\n  background: #ffffff;\n  border-color: rgba(139, 92, 246, 0.1);\n  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);\n}\n\n[data-theme=\"light\"] .stat-card:hover,\n[data-theme=\"light\"] .card:hover {\n  border-color: rgba(139, 92, 246, 0.2);\n  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);\n}\n\n/* SuperAdmin top navbar light-mode */\n[data-theme=\"light\"] .top-navbar {\n  background: linear-gradient(180deg, rgba(255, 255, 255, 0.95) 0%, rgba(248, 250, 252, 0.92) 100%) !important;\n  border-bottom-color: rgba(139, 92, 246, 0.1) !important;\n  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.06) !important;\n}\n\n[data-theme=\"light\"] .navbar-title {\n  color: #0f172a;\n}\n\n[data-theme=\"light\"] .navbar-subtitle {\n  color: #64748b;\n}\n\n[data-theme=\"light\"] .nav-info-banner {\n  background: linear-gradient(135deg, rgba(139, 92, 246, 0.08) 0%, rgba(139, 92, 246, 0.04) 100%);\n  border-color: rgba(139, 92, 246, 0.15);\n  color: #7c3aed;\n}\n\n[data-theme=\"light\"] .btn-logout {\n  background: rgba(220, 38, 38, 0.06);\n  border-color: rgba(220, 38, 38, 0.15);\n  color: #dc2626;\n}\n\n[data-theme=\"light\"] .btn-logout:hover {\n  background: #dc2626;\n  color: #fff;\n}\n\n/* SuperAdmin card overrides for light */\n[data-theme=\"light\"] .superadmin-layout .card {\n  background: #ffffff !important;\n  border-color: rgba(139, 92, 246, 0.1) !important;\n  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.05) !important;\n}\n\n[data-theme=\"light\"] .superadmin-layout .card::before {\n  background: linear-gradient(90deg, #7c3aed, #a78bfa, #8b5cf6, #7c3aed) !important;\n}\n\n[data-theme=\"light\"] .superadmin-layout .card-title {\n  color: #1e293b;\n}\n\n[data-theme=\"light\"] .superadmin-layout .card-title::before {\n  background: linear-gradient(180deg, #8b5cf6, #a78bfa);\n}\n\n[data-theme=\"light\"] .admin-form label {\n  color: #64748b;\n}\n\n[data-theme=\"light\"] .admin-form input,\n[data-theme=\"light\"] .admin-form select {\n  background: #f8fafc;\n  border-color: rgba(139, 92, 246, 0.15);\n  color: #0f172a;\n}\n\n[data-theme=\"light\"] .admin-form input:focus,\n[data-theme=\"light\"] .admin-form select:focus {\n  border-color: #8b5cf6;\n  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);\n  background: #ffffff;\n}\n\n[data-theme=\"light\"] .admin-form input::placeholder {\n  color: #94a3b8;\n}\n\n[data-theme=\"light\"] .admin-item {\n  background: #ffffff;\n  border-color: rgba(139, 92, 246, 0.08);\n}\n\n/* Tooltip light override */\n[data-theme=\"light\"] .campus-sidebar.collapsed .sidebar-nav-link:hover::after {\n  background: rgba(255, 255, 255, 0.97);\n  border-color: rgba(139, 92, 246, 0.15);\n  color: #1e293b;\n  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);\n}\n\n/* ═══════════════════════════════════════════════════════════════════════\n   Purple Theme — Background Orb Tweaks\n   ═══════════════════════════════════════════════════════════════════════ */\n[data-theme=\"purple\"] body::after {\n  background: radial-gradient(circle, rgba(168, 85, 247, 0.06), transparent 70%) !important;\n}\n\n[data-theme=\"purple\"] .app-layout::after,\n[data-theme=\"purple\"] .superadmin-layout::after {\n  background: radial-gradient(circle, rgba(192, 132, 252, 0.04), transparent 70%) !important;\n}\n\n[data-theme=\"purple\"] .superadmin-layout .card::before {\n  background: linear-gradient(90deg, #9333ea, #c084fc, #a855f7, #9333ea) !important;\n}\n\n/* ═══════════════════════════════════════════════════════════════════════\n   Slate Theme — Background Orb Tweaks\n   ═══════════════════════════════════════════════════════════════════════ */\n[data-theme=\"slate\"] body::after {\n  background: radial-gradient(circle, rgba(168, 85, 247, 0.05), transparent 70%) !important;\n}\n\n[data-theme=\"slate\"] .app-layout::after,\n[data-theme=\"slate\"] .superadmin-layout::after {\n  background: radial-gradient(circle, rgba(192, 132, 252, 0.03), transparent 70%) !important;\n}\n\n[data-theme=\"slate\"] .superadmin-layout .card::before {\n  background: linear-gradient(90deg, #9333ea, #c084fc, #a855f7, #9333ea) !important;\n}\n\n/* ═══════════════════════════════════════════════════════════════════════\n   Page Title Gradient — Adjusts accent per theme\n   ═══════════════════════════════════════════════════════════════════════ */\n[data-theme=\"purple\"] .page-title,\n[data-theme=\"slate\"] .page-title {\n  background: linear-gradient(135deg, #e9d5ff 0%, #c084fc 50%, #a855f7 100%) !important;\n  -webkit-background-clip: text !important;\n  -webkit-text-fill-color: transparent !important;\n  background-clip: text !important;\n}\n\n[data-theme=\"light\"] .page-title {\n  background: linear-gradient(135deg, #5b21b6 0%, #8b5cf6 50%, #7c3aed 100%) !important;\n  -webkit-background-clip: text !important;\n  -webkit-text-fill-color: transparent !important;\n  background-clip: text !important;\n}\n\n[data-theme=\"black\"] .page-title {\n  background: linear-gradient(135deg, #e0e7ff 0%, #818cf8 50%, #6366f1 100%) !important;\n  -webkit-background-clip: text !important;\n  -webkit-text-fill-color: transparent !important;\n  background-clip: text !important;\n}\n\n/* Smooth transitions for theme switching */\nbody,\n.campus-sidebar,\n.top-bar,\n.top-navbar,\n.stat-card,\n.card,\n.main-content,\n.page-container {\n  transition: background 0.35s ease, background-color 0.35s ease,\n              border-color 0.35s ease, color 0.35s ease,\n              box-shadow 0.35s ease;\n}\n",
+    "StartLine": 1350,
+    "TargetContent": "\n/* Collapsed sidebar tooltips */\n.campus-sidebar.collapsed .sidebar-nav-link:hover::after {\n  content: attr(data-tooltip);\n  position: absolute;\n  left: calc(100% + 12px);\n  top: 50%;\n  transform: translateY(-50%);\n  background: rgba(15, 20, 40, 0.95);\n  border: 1px solid rgba(99, 102, 241, 0.2);\n  border-radius: 8px;\n  padding: 6px 12px;\n  font-size: 12.5px;\n  font-weight: 600;\n  color: #e0e7ff;\n  white-space: nowrap;\n  z-index: 9999;\n  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);\n  pointer-events: none;\n}",
+    "TargetFile": "c:\\Users\\yusuf\\OneDrive\\Desktop\\NavX_official\\Navx\\admin\\src\\index.css",
+    "toolAction": "Editing file",
+    "toolSummary": "Add theme CSS overrides"
+  },
+  {
+    "Description": "Update hardcoded colors in index.css (e.g. #fff, dark backgrounds) to use theme variables so all themes render text correctly.",
+    "Instruction": "Replace hardcoded white/grey colors with var(--text-primary) or var(--text-secondary) and hardcoded dark backgrounds with var(--bg-card) or var(--bg-secondary).",
+    "ReplacementChunks": [
+      {
+        "AllowMultiple": false,
+        "EndLine": 726,
+        "ReplacementContent": ".stat-value {\n  font-size: 38px;\n  font-weight: 900;\n  background: var(--gradient-primary);\n  -webkit-background-clip: text;\n  -webkit-text-fill-color: transparent;\n  background-clip: text;\n  line-height: 1.1;\n  font-family: 'Outfit', sans-serif;\n  letter-spacing: -0.5px;\n}\n\n.stat-label {\n  font-size: 10px;\n  color: var(--text-secondary);",
+        "StartLine": 711,
+        "TargetContent": ".stat-value {\n  font-size: 38px;\n  font-weight: 900;\n  background: linear-gradient(135deg, #e0e7ff, #a5b4fc);\n  -webkit-background-clip: text;\n  -webkit-text-fill-color: transparent;\n  background-clip: text;\n  line-height: 1.1;\n  font-family: 'Outfit', sans-serif;\n  letter-spacing: -0.5px;\n}\n\n.stat-label {\n  font-size: 10px;\n  color: #7b8fbc;"
+      },
+      {
+        "AllowMultiple": false,
+        "EndLine": 738,
+        "ReplacementContent": ".table-container {\n  overflow-x: auto;\n  border-radius: var(--radius-md);\n  border: 1px solid var(--border-color);\n  background: var(--bg-card);\n  backdrop-filter: blur(12px);",
+        "StartLine": 733,
+        "TargetContent": ".table-container {\n  overflow-x: auto;\n  border-radius: var(--radius-md);\n  border: 1px solid rgba(99, 102, 241, 0.12);\n  background: rgba(13, 21, 38, 0.4);\n  backdrop-filter: blur(12px);"
+      },
+      {
+        "AllowMultiple": false,
+        "EndLine": 755,
+        "ReplacementContent": "  text-transform: uppercase;\n  letter-spacing: 1.2px;\n  color: var(--text-secondary);\n  background: var(--bg-secondary);\n  border-bottom: 1px solid var(--border-color);",
+        "StartLine": 751,
+        "TargetContent": "  text-transform: uppercase;\n  letter-spacing: 1.2px;\n  color: var(--text-secondary);\n  background: rgba(8, 14, 28, 0.55);\n  border-bottom: 1px solid rgba(99, 102, 241, 0.12);"
+      },
+      {
+        "AllowMultiple": false,
+        "EndLine": 764,
+        "ReplacementContent": "td {\n  padding: 16px 20px;\n  border-bottom: 1px solid var(--border-color);\n  font-size: 14px;\n  color: var(--text-primary);\n  transition: var(--transition);\n}",
+        "StartLine": 759,
+        "TargetContent": "td {\n  padding: 16px 20px;\n  border-bottom: 1px solid var(--border-color);\n  font-size: 14px;\n  color: #fff;\n  transition: var(--transition);\n}"
+      },
+      {
+        "AllowMultiple": false,
+        "EndLine": 889,
+        "ReplacementContent": ".stat-card {\n  background: linear-gradient(180deg, rgba(255, 255, 255, 0.03) 0%, rgba(255, 255, 255, 0) 100%) !important;\n  background-color: var(--bg-card) !important;\n  backdrop-filter: blur(16px) saturate(120%);\n  -webkit-backdrop-filter: blur(16px) saturate(120%);\n  border: 1px solid var(--border-color) !important;\n}\n\n.stat-label {\n  font-size: 10px !important;\n  text-transform: uppercase !important;\n  letter-spacing: 1.5px !important;\n  color: var(--text-secondary) !important;",
+        "StartLine": 877,
+        "TargetContent": ".stat-card {\n  background: linear-gradient(180deg, rgba(255, 255, 255, 0.03) 0%, rgba(255, 255, 255, 0) 100%) !important;\n  background-color: rgba(13, 21, 38, 0.75) !important;\n  backdrop-filter: blur(16px) saturate(120%);\n  -webkit-backdrop-filter: blur(16px) saturate(120%);\n  border: 1px solid rgba(99, 102, 241, 0.15) !important;\n}\n\n.stat-label {\n  font-size: 10px !important;\n  text-transform: uppercase !important;\n  letter-spacing: 1.5px !important;\n  color: #94a3b8 !important;"
+      }
+    ],
+    "TargetFile": "c:\\Users\\yusuf\\OneDrive\\Desktop\\NavX_official\\Navx\\admin\\src\\index.css",
+    "toolAction": "Editing file",
+    "toolSummary": "Replace hardcoded CSS colors"
+  },
+  {
+    "Description": "Replace hardcoded color in .empty-state h3",
+    "Instruction": "Change color: #fff to color: var(--text-primary) in .empty-state h3",
+    "ReplacementChunks": [
+      {
+        "AllowMultiple": false,
+        "EndLine": 843,
+        "ReplacementContent": ".empty-state h3 {\n  font-size: 20px;\n  color: var(--text-primary);\n  margin-bottom: 8px;\n}",
+        "StartLine": 839,
+        "TargetContent": ".empty-state h3 {\n  font-size: 20px;\n  color: #fff;\n  margin-bottom: 8px;\n}"
+      }
+    ],
+    "TargetFile": "c:\\Users\\yusuf\\OneDrive\\Desktop\\NavX_official\\Navx\\admin\\src\\index.css",
+    "toolAction": "Editing file",
+    "toolSummary": "Fix empty-state CSS color"
+  },
+  {
+    "Description": "Update hardcoded #fff in index.css for navbar-title and breadcrumb to use var(--text-primary).",
+    "Instruction": "Replace color: #fff; with color: var(--text-primary); in .navbar-title and .breadcrumb.active.",
+    "ReplacementChunks": [
+      {
+        "AllowMultiple": false,
+        "EndLine": 237,
+        "ReplacementContent": ".navbar-title {\n  font-size: 19px;\n  font-weight: 800;\n  color: var(--text-primary);",
+        "StartLine": 234,
+        "TargetContent": ".navbar-title {\n  font-size: 19px;\n  font-weight: 800;\n  color: #fff;"
+      },
+      {
+        "AllowMultiple": false,
+        "EndLine": 387,
+        "ReplacementContent": ".breadcrumb.active {\n  color: var(--text-primary);\n  font-weight: 700;\n}",
+        "StartLine": 385,
+        "TargetContent": ".breadcrumb.active {\n  color: #fff;\n  font-weight: 700;\n}"
+      }
+    ],
+    "TargetFile": "c:\\Users\\yusuf\\OneDrive\\Desktop\\NavX_official\\Navx\\admin\\src\\index.css",
+    "toolAction": "Editing file",
+    "toolSummary": "Fix more hardcoded #fff"
+  },
+  {
+    "Description": "Fix card-title text color globally for light theme.",
+    "Instruction": "Remove .superadmin-layout from the light theme card-title selector so it applies globally.",
+    "ReplacementChunks": [
+      {
+        "AllowMultiple": false,
+        "EndLine": 1546,
+        "ReplacementContent": "[data-theme=\"light\"] .card-title {\n  color: var(--text-primary);",
+        "StartLine": 1545,
+        "TargetContent": "[data-theme=\"light\"] .superadmin-layout .card-title {\n  color: #1e293b;"
+      },
+      {
+        "AllowMultiple": false,
+        "EndLine": 1550,
+        "ReplacementContent": "[data-theme=\"light\"] .card-title::before {\n  background: linear-gradient(180deg, #8b5cf6, #a78bfa);",
+        "StartLine": 1549,
+        "TargetContent": "[data-theme=\"light\"] .superadmin-layout .card-title::before {\n  background: linear-gradient(180deg, #8b5cf6, #a78bfa);"
+      }
+    ],
+    "TargetFile": "c:\\Users\\yusuf\\OneDrive\\Desktop\\NavX_official\\Navx\\admin\\src\\index.css",
+    "toolAction": "Editing file",
+    "toolSummary": "Fix card-title light mode"
+  }
+]

@@ -336,9 +336,9 @@ export default function SpatialStudioDashboard({ admin: propAdmin }) {
   const activeFloor = useMemo(() => floors.find(f => f._id === selectedFloorId), [floors, selectedFloorId]);
 
   return (
-    <div className="flex flex-col h-[calc(100vh-4rem)] bg-slate-950 text-slate-100 overflow-hidden font-sans">
+    <div className="flex flex-col h-[calc(100vh-4rem)] bg-[var(--bg-primary)] text-[var(--text-primary)] overflow-hidden font-sans">
       {/* Dynamic Header Bar */}
-      <header className="h-16 px-6 bg-slate-900/90 border-b border-slate-800 flex items-center justify-between z-20 shrink-0 shadow-lg">
+      <header className="h-16 px-6 bg-[var(--bg-input)]/90 border-b border-[var(--border-color)] flex items-center justify-between z-20 shrink-0 shadow-lg">
         {/* Left: Branding & Selectors */}
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
@@ -346,20 +346,20 @@ export default function SpatialStudioDashboard({ admin: propAdmin }) {
               <Layers3 className="w-5 h-5" />
             </div>
             <div>
-              <h1 className="font-extrabold text-base text-white tracking-tight">NavX Spatial Studio</h1>
-              <p className="text-[11px] text-slate-400">Hybrid Manual Assembly & 3D Twin Editor</p>
+              <h1 className="font-extrabold text-base text-[var(--text-primary)] tracking-tight">NavX Spatial Studio</h1>
+              <p className="text-[11px] text-[var(--text-secondary)]">Hybrid Manual Assembly & 3D Twin Editor</p>
             </div>
           </div>
 
-          <div className="h-6 w-px bg-slate-800 my-auto" />
+          <div className="h-6 w-px bg-[var(--border-color)] my-auto" />
 
           {/* Building Dropdown */}
           <div className="flex items-center gap-2">
-            <Building className="w-4 h-4 text-violet-400" />
+            <Building className="w-4 h-4 text-violet-500" />
             <select
               value={selectedBlockId}
               onChange={(e) => setSelectedBlockId(e.target.value)}
-              className="bg-slate-950 text-xs font-semibold text-slate-200 border border-slate-800 rounded-xl px-3 py-1.5 focus:outline-none focus:border-violet-500 transition"
+              className="bg-[var(--bg-card)] text-xs font-semibold text-[var(--text-primary)] border border-[var(--border-color)] rounded-xl px-3 py-1.5 focus:outline-none focus:border-violet-500 transition shadow-sm"
             >
               {blocks.map(b => (
                 <option key={b._id} value={b._id}>{b.name}</option>
@@ -369,11 +369,11 @@ export default function SpatialStudioDashboard({ admin: propAdmin }) {
 
           {/* Floor Dropdown */}
           <div className="flex items-center gap-2">
-            <Layers className="w-4 h-4 text-indigo-400" />
+            <Layers className="w-4 h-4 text-indigo-500" />
             <select
               value={selectedFloorId}
               onChange={(e) => setSelectedFloorId(e.target.value)}
-              className="bg-slate-950 text-xs font-semibold text-slate-200 border border-slate-800 rounded-xl px-3 py-1.5 focus:outline-none focus:border-indigo-500 transition"
+              className="bg-[var(--bg-card)] text-xs font-semibold text-[var(--text-primary)] border border-[var(--border-color)] rounded-xl px-3 py-1.5 focus:outline-none focus:border-indigo-500 transition shadow-sm"
             >
               {floors.map(f => (
                 <option key={f._id} value={f._id}>{f.name}</option>
@@ -387,7 +387,7 @@ export default function SpatialStudioDashboard({ admin: propAdmin }) {
           <button
             onClick={handleManualRefresh}
             disabled={refreshing}
-            className="p-2 rounded-xl bg-slate-950 border border-slate-800 text-slate-400 hover:text-white hover:border-slate-700 transition"
+            className="p-2 rounded-xl bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--border-active)] transition shadow-sm"
             title="Refresh Map Data"
           >
             <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin text-violet-400' : ''}`} />
@@ -397,7 +397,7 @@ export default function SpatialStudioDashboard({ admin: propAdmin }) {
           <button
             onClick={handlePublishFloor}
             disabled={publishing}
-            className="px-5 py-2 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white font-bold text-xs shadow-lg shadow-violet-600/30 border border-violet-400/30 transition-all flex items-center gap-2 disabled:opacity-50"
+            className="px-5 py-2 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-[var(--text-primary)] font-bold text-xs shadow-lg shadow-violet-600/30 border border-violet-400/30 transition-all flex items-center gap-2 disabled:opacity-50"
           >
             {publishing ? (
               <RefreshCw className="w-4 h-4 animate-spin" />

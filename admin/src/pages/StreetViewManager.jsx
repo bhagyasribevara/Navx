@@ -22,12 +22,12 @@ class StreetViewErrorBoundary extends Component {
   render() {
     if (this.state.hasError) {
       return (
-        <div className="h-full flex flex-col items-center justify-center text-slate-400 bg-[#0f172a] p-8">
+        <div className="h-full flex flex-col items-center justify-center text-[var(--text-secondary)] bg-[var(--bg-primary)] p-8">
           <FiVideo size={48} className="mb-4 opacity-50 text-red-400" />
-          <h2 className="text-xl font-bold text-white mb-2">Something went wrong</h2>
+          <h2 className="text-xl font-bold text-[var(--text-primary)] mb-2">Something went wrong</h2>
           <p className="text-sm mb-4">{this.state.error?.message || 'An unexpected error occurred in the Street View module.'}</p>
           <button
-            className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+            className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-[var(--text-primary)] rounded-lg transition-colors"
             onClick={() => this.setState({ hasError: false, error: null })}
           >
             Try Again
@@ -144,23 +144,23 @@ function StreetViewManagerInner({ admin }) {
   };
 
   return (
-    <div className="p-6 h-full flex flex-col bg-[#0f172a] text-slate-200">
+    <div className="p-6 h-full flex flex-col bg-[var(--bg-primary)] text-[var(--text-primary)]">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+          <h1 className="text-2xl font-bold text-[var(--text-primary)] flex items-center gap-2">
             <FiMap className="text-blue-400" />
             Street View Manager
           </h1>
-          <p className="text-slate-400 text-sm mt-1">Manage and publish immersive panoramic tours.</p>
+          <p className="text-[var(--text-secondary)] text-sm mt-1">Manage and publish immersive panoramic tours.</p>
         </div>
       </div>
 
       {/* Selectors */}
-      <div className="flex gap-4 mb-8 bg-slate-800 p-4 rounded-xl border border-slate-700">
+      <div className="flex gap-4 mb-8 bg-[var(--bg-card)] p-4 rounded-xl border border-[var(--border-color)]">
         <div className="flex-1">
-          <label className="block text-sm font-medium text-slate-400 mb-1">Building</label>
+          <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">Building</label>
           <select 
-            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-white"
+            className="w-full bg-[var(--bg-input)] border border-[var(--border-color)] rounded-lg px-4 py-2 text-[var(--text-primary)]"
             value={selectedBlock}
             onChange={(e) => setSelectedBlock(e.target.value)}
           >
@@ -171,9 +171,9 @@ function StreetViewManagerInner({ admin }) {
           </select>
         </div>
         <div className="flex-1">
-          <label className="block text-sm font-medium text-slate-400 mb-1">Floor</label>
+          <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">Floor</label>
           <select 
-            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-white"
+            className="w-full bg-[var(--bg-input)] border border-[var(--border-color)] rounded-lg px-4 py-2 text-[var(--text-primary)]"
             value={selectedFloor}
             onChange={(e) => setSelectedFloor(e.target.value)}
             disabled={!selectedBlock}
@@ -205,8 +205,8 @@ function StreetViewManagerInner({ admin }) {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {sessions.map(session => (
-              <div key={session._id} className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden flex flex-col">
-                <div className="h-40 bg-slate-900 relative">
+              <div key={session._id} className="bg-[var(--bg-card)] rounded-xl border border-[var(--border-color)] overflow-hidden flex flex-col">
+                <div className="h-40 bg-[var(--bg-input)] relative">
                   {session.thumbnailUrl ? (
                     <img src={session.thumbnailUrl} alt="Thumbnail" className="w-full h-full object-cover" />
                   ) : (
@@ -215,14 +215,14 @@ function StreetViewManagerInner({ admin }) {
                     </div>
                   )}
                   <div className={`absolute top-2 right-2 px-2 py-1 rounded text-xs font-bold shadow
-                    ${session.status === 'completed' ? 'bg-green-500 text-white' : 
-                      session.status === 'processing' ? 'bg-yellow-500 text-white' : 'bg-red-500 text-white'}`}>
+                    ${session.status === 'completed' ? 'bg-green-500 text-[var(--text-primary)]' : 
+                      session.status === 'processing' ? 'bg-yellow-500 text-[var(--text-primary)]' : 'bg-red-500 text-[var(--text-primary)]'}`}>
                     {session.status?.toUpperCase() || 'UNKNOWN'}
                   </div>
                 </div>
                 <div className="p-4 flex-1 flex flex-col">
-                  <h3 className="font-semibold text-lg text-white mb-2">Capture Session</h3>
-                  <div className="text-sm text-slate-400 space-y-1 mb-4 flex-1">
+                  <h3 className="font-semibold text-lg text-[var(--text-primary)] mb-2">Capture Session</h3>
+                  <div className="text-sm text-[var(--text-secondary)] space-y-1 mb-4 flex-1">
                     <p>Nodes: {session.totalNodes || 0}</p>
                     <p>Distance: {session.totalDistance ? session.totalDistance.toFixed(1) + 'm' : 'N/A'}</p>
                     <p>Captured: {new Date(session.createdAt).toLocaleDateString()}</p>
@@ -230,22 +230,22 @@ function StreetViewManagerInner({ admin }) {
                       <p className="truncate">Rooms: {session.doorTags.length} ({session.doorTags.map(t => t.roomName).filter(Boolean).join(', ')})</p>
                     )}
                   </div>
-                  <div className="flex items-center gap-2 mt-auto pt-4 border-t border-slate-700">
+                  <div className="flex items-center gap-2 mt-auto pt-4 border-t border-[var(--border-color)]">
                     <button 
-                      className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
+                      className="flex-1 bg-blue-600 hover:bg-blue-700 text-[var(--text-primary)] py-2 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
                       onClick={() => handlePreview(session)}
                     >
                       <FiEye /> Preview
                     </button>
                     <button 
                       className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2
-                        ${session.isPublished ? 'bg-amber-600 hover:bg-amber-700 text-white' : 'bg-emerald-600 hover:bg-emerald-700 text-white'}`}
+                        ${session.isPublished ? 'bg-amber-600 hover:bg-amber-700 text-[var(--text-primary)]' : 'bg-emerald-600 hover:bg-emerald-700 text-[var(--text-primary)]'}`}
                       onClick={() => handlePublishToggle(session)}
                     >
                       {session.isPublished ? <><FiXCircle /> Unpublish</> : <><FiCheckCircle /> Publish</>}
                     </button>
                     <button 
-                      className="px-3 py-2 bg-slate-700 hover:bg-red-600 text-slate-300 hover:text-white rounded-lg transition-colors"
+                      className="px-3 py-2 bg-slate-700 hover:bg-red-600 text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded-lg transition-colors"
                       onClick={() => handleDelete(session._id)}
                       title="Delete"
                     >

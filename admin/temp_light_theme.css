@@ -1,0 +1,308 @@
+
+/* Collapsed sidebar tooltips */
+.campus-sidebar.collapsed .sidebar-nav-link:hover::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: calc(100% + 12px);
+  top: 50%;
+  transform: translateY(-50%);
+  background: rgba(15, 20, 40, 0.95);
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #e0e7ff;
+  white-space: nowrap;
+  z-index: 9999;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Theme Toggle Animation
+   ═══════════════════════════════════════════════════════════════════════ */
+@keyframes themeToggleFadeIn {
+  from { opacity: 0; transform: translateY(4px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Light Theme Overrides — Arctic Light
+   ═══════════════════════════════════════════════════════════════════════ */
+[data-theme="light"] body,
+:root[data-theme="light"] ~ body {
+  background: #f8fafc !important;
+  background-image:
+    radial-gradient(ellipse at 15% 0%, rgba(139, 92, 246, 0.06) 0%, transparent 50%),
+    radial-gradient(ellipse at 85% 100%, rgba(139, 92, 246, 0.04) 0%, transparent 50%),
+    radial-gradient(ellipse at 50% 50%, rgba(255, 255, 255, 1) 0%, #f8fafc 100%) !important;
+}
+
+[data-theme="light"] body::before {
+  background-image:
+    linear-gradient(rgba(139, 92, 246, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(139, 92, 246, 0.03) 1px, transparent 1px) !important;
+}
+
+[data-theme="light"] body::after {
+  background: radial-gradient(circle, rgba(139, 92, 246, 0.04), transparent 70%) !important;
+}
+
+[data-theme="light"] .app-layout::after,
+[data-theme="light"] .superadmin-layout::after {
+  background: radial-gradient(circle, rgba(167, 139, 250, 0.03), transparent 70%) !important;
+}
+
+[data-theme="light"] h1,
+[data-theme="light"] h2,
+[data-theme="light"] h3,
+[data-theme="light"] h4,
+[data-theme="light"] h5,
+[data-theme="light"] h6 {
+  color: #0f172a;
+}
+
+/* Sidebar light-mode tweaks */
+[data-theme="light"] .campus-sidebar {
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  border-right-color: rgba(139, 92, 246, 0.12);
+}
+
+[data-theme="light"] .campus-sidebar::before {
+  background: linear-gradient(180deg, rgba(139, 92, 246, 0.03), transparent) !important;
+}
+
+[data-theme="light"] .sidebar-header {
+  border-bottom-color: rgba(139, 92, 246, 0.1);
+}
+
+[data-theme="light"] .sidebar-title {
+  color: #0f172a;
+}
+
+[data-theme="light"] .sidebar-subtitle {
+  color: #64748b;
+}
+
+[data-theme="light"] .sidebar-section-label {
+  color: #94a3b8;
+}
+
+[data-theme="light"] .sidebar-nav-link {
+  color: #475569;
+}
+
+[data-theme="light"] .sidebar-nav-link:hover {
+  background: rgba(139, 92, 246, 0.06);
+  color: #1e293b;
+}
+
+[data-theme="light"] .sidebar-nav-link.active {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(139, 92, 246, 0.06));
+  color: #8b5cf6;
+  border-color: rgba(139, 92, 246, 0.2);
+}
+
+[data-theme="light"] .sidebar-username {
+  color: #0f172a;
+}
+
+[data-theme="light"] .sidebar-user-role {
+  color: #8b5cf6;
+}
+
+[data-theme="light"] .sidebar-toggle {
+  color: #475569;
+}
+
+[data-theme="light"] .sidebar-logout-btn {
+  color: #dc2626;
+  background: rgba(220, 38, 38, 0.05) !important;
+  border-color: rgba(220, 38, 38, 0.12);
+}
+
+/* Top bar light-mode */
+[data-theme="light"] .top-bar {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.9) 0%, rgba(248, 250, 252, 0.85) 100%);
+  border-bottom-color: rgba(139, 92, 246, 0.1);
+}
+
+[data-theme="light"] .breadcrumb {
+  color: #475569;
+}
+
+[data-theme="light"] .breadcrumb.active {
+  color: #0f172a;
+}
+
+/* Cards light-mode */
+[data-theme="light"] .stat-card,
+[data-theme="light"] .card {
+  background: #ffffff;
+  border-color: rgba(139, 92, 246, 0.1);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+}
+
+[data-theme="light"] .stat-card:hover,
+[data-theme="light"] .card:hover {
+  border-color: rgba(139, 92, 246, 0.2);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+}
+
+/* SuperAdmin top navbar light-mode */
+[data-theme="light"] .top-navbar {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.95) 0%, rgba(248, 250, 252, 0.92) 100%) !important;
+  border-bottom-color: rgba(139, 92, 246, 0.1) !important;
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.06) !important;
+}
+
+[data-theme="light"] .navbar-title {
+  color: #0f172a;
+}
+
+[data-theme="light"] .navbar-subtitle {
+  color: #64748b;
+}
+
+[data-theme="light"] .nav-info-banner {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.08) 0%, rgba(139, 92, 246, 0.04) 100%);
+  border-color: rgba(139, 92, 246, 0.15);
+  color: #7c3aed;
+}
+
+[data-theme="light"] .btn-logout {
+  background: rgba(220, 38, 38, 0.06);
+  border-color: rgba(220, 38, 38, 0.15);
+  color: #dc2626;
+}
+
+[data-theme="light"] .btn-logout:hover {
+  background: #dc2626;
+  color: #fff;
+}
+
+/* SuperAdmin card overrides for light */
+[data-theme="light"] .superadmin-layout .card {
+  background: #ffffff !important;
+  border-color: rgba(139, 92, 246, 0.1) !important;
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.05) !important;
+}
+
+[data-theme="light"] .superadmin-layout .card::before {
+  background: linear-gradient(90deg, #7c3aed, #a78bfa, #8b5cf6, #7c3aed) !important;
+}
+
+[data-theme="light"] .superadmin-layout .card-title {
+  color: #1e293b;
+}
+
+[data-theme="light"] .superadmin-layout .card-title::before {
+  background: linear-gradient(180deg, #8b5cf6, #a78bfa);
+}
+
+[data-theme="light"] .admin-form label {
+  color: #64748b;
+}
+
+[data-theme="light"] .admin-form input,
+[data-theme="light"] .admin-form select {
+  background: #f8fafc;
+  border-color: rgba(139, 92, 246, 0.15);
+  color: #0f172a;
+}
+
+[data-theme="light"] .admin-form input:focus,
+[data-theme="light"] .admin-form select:focus {
+  border-color: #8b5cf6;
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
+  background: #ffffff;
+}
+
+[data-theme="light"] .admin-form input::placeholder {
+  color: #94a3b8;
+}
+
+[data-theme="light"] .admin-item {
+  background: #ffffff;
+  border-color: rgba(139, 92, 246, 0.08);
+}
+
+/* Tooltip light override */
+[data-theme="light"] .campus-sidebar.collapsed .sidebar-nav-link:hover::after {
+  background: rgba(255, 255, 255, 0.97);
+  border-color: rgba(139, 92, 246, 0.15);
+  color: #1e293b;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Purple Theme — Background Orb Tweaks
+   ═══════════════════════════════════════════════════════════════════════ */
+[data-theme="purple"] body::after {
+  background: radial-gradient(circle, rgba(168, 85, 247, 0.06), transparent 70%) !important;
+}
+
+[data-theme="purple"] .app-layout::after,
+[data-theme="purple"] .superadmin-layout::after {
+  background: radial-gradient(circle, rgba(192, 132, 252, 0.04), transparent 70%) !important;
+}
+
+[data-theme="purple"] .superadmin-layout .card::before {
+  background: linear-gradient(90deg, #9333ea, #c084fc, #a855f7, #9333ea) !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Slate Theme — Background Orb Tweaks
+   ═══════════════════════════════════════════════════════════════════════ */
+[data-theme="slate"] body::after {
+  background: radial-gradient(circle, rgba(168, 85, 247, 0.05), transparent 70%) !important;
+}
+
+[data-theme="slate"] .app-layout::after,
+[data-theme="slate"] .superadmin-layout::after {
+  background: radial-gradient(circle, rgba(192, 132, 252, 0.03), transparent 70%) !important;
+}
+
+[data-theme="slate"] .superadmin-layout .card::before {
+  background: linear-gradient(90deg, #9333ea, #c084fc, #a855f7, #9333ea) !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Page Title Gradient — Adjusts accent per theme
+   ═══════════════════════════════════════════════════════════════════════ */
+[data-theme="purple"] .page-title,
+[data-theme="slate"] .page-title {
+  background: linear-gradient(135deg, #e9d5ff 0%, #c084fc 50%, #a855f7 100%) !important;
+  -webkit-background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
+  background-clip: text !important;
+}
+
+[data-theme="light"] .page-title {
+  background: linear-gradient(135deg, #5b21b6 0%, #8b5cf6 50%, #7c3aed 100%) !important;
+  -webkit-background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
+  background-clip: text !important;
+}
+
+[data-theme="black"] .page-title {
+  background: linear-gradient(135deg, #e0e7ff 0%, #818cf8 50%, #6366f1 100%) !important;
+  -webkit-background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
+  background-clip: text !important;
+}
+
+/* Smooth transitions for theme switching */
+body,
+.campus-sidebar,
+.top-bar,
+.top-navbar,
+.stat-card,
+.card,
+.main-content,
+.page-container {
+  transition: background 0.35s ease, background-color 0.35s ease,
+              border-color 0.35s ease, color 0.35s ease,
+              box-shadow 0.35s ease;
+}

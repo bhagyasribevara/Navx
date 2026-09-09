@@ -1,0 +1,46 @@
+[
+  {
+    "AllowMultiple": "false",
+    "Description": "\"Add theme toggle animation keyframes and light-theme overrides for background decorations, headings, sidebar, cards, and tooltips.\"",
+    "EndLine": "1369",
+    "Instruction": "\"Append theme-related CSS to the end of the file: animation keyframe for the theme toggle panel fade-in, and light-theme overrides for body background elements, heading colors, sidebar styles, card styles, topbar, and tooltip backgrounds.\"",
+    "ReplacementContent": "\"\\n/* Collapsed sidebar tooltips */\\n.campus-sidebar.collapsed .sidebar-nav-link:hover::after {\\n  content: attr(data-tooltip);\\n  position: absolute;\\n  left: calc(100% + 12px);\\n  top: 50%;\\n  transform: translateY(-50%);\\n  background: rgba(15, 20, 40, 0.95);\\n  border: 1px solid rgba(99, 102, 241, 0.2);\\n  border-radius: 8px;\\n  padding: 6px 12px;\\n  font-size: 12.5px;\\n  font-weight: 600;\\n  color: #e0e7ff;\\n  white-space: nowrap;\\n  z-index: 9999;\\n  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);\\n  pointer-events: none;\\n}\\n\\n/* ═══════════════════════════════════════════════════════════════════════\\n   Theme Toggle Animation\\n   ═══════════════════════════════════════════════════════════════════════ */\\n@keyframes themeToggleFadeIn {\\n  from { opacity: 0; transform: translateY(4px) scale(0.97); }\\n  to { opacity: 1; transform: translateY(0) scale(1); }\\n}\\n\\n/* ═══════════════════════════════════════════════════════════════════════\\n   Light Theme Overrides — Arctic Light\\n   ═══════════════════════════════════════════════════════════════════════ */\\n[data-theme=\\\"light\\\"] body,\\n:root[data-theme=\\\"light\\\"] ~ body {\\n  background: #f8fafc !important;\\n  background-image:\\n    radial-gradient(ellipse at 15% 0%, rgba(139, 92, 246, 0.06) 0%, transparent 50%),\\n    radial-gradient(ellipse at 85% 100%, rgba(139, 92, 246, 0.04) 0%, transparent 50%),\\n    radial-gradient(ellipse at 50% 50%, rgba(255, 255, 255, 1) 0%, #f8fafc 100%) !important;\\n}\\n\\n[data-th\n<truncated 8856 bytes>",
+    "StartLine": "1350",
+    "TargetContent": "\"\\n/* Collapsed sidebar tooltips */\\n.campus-sidebar.collapsed .sidebar-nav-link:hover::after {\\n  content: attr(data-tooltip);\\n  position: absolute;\\n  left: calc(100% + 12px);\\n  top: 50%;\\n  transform: translateY(-50%);\\n  background: rgba(15, 20, 40, 0.95);\\n  border: 1px solid rgba(99, 102, 241, 0.2);\\n  border-radius: 8px;\\n  padding: 6px 12px;\\n  font-size: 12.5px;\\n  font-weight: 600;\\n  color: #e0e7ff;\\n  white-space: nowrap;\\n  z-index: 9999;\\n  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);\\n  pointer-events: none;\\n}\"",
+    "TargetFile": "\"c:\\\\Users\\\\yusuf\\\\OneDrive\\\\Desktop\\\\NavX_official\\\\Navx\\\\admin\\\\src\\\\index.css\"",
+    "toolAction": "\"Editing file\"",
+    "toolSummary": "\"Add theme CSS overrides\""
+  },
+  {
+    "Description": "\"Update hardcoded colors in index.css (e.g. #fff, dark backgrounds) to use theme variables so all themes render text correctly.\"",
+    "Instruction": "\"Replace hardcoded white/grey colors with var(--text-primary) or var(--text-secondary) and hardcoded dark backgrounds with var(--bg-card) or var(--bg-secondary).\"",
+    "ReplacementChunks": "[{\"AllowMultiple\":false,\"EndLine\":726,\"ReplacementContent\":\".stat-value {\\n  font-size: 38px;\\n  font-weight: 900;\\n  background: var(--gradient-primary);\\n  -webkit-background-clip: text;\\n  -webkit-text-fill-color: transparent;\\n  background-clip: text;\\n  line-height: 1.1;\\n  font-family: 'Outfit', sans-serif;\\n  letter-spacing: -0.5px;\\n}\\n\\n.stat-label {\\n  font-size: 10px;\\n  color: var(--text-secondary);\",\"StartLine\":711,\"TargetContent\":\".stat-value {\\n  font-size: 38px;\\n  font-weight: 900;\\n  background: linear-gradient(135deg, #e0e7ff, #a5b4fc);\\n  -webkit-background-clip: text;\\n  -webkit-text-fill-color: transparent;\\n  background-clip: text;\\n  line-height: 1.1;\\n  font-family: 'Outfit', sans-serif;\\n  letter-spacing: -0.5px;\\n}\\n\\n.stat-label {\\n  font-size: 10px;\\n  color: #7b8fbc;\"},{\"AllowMultiple\":false,\"EndLine\":738,\"ReplacementContent\":\".table-container {\\n  overflow-x: auto;\\n  border-radius: var(--radius-md);\\n  border: 1px solid var(--border-color);\\n  background: var(--bg-card);\\n  backdrop-filter: blur(12px);\",\"StartLine\":733,\"TargetContent\":\".table-container {\\n  overflow-x: auto;\\n  border-radius: var(--radius-md);\\n  border: 1px solid rgba(99, 102, 241, 0.12);\\n  background: rgba(13, 21, 38, 0.4);\\n  backdrop-filter: blur(12px);\"},{\"AllowMultiple\":false,\"EndLine\":755,\"ReplacementContent\":\"  text-transform: uppercase;\\n  letter-spacing: 1.2px;\\n  color: var(--text-secondary);\\n  background: var(--bg-secondary);\\n  border-bottom: 1px solid var(--border-color);\",\"StartLine\":751,\"TargetContent\":\"  text-transform: uppercase;\\n  letter-spacing: 1.2px;\\n  color: var(--text-secondary);\\n  background: rgba(8, 14, 28, 0.55);\\n  border-bottom: 1px solid rgba(99, 102, 241, 0.12);\"},{\"AllowMultiple\":false,\"EndLine\":764,\"ReplacementContent\":\"td {\\n  padding: 16px 20px;\\n  border-bottom: 1px solid var(--border-color);\\n  font-size: 14px;\\n  color: var(--text-primary);\\n  transition: var(--transition);\\n}\",\"StartLine\":759,\"TargetContent\":\"td {\\n  padding: 16px 20px;\\n  border-bottom: 1px solid var(--b\n<truncated 1181 bytes>",
+    "TargetFile": "\"c:\\\\Users\\\\yusuf\\\\OneDrive\\\\Desktop\\\\NavX_official\\\\Navx\\\\admin\\\\src\\\\index.css\"",
+    "toolAction": "\"Editing file\"",
+    "toolSummary": "\"Replace hardcoded CSS colors\""
+  },
+  {
+    "Description": "\"Replace hardcoded color in .empty-state h3\"",
+    "Instruction": "\"Change color: #fff to color: var(--text-primary) in .empty-state h3\"",
+    "ReplacementChunks": "[{\"AllowMultiple\":false,\"EndLine\":843,\"ReplacementContent\":\".empty-state h3 {\\n  font-size: 20px;\\n  color: var(--text-primary);\\n  margin-bottom: 8px;\\n}\",\"StartLine\":839,\"TargetContent\":\".empty-state h3 {\\n  font-size: 20px;\\n  color: #fff;\\n  margin-bottom: 8px;\\n}\"}]",
+    "TargetFile": "\"c:\\\\Users\\\\yusuf\\\\OneDrive\\\\Desktop\\\\NavX_official\\\\Navx\\\\admin\\\\src\\\\index.css\"",
+    "toolAction": "\"Editing file\"",
+    "toolSummary": "\"Fix empty-state CSS color\""
+  },
+  {
+    "Description": "\"Update hardcoded #fff in index.css for navbar-title and breadcrumb to use var(--text-primary).\"",
+    "Instruction": "\"Replace color: #fff; with color: var(--text-primary); in .navbar-title and .breadcrumb.active.\"",
+    "ReplacementChunks": "[{\"AllowMultiple\":false,\"EndLine\":237,\"ReplacementContent\":\".navbar-title {\\n  font-size: 19px;\\n  font-weight: 800;\\n  color: var(--text-primary);\",\"StartLine\":234,\"TargetContent\":\".navbar-title {\\n  font-size: 19px;\\n  font-weight: 800;\\n  color: #fff;\"},{\"AllowMultiple\":false,\"EndLine\":387,\"ReplacementContent\":\".breadcrumb.active {\\n  color: var(--text-primary);\\n  font-weight: 700;\\n}\",\"StartLine\":385,\"TargetContent\":\".breadcrumb.active {\\n  color: #fff;\\n  font-weight: 700;\\n}\"}]",
+    "TargetFile": "\"c:\\\\Users\\\\yusuf\\\\OneDrive\\\\Desktop\\\\NavX_official\\\\Navx\\\\admin\\\\src\\\\index.css\"",
+    "toolAction": "\"Editing file\"",
+    "toolSummary": "\"Fix more hardcoded #fff\""
+  },
+  {
+    "Description": "\"Fix card-title text color globally for light theme.\"",
+    "Instruction": "\"Remove .superadmin-layout from the light theme card-title selector so it applies globally.\"",
+    "ReplacementChunks": "[{\"AllowMultiple\":false,\"EndLine\":1546,\"ReplacementContent\":\"[data-theme=\\\"light\\\"] .card-title {\\n  color: var(--text-primary);\",\"StartLine\":1545,\"TargetContent\":\"[data-theme=\\\"light\\\"] .superadmin-layout .card-title {\\n  color: #1e293b;\"},{\"AllowMultiple\":false,\"EndLine\":1550,\"ReplacementContent\":\"[data-theme=\\\"light\\\"] .card-title::before {\\n  background: linear-gradient(180deg, #8b5cf6, #a78bfa);\",\"StartLine\":1549,\"TargetContent\":\"[data-theme=\\\"light\\\"] .superadmin-layout .card-title::before {\\n  background: linear-gradient(180deg, #8b5cf6, #a78bfa);\"}]",
+    "TargetFile": "\"c:\\\\Users\\\\yusuf\\\\OneDrive\\\\Desktop\\\\NavX_official\\\\Navx\\\\admin\\\\src\\\\index.css\"",
+    "toolAction": "\"Editing file\"",
+    "toolSummary": "\"Fix card-title light mode\""
+  }
+]

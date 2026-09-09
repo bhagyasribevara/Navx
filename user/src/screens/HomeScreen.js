@@ -10,9 +10,10 @@ import { ThemeContext } from "../context/ThemeContext";
 import { useGeofence } from "../context/GeofenceContext";
 import api, { getCampuses, cachedGet, downloadCampusOffline, getRoomsByCat, getCampaigns, SOCKET_URL, createMeetSession } from "../api";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { SHADOWS, RADIUS, QUICK_ACTIONS, ROOM_COLORS } from "../theme/designSystem";
+import { SHADOWS, RADIUS, QUICK_ACTIONS, STUDENT_QUICK_ACTIONS, ROOM_COLORS } from "../theme/designSystem";
 import WeatherWidget from "../components/WeatherWidget";
 import AnimatedPressable from "../components/AnimatedPressable";
+import SideDrawer from "../components/SideDrawer";
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
 
@@ -142,6 +143,7 @@ export default function HomeScreen({ navigation, route }) {
   const [creatingMeet, setCreatingMeet] = useState(false);
   const [inviteInput, setInviteInput] = useState('');
   const [joiningMeet, setJoiningMeet] = useState(false);
+  const [drawerVisible, setDrawerVisible] = useState(false);
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const headerAnim = useRef(new Animated.Value(0)).current;
   const cardAnims = useRef(QUICK_ACTIONS.map(() => new Animated.Value(0))).current;
@@ -240,8 +242,9 @@ export default function HomeScreen({ navigation, route }) {
     }
   }, [user?.isGuest, activeCampusId, routeCampusId, navigation]);
 
-  const [showNotifs, setShowNotifs] = useState(false);
   const { notifications, markNotifRead, hasUnread } = useLiveMeet() || { notifications: [], markNotifRead: () => {}, hasUnread: false };
+  const isStudent = user && !user.isGuest && user.role === 'student';
+  const studentQuickAnims = useRef(STUDENT_QUICK_ACTIONS.map(() => new Animated.Value(0))).current;
 
     const s = StyleSheet.create({
       container: { flex: 1, backgroundColor: 'transparent' },
@@ -622,13 +625,18 @@ export default function HomeScreen({ navigation, route }) {
         {/* Header */}
         <Animated.View style={[s.header, { opacity: headerAnim, transform: [{ translateY: headerAnim.interpolate({ inputRange: [0, 1], outputRange: [-16, 0] }) }] }]}>
           <View style={s.headerTop}>
-            <View>
-              <Text style={s.greetingText}>{GREETING} 👋</Text>
-              <Text style={s.appName}>Nav<Text style={s.appAccent}>X</Text></Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <AnimatedPressable style={[s.avatar, { width: 40, height: 40 }]} onPress={() => setDrawerVisible(true)}>
+                <Ionicons name="menu" size={22} color={colors.primary} />
+              </AnimatedPressable>
+              <View>
+                <Text style={s.greetingText}>{GREETING} 👋</Text>
+                <Text style={s.appName}>Nav<Text style={s.appAccent}>X</Text></Text>
+              </View>
             </View>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
               <WeatherWidget />
-              <AnimatedPressable style={[s.avatar, { width: 42, height: 42 }]} onPress={() => setShowNotifs(true)}>
+              <AnimatedPressable style={[s.avatar, { width: 42, height: 42 }]} onPress={() => navigation.navigate("Notifications")}>
                 <Ionicons name="notifications" size={20} color={colors.primary} />
                 {hasUnread && <View style={s.notifDot} />}
               </AnimatedPressable>
@@ -648,16 +656,14 @@ export default function HomeScreen({ navigation, route }) {
           </View>
         </Animated.View>
 
-        {/* Student ERP Dashboard Section */}
+        {/* Student Profile Card (compact) */}
         {user && !user.isGuest && studentData && (
           <View style={{ paddingHorizontal: 20, marginTop: 18 }}>
-            
-            {/* Student Welcome / Profile Card */}
             <LinearGradient
               colors={['#4f46e5', '#312e81']}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
-              style={{ padding: 18, borderRadius: 20, ...SHADOWS.md, marginBottom: 16 }}
+              style={{ padding: 18, borderRadius: 20, ...SHADOWS.md }}
             >
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
@@ -678,91 +684,6 @@ export default function HomeScreen({ navigation, route }) {
                 )}
               </View>
             </LinearGradient>
-
-            {/* Next Class Widget */}
-            {studentData.nextClass && (
-              <View style={{ backgroundColor: colors.card, padding: 16, borderRadius: 20, borderWidth: 1, borderColor: colors.border, ...SHADOWS.sm, marginBottom: 16 }}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Text style={{ color: colors.text, fontSize: 14, fontWeight: '800' }}>Next Class</Text>
-                  <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, backgroundColor: colors.primary + '15' }}>
-                    <Text style={{ color: colors.primary, fontSize: 10, fontWeight: '700' }}>Period {studentData.nextClass.period}</Text>
-                  </View>
-                </View>
-                
-                <Text style={{ color: colors.text, fontSize: 18, fontWeight: '800', marginTop: 10 }}>{studentData.nextClass.subject}</Text>
-                <Text style={{ color: colors.textSec, fontSize: 12, marginTop: 4 }}>
-                  📍 Room {studentData.nextClass.roomName} · 🕰️ {studentData.nextClass.startTime} - {studentData.nextClass.endTime}
-                </Text>
-                <Text style={{ color: colors.textMuted, fontSize: 11, marginTop: 2 }}>Faculty: {studentData.nextClass.facultyName}</Text>
-
-                <TouchableOpacity
-                  style={{
-                    backgroundColor: colors.primary,
-                    borderRadius: 12,
-                    paddingVertical: 10,
-                    alignItems: 'center',
-                    marginTop: 14,
-                    flexDirection: 'row',
-                    justifyContent: 'center',
-                    gap: 6
-                  }}
-                  onPress={() => handleNavigateToRoom(studentData.nextClass.roomName)}
-                >
-                  <Ionicons name="navigate-outline" size={16} color="#fff" />
-                  <Text style={{ color: '#fff', fontSize: 13, fontWeight: '800' }}>Navigate →</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-
-            {/* Today's Timetable Button */}
-            <TouchableOpacity
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                backgroundColor: colors.card,
-                padding: 16,
-                borderRadius: 16,
-                borderWidth: 1,
-                borderColor: colors.border,
-                ...SHADOWS.sm,
-                marginBottom: 16
-              }}
-              onPress={() => navigation.navigate('Academics')}
-              activeOpacity={0.7}
-            >
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                <View style={{ width: 42, height: 42, borderRadius: 14, backgroundColor: colors.primary + '15', alignItems: 'center', justifyContent: 'center' }}>
-                  <Ionicons name="calendar" size={22} color={colors.primary} />
-                </View>
-                <View>
-                  <Text style={{ color: colors.text, fontSize: 15, fontWeight: '800' }}>Today's Timetable</Text>
-                  <Text style={{ color: colors.textSec, fontSize: 12, marginTop: 2 }}>
-                    {studentData.todayTimetable && studentData.todayTimetable.length > 0
-                      ? `${studentData.todayTimetable.length} classes scheduled`
-                      : 'No classes today'}
-                  </Text>
-                </View>
-              </View>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                <Text style={{ color: colors.primary, fontSize: 13, fontWeight: '700' }}>View</Text>
-                <Ionicons name="chevron-forward" size={16} color={colors.primary} />
-              </View>
-            </TouchableOpacity>
-
-            {/* Announcements Section */}
-            {studentData.announcements && studentData.announcements.length > 0 && (
-              <View style={{ marginBottom: 16 }}>
-                <Text style={{ color: colors.text, fontSize: 16, fontWeight: '800', marginBottom: 10 }}>Announcements</Text>
-                {studentData.announcements.map((ann, idx) => (
-                  <View key={ann.id || idx} style={{ backgroundColor: colors.card, padding: 14, borderRadius: 14, borderWidth: 1, borderColor: colors.border, marginBottom: 8 }}>
-                    <Text style={{ color: colors.text, fontSize: 14, fontWeight: '700' }}>📢 {ann.title}</Text>
-                    <Text style={{ color: colors.textSec, fontSize: 12, marginTop: 4, lineHeight: 18 }}>{ann.message}</Text>
-                  </View>
-                ))}
-              </View>
-            )}
-
           </View>
         )}
 
@@ -792,6 +713,33 @@ export default function HomeScreen({ navigation, route }) {
               </Animated.View>
             ))}
           </View>
+          {/* Student-only Quick Actions (Next Class + Timetable) */}
+          {isStudent && studentData && (
+            <View style={[s.quickRow, { marginTop: 10, justifyContent: 'flex-start', gap: 12 }]}>
+              {STUDENT_QUICK_ACTIONS.map((a, i) => (
+                <Animated.View key={`stu_${i}`} style={{
+                  opacity: cardAnims[0],
+                  transform: [{ scale: cardAnims[0] }],
+                }}>
+                  <AnimatedPressable 
+                    style={[s.quickCard, { borderColor: a.color + '22', shadowColor: a.color, width: (SW - 56) / 4 }]} 
+                    onPress={() => {
+                      if (a.screen === 'NextClass' && studentData?.nextClass) {
+                        handleNavigateToRoom(studentData.nextClass.roomName);
+                      } else {
+                        navigation.navigate(a.screen);
+                      }
+                    }}
+                  >
+                    <View style={[s.quickIcon, { backgroundColor: a.bg }]}>
+                      <Ionicons name={a.icon} size={24} color={a.color} />
+                    </View>
+                    <Text style={s.quickLabel}>{a.label}</Text>
+                  </AnimatedPressable>
+                </Animated.View>
+              ))}
+            </View>
+          )}
         </View>
 
         {/* 🔥 Active Updates */}
@@ -902,31 +850,7 @@ export default function HomeScreen({ navigation, route }) {
           </ScrollView>
         </View>
 
-        {/* Recently Visited */}
-        {(activeCampusId || routeCampusId) && recentRooms.length > 0 && (
-          <View style={s.section}>
-            <View style={s.secRow}>
-              <Text style={s.secTitle}>Recently Visited</Text>
-            </View>
-            {recentRooms.map(rm => {
-              const roomColor = ROOM_COLORS[rm.type] || colors.primary;
-              return (
-                <AnimatedPressable key={rm._id} style={s.recentCard} onPress={() => navigation.navigate("Navigation", { room: rm, campusId: rm.campusId || activeCampusId || routeCampusId })}>
-                  <View style={[s.recentIcon, { backgroundColor: roomColor + "20" }]}>
-                    <Ionicons name="location" size={22} color={roomColor} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={s.recentName}>{rm.name}</Text>
-                    <Text style={s.recentMeta}>{(rm.type || "room").toUpperCase()}{rm.roomNumber ? ` · Room ${rm.roomNumber}` : ""}</Text>
-                  </View>
-                  <View style={s.navBadge}>
-                    <Ionicons name="navigate" size={18} color={colors.primary} />
-                  </View>
-                </AnimatedPressable>
-              );
-            })}
-          </View>
-        )}
+        {/* Recently Visited — moved to SideDrawer */}
 
         {/* Your Venue */}
         <View style={s.section}>
@@ -968,53 +892,16 @@ export default function HomeScreen({ navigation, route }) {
           })()}
         </View>
 
-        {activeCampusId && (
-          <TouchableOpacity 
-            style={{ marginHorizontal: 20, marginTop: 30, marginBottom: 10, padding: 14, backgroundColor: colors.card, borderRadius: 12, borderWidth: 1, borderColor: colors.danger, flexDirection: 'row', justifyContent: 'center', alignItems: 'center' }}
-            onPress={() => {
-              if (deactivateCampus) deactivateCampus();
-            }}
-          >
-            <Ionicons name="exit-outline" size={18} color={colors.danger} />
-            <Text style={{ marginLeft: 8, color: colors.danger, fontWeight: '700', fontSize: 14 }}>Exit Campus</Text>
-          </TouchableOpacity>
-        )}
+        {/* Exit Campus — moved to SideDrawer */}
       </ScrollView>
 
-      {/* ── Notifications Panel ──────────────────────────────── */}
-      {showNotifs && (
-        <View style={{ position: "absolute", top: 0, bottom: 0, left: 0, right: 0, zIndex: 100 }}>
-          <TouchableOpacity style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.5)" }} activeOpacity={1} onPress={() => setShowNotifs(false)} />
-          <Animated.View style={{ position: "absolute", top: Platform.OS === "ios" ? 100 : 70, right: 20, width: SW * 0.85, backgroundColor: colors.card, borderRadius: RADIUS.lg, ...SHADOWS.lg, padding: 16 }}>
-            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-              <Text style={{ fontSize: 16, fontWeight: "800", color: colors.text }}>Notifications</Text>
-              <TouchableOpacity onPress={() => setShowNotifs(false)}>
-                <Ionicons name="close" size={20} color={colors.textSec} />
-              </TouchableOpacity>
-            </View>
-            {notifications.map(n => (
-              <TouchableOpacity 
-                key={n.id} 
-                onPress={() => {
-                  markNotifRead(n.id);
-                  if (n.type === 'live_meet' && n.sessionId) {
-                    setShowNotifs(false);
-                    navigation.navigate("LiveMeet", { sessionId: n.sessionId });
-                  }
-                }}
-                style={{ paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.border }}
-              >
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                  {n.unread && <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: "#ef4444" }} />}
-                  <Text style={{ fontSize: 14, fontWeight: "700", color: colors.text }}>{n.title}</Text>
-                  <Text style={{ fontSize: 11, color: colors.textMuted, marginLeft: "auto" }}>{n.time}</Text>
-                </View>
-                <Text style={{ fontSize: 13, color: colors.textSec, lineHeight: 18 }}>{n.desc || n.message}</Text>
-              </TouchableOpacity>
-            ))}
-          </Animated.View>
-        </View>
-      )}
+      {/* ── Side Drawer ──────────────────────────────── */}
+      <SideDrawer
+        visible={drawerVisible}
+        onClose={() => setDrawerVisible(false)}
+        recentRooms={recentRooms}
+        navigation={navigation}
+      />
 
       {/* ── Live Meet Modal ──────────────────────────────── */}
       {showMeetModal && (

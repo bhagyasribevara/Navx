@@ -31,6 +31,7 @@ import CampaignDetailScreen from "./src/screens/CampaignDetailScreen";
 import LiveMeetScreen from "./src/screens/LiveMeetScreen";
 import ARMeetScreen from "./src/screens/ARMeetScreen";
 import StreetViewScreen from "./src/screens/StreetViewScreen";
+import NotificationsScreen from "./src/screens/NotificationsScreen";
 import { LiveMeetProvider } from "./src/context/LiveMeetContext";
 import EmergencyOverlay from "./src/components/EmergencyOverlay";
 import GeofenceGuard from "./src/components/GeofenceGuard";
@@ -261,6 +262,11 @@ function AppNavigator() {
                 name="Search"
                 component={SearchScreen}
                 options={{ animation: "slide_from_bottom", gestureEnabled: true }}
+              />
+              <Stack.Screen
+                name="Notifications"
+                component={NotificationsScreen}
+                options={{ animation: "slide_from_right", gestureEnabled: true }}
               />
               <Stack.Screen
                 name="LiveMeet"

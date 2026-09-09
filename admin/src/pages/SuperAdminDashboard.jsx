@@ -11,6 +11,7 @@ import {
   regenerateCampusUrl
 } from '../api';
 import './SuperAdminDashboard.css';
+import ThemeToggle from '../components/ThemeToggle';
 
 const VENUE_TYPES = [
   { value: 'campus', label: '🎓 Campus / University', color: '#6366f1' },
@@ -361,6 +362,7 @@ export default function SuperAdminDashboard({ admin, onLogout }) {
             </div>
           </nav>
           <div className="navbar-right">
+            <ThemeToggle compact />
             <button className="btn-logout" onClick={() => { setIsOpen(false); onLogout(); }}>
               Logout
             </button>

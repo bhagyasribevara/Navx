@@ -181,7 +181,7 @@ export default function StagingTray({
   };
 
   return (
-    <div className="flex flex-col h-full bg-slate-900/90 backdrop-blur-md border-l border-slate-800 text-slate-100 overflow-hidden shadow-2xl rounded-r-2xl">
+    <div className="staging-tray-container flex flex-col h-full bg-slate-900/90 backdrop-blur-md border-l border-slate-800 text-slate-100 overflow-hidden shadow-2xl rounded-r-2xl">
       {/* Header */}
       <div className="p-4 border-b border-slate-800 bg-slate-950/60 flex items-center justify-between">
         <div className="flex items-center gap-2">

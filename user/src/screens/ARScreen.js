@@ -846,13 +846,7 @@ export default function ARScreen({ navigation, route }) {
         </View>
       )}
 
-      {/* ── ROBOT GUIDE (Fixed at Bottom-Left with preserved layout & animations) ── */}
-      {!arrived && (
-        <ARRobotGuide
-          dirType={arDirType}
-          instructionText={currentDir?.instruction || "Follow the highlighted path"}
-        />
-      )}
+      {/* Robot removed as per user request */}
 
       {/* ── FLOATING CIRCULAR MINI-MAP (Bottom-Right, anchored above bottom navigation bar) ── */}
       {!arrived && (
@@ -877,11 +871,12 @@ export default function ARScreen({ navigation, route }) {
             <Text style={styles.bottomBarLabel}>to your destination</Text>
           </View>
           <TouchableOpacity
-            style={styles.exitBtn}
+            style={[styles.exitBtn, { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#4f46e5', borderColor: '#4f46e5' }]}
             onPress={() => navigation.goBack()}
             activeOpacity={0.8}
           >
-            <Text style={styles.exitBtnText}>Exit</Text>
+            <Ionicons name="map" size={16} color="#fff" />
+            <Text style={[styles.exitBtnText, { color: '#fff' }]}>Map View</Text>
           </TouchableOpacity>
         </View>
       )}

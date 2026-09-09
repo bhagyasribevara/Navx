@@ -2,10 +2,11 @@ import React from 'react';
 import { Routes, Route, NavLink, useLocation, useNavigate, useParams, Outlet } from 'react-router-dom';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
-import { FiMap, FiGrid, FiLayers, FiNavigation, FiBarChart2, FiSettings, FiHome, FiAlertCircle, FiMenu, FiX, FiUsers, FiCalendar, FiFileText, FiCpu, FiLogOut, FiBox } from 'react-icons/fi';
+import { FiMap, FiGrid, FiLayers, FiNavigation, FiBarChart2, FiSettings, FiHome, FiAlertCircle, FiMenu, FiX, FiUsers, FiCalendar, FiFileText, FiCpu, FiLogOut, FiBox, FiChevronsLeft, FiChevronsRight } from 'react-icons/fi';
 import NavXAIChat from './components/NavXAIChat';
 import NavXAdminCopilot from './components/NavXAdminCopilot';
 import { AdminPageProvider } from './components/AdminPageContext';
+import ThemeToggle from './components/ThemeToggle';
 import Dashboard from './pages/Dashboard';
 import CampusManager from './pages/CampusManager';
 import MapEditor from './pages/MapEditor';
@@ -386,7 +387,7 @@ function Sidebar({ admin, onLogout, campusCode }) {
           aria-label="Toggle sidebar"
           title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
-          {collapsed ? <FiMenu /> : <FiX />}
+          {collapsed ? <FiChevronsRight /> : <FiChevronsLeft />}
         </button>
       </div>
 
@@ -485,7 +486,7 @@ function TopBar() {
 
   return (
     <div className="top-bar">
-      <div className="navbar-wrapper admin-navbar-wrapper">
+      <div className="navbar-wrapper admin-navbar-wrapper" style={{ justifyContent: 'space-between' }}>
         <div className="breadcrumbs">
           <span className="breadcrumb">NavX</span>
           {displayParts.map((p, i) => (
@@ -498,6 +499,7 @@ function TopBar() {
           ))}
           {displayParts.length === 0 && <><span className="breadcrumb-sep">/</span><span className="breadcrumb active">Dashboard</span></>}
         </div>
+        <ThemeToggle />
       </div>
     </div>
   );
