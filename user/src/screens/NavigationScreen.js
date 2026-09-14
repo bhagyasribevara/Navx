@@ -25,6 +25,8 @@ import VerticalTracker from "../navigation/VerticalTracker";
 import StaircaseExtractor from "../navigation/StaircaseExtractor";
 import { SHADOWS, RADIUS, ROOM_COLORS } from "../theme/designSystem";
 import AnimatedPressable from "../components/AnimatedPressable";
+import journeyRecorder, { JOURNEY_STATES } from "../journey/JourneyRecorder";
+import ReturnPathMatcher, { RETURN_MODES } from "../journey/ReturnPathMatcher";
 
 const { width: SW, height: SH } = Dimensions.get("window");
 
@@ -76,6 +78,43 @@ function snapPositionToRoute(pos, path, currentStep) {
   return pos;
 }
 
+export function resolveFloorInfo(floorRef, floorsList = []) {
+  if (!floorRef) return { floorId: '', level: 0, name: 'Ground Floor' };
+
+  let targetId = '';
+  if (typeof floorRef === 'object' && floorRef !== null) {
+    if (floorRef.level !== undefined && floorRef.level !== null) {
+      const lvl = Number(floorRef.level) || 0;
+      return {
+        floorId: (floorRef._id || '').toString(),
+        level: lvl,
+        name: floorRef.name || (lvl > 0 ? `Floor ${lvl}` : 'Ground Floor'),
+      };
+    }
+    targetId = (floorRef._id || '').toString();
+  } else {
+    targetId = floorRef.toString();
+  }
+
+  if (Array.isArray(floorsList)) {
+    const found = floorsList.find(f => (f._id || f).toString() === targetId);
+    if (found) {
+      const lvl = found.level !== undefined && found.level !== null ? Number(found.level) : 0;
+      return {
+        floorId: (found._id || found).toString(),
+        level: lvl,
+        name: found.name || (lvl > 0 ? `Floor ${lvl}` : 'Ground Floor'),
+      };
+    }
+  }
+
+  return {
+    floorId: targetId,
+    level: 0,
+    name: 'Ground Floor',
+  };
+}
+
 const DIR_ICONS = {
   left: "arrow-back",
   right: "arrow-forward",
@@ -111,17 +150,29 @@ function buildNavMapHTML(geoJSONData, pathPoints, initialPos, targetRoom, mapbox
   const destX = targetRoom?.shape?.points?.[0]?.x || targetRoom?.shape?.x;
   const destY = targetRoom?.shape?.points?.[0]?.y || targetRoom?.shape?.y;
 
-  // Build a floor level lookup map
+  // Build floor level and floor block lookup maps
   const floorLevelMap = {};
+  const floorBlockMap = {};
   if (floors && floors.length > 0) {
     floors.forEach(f => {
       const fid = (f._id || f).toString();
       floorLevelMap[fid] = f.level !== undefined ? f.level : 0;
+      if (f.blockId) {
+        floorBlockMap[fid] = (f.blockId._id || f.blockId).toString();
+      }
     });
   }
 
-  // Collect all floor IDs the route passes through
+  // Collect all floor IDs and block IDs the route passes through
   const routeFloorIds = new Set();
+  const routeBlockIds = new Set();
+
+  if (targetRoom) {
+    const tbId = (targetRoom.blockId?._id || targetRoom.blockId || '').toString();
+    if (tbId) routeBlockIds.add(tbId);
+    const tfId = (targetRoom.floorId?._id || targetRoom.floorId || '').toString();
+    if (tfId && floorBlockMap[tfId]) routeBlockIds.add(floorBlockMap[tfId]);
+  }
   
   // First pass: extract base heights, floorIds, and levels
   const rawPathData = pathPoints ? pathPoints.map(p => {
@@ -131,8 +182,11 @@ function buildNavMapHTML(geoJSONData, pathPoints, initialPos, targetRoom, mapbox
       level = floorLevelMap[fid];
     }
     if (level === undefined || level === null) level = 0;
-    if (fid) routeFloorIds.add(fid);
-    const baseH = level * 3.5 + 0.5;
+    if (fid) {
+      routeFloorIds.add(fid);
+      if (floorBlockMap[fid]) routeBlockIds.add(floorBlockMap[fid]);
+    }
+    const baseH = level * 3.5 + 0.54;
     return { ...p, floorIdStr: fid, level, baseH };
   }) : [];
 
@@ -262,11 +316,18 @@ function buildNavMapHTML(geoJSONData, pathPoints, initialPos, targetRoom, mapbox
 
   const pathCoordinates = interpolated3DCoords.map(p => `[${p[0]}, ${p[1]}, ${p[2]}]`).join(',');
   const routeFloorIdsJSON = JSON.stringify([...routeFloorIds]);
+  const routeBlockIdsJSON = JSON.stringify([...routeBlockIds]);
   const activeStairTransitionsJSON = JSON.stringify(activeStairTransitions);
 
   const targetFloorId = targetRoom?.floorId
     ? (typeof targetRoom.floorId === 'object' ? targetRoom.floorId._id : targetRoom.floorId)
     : '';
+
+  const initialStartNode = pathData && pathData.length > 0 ? pathData[0] : null;
+  const initLat = initialStartNode ? initialStartNode.x : (initialPos ? initialPos.x : center[0]);
+  const initLng = initialStartNode ? initialStartNode.y : (initialPos ? initialPos.y : center[1]);
+  const initElev = initialStartNode ? (initialStartNode.adjustedH !== undefined ? initialStartNode.adjustedH : initialStartNode.baseH) : (initialPos?.elevation || 0.54);
+  const initLevel = initialStartNode ? (initialStartNode.level !== undefined ? initialStartNode.level : 0) : 0;
 
   return `<!DOCTYPE html>
 <html><head>
@@ -282,25 +343,77 @@ function buildNavMapHTML(geoJSONData, pathPoints, initialPos, targetRoom, mapbox
   .mapboxgl-popup-tip { border-top-color: rgba(10, 14, 23, 0.8); }
   .room-label { color: #1e293b; font-weight: bold; font-size: 10px; text-shadow: 0 1px 2px rgba(255,255,255,0.8); }
   .target-room-label { color: #ffffff; font-weight: bold; font-size: 11px; text-shadow: 0 1px 2px rgba(0,0,0,0.8); }
-  .user-marker {
-    position: relative; width: 70px; height: 70px; display: flex; align-items: center; justify-content: center;
+  .floor-badge {
+    position: fixed;
+    top: 0;
+    left: 0;
+    transform: translate(-50%, -100%);
+    background: rgba(15, 23, 42, 0.94);
+    color: #c084fc;
+    border: 1px solid rgba(168, 85, 247, 0.6);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45), 0 0 10px rgba(168, 85, 247, 0.4);
+    padding: 3px 9px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 700;
+    white-space: nowrap;
+    pointer-events: none;
+    letter-spacing: 0.3px;
+    display: none;
+    align-items: center;
+    gap: 3px;
+    z-index: 9999;
   }
-  @keyframes pulseGlow {
-    0% { transform: scale(0.85); opacity: 0.8; }
-    50% { transform: scale(1.4); opacity: 0.3; }
-    100% { transform: scale(0.85); opacity: 0.8; }
-  }
-  .pulse {
-    position: absolute; width: 100%; height: 100%; background: radial-gradient(circle, rgba(139, 92, 246, 0.45) 0%, rgba(139, 92, 246, 0) 65%); border-radius: 50%; animation: pulseGlow 2.5s infinite;
-  }
-  .puck {
-    position: relative; width: 30px; height: 30px; background: linear-gradient(135deg, #A855F7, #6D28D9); border-radius: 50%; box-shadow: 0 6px 16px rgba(109, 40, 217, 0.6); display: flex; align-items: center; justify-content: center; border: 2px solid rgba(255,255,255,0.4); transition: transform 0.2s ease-out;
+  .floor-badge::after {
+    content: '';
+    position: absolute;
+    bottom: -4px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 0;
+    height: 0;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 4px solid rgba(15, 23, 42, 0.94);
   }
   .dest-marker {
-    width: 18px; height: 18px; background-color: #3b82f6; border: 3px solid white; border-radius: 50%; box-shadow: 0 2px 4px rgba(0,0,0,0.4);
+    width: 18px; height: 18px; background-color: #ef4444; border: 3px solid white; border-radius: 50%; box-shadow: 0 2px 4px rgba(0,0,0,0.4);
+  }
+  .start-marker {
+    width: 16px; height: 16px; background-color: #10b981; border: 3px solid white; border-radius: 50%; box-shadow: 0 2px 4px rgba(0,0,0,0.4);
+  }
+  .doorplate-sign {
+    position: absolute;
+    top: 0;
+    left: 0;
+    transform-origin: 50% 50%;
+    pointer-events: auto;
+    cursor: pointer;
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+    border: 1px solid #f59e0b;
+    border-top: 1.5px solid #fbbf24;
+    color: #f8fafc;
+    padding: 1px 6px;
+    border-radius: 2.5px;
+    font-size: 9.5px;
+    font-weight: 800;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    display: none;
+    white-space: nowrap;
+    user-select: none;
+    will-change: transform, opacity;
+  }
+  .doorplate-sign.target-room {
+    background: linear-gradient(135deg, #831843 0%, #9f1239 100%);
+    border: 1.5px solid #f43f5e;
+    border-top: 2px solid #fda4af;
+    color: #ffffff;
+    box-shadow: 0 0 12px rgba(244, 63, 94, 0.7), 0 2px 8px rgba(0, 0, 0, 0.7);
   }
 </style>
-</head><body><div id="map"></div>
+</head><body><div id="map"></div><div id="user-floor-badge" class="floor-badge"></div><div id="doorplate-labels" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;overflow:hidden;z-index:9;"></div>
 <script>
 const tokenMatch = '${mapboxUrl}'.match(/access_token=([^&]+)/);
 mapboxgl.accessToken = tokenMatch ? tokenMatch[1] : 'YOUR_TOKEN_HERE';
@@ -316,7 +429,7 @@ var map = new mapboxgl.Map({
   maxZoom: 25, // Enable deep zooming into blocks, rooms, and stairs
   pitch: ${initialPitch},
   minPitch: 0,
-  maxPitch: 85, // Enable full 3D pitch and tilt
+  maxPitch: 75, // Clamped to prevent camera frustum clipping on deep zoom
   bearing: ${initialBearing},
   antialias: true,
   dragRotate: true,
@@ -325,13 +438,64 @@ var map = new mapboxgl.Map({
   touchZoomRotate: true,
   dragPan: true,
   keyboard: true,
+  scrollZoom: true,
+  boxZoom: true,
+  doubleClickZoom: true,
   attributionControl: false
 });
+
+// Explicitly ensure all interaction handlers are active
+if (map.dragPan) map.dragPan.enable();
+if (map.scrollZoom) map.scrollZoom.enable();
+if (map.boxZoom) map.boxZoom.enable();
+if (map.dragRotate) map.dragRotate.enable();
+if (map.keyboard) map.keyboard.enable();
+if (map.doubleClickZoom) map.doubleClickZoom.enable();
+if (map.touchZoomRotate) map.touchZoomRotate.enable();
+if (map.touchPitch) map.touchPitch.enable();
+
+window._isFreeRoam = false;
+window._userInteracting = false;
+window._lastUserCoords = [${center[1]}, ${center[0]}];
+
+function notifyFreeRoam(isFree) {
+  if (window.ReactNativeWebView) {
+    window.ReactNativeWebView.postMessage(JSON.stringify({
+      type: 'FREE_ROAM_CHANGED',
+      isFreeRoam: isFree
+    }));
+  }
+}
+
+function onInteractionStart() {
+  window._userInteracting = true;
+  if (!window._isFreeRoam) {
+    window._isFreeRoam = true;
+    notifyFreeRoam(true);
+  }
+}
+
+function onInteractionEnd() {
+  window._userInteracting = false;
+}
+
+map.on('dragstart', onInteractionStart);
+map.on('zoomstart', onInteractionStart);
+map.on('rotatestart', onInteractionStart);
+map.on('pitchstart', onInteractionStart);
+map.on('touchstart', onInteractionStart);
+
+map.on('dragend', onInteractionEnd);
+map.on('zoomend', onInteractionEnd);
+map.on('rotateend', onInteractionEnd);
+map.on('pitchend', onInteractionEnd);
+map.on('touchend', onInteractionEnd);
 
 var currentMapMode = '${mapMode || "3D"}';
 var currentGeoData = ${geoJSONData ? JSON.stringify(geoJSONData) : 'null'};
 var currentFloorId = '${targetFloorId || ""}';
 window._routeFloorIds = ${routeFloorIdsJSON || '[]'};
+window._routeBlockIds = ${routeBlockIdsJSON || '[]'};
 window._activeStairTransitions = ${activeStairTransitionsJSON || '[]'};
 window._isSingleFloorRoute = ${isSingleFloorRoute ? 'true' : 'false'};
 
@@ -346,8 +510,20 @@ window.setMapMode = function(mode) {
     map.easeTo({ pitch: 60, bearing: -17.6, duration: 600 });
   }
 
-  var layers3D = ['campus-blocks', 'campus-rooms', 'campus-stairs', '3d-buildings', 'route-bg', 'route-line',
-                   'user-shadow-layer', 'user-stem-layer', 'user-disc-layer', 'user-glow-layer'];
+  var layers3D = [
+    'campus-blocks',
+    'campus-rooms',
+    'campus-rooms-corridor',
+    'campus-rooms-base',
+    'campus-rooms-upper',
+    'campus-rooms-partition',
+    'campus-rooms-roof',
+    'campus-rooms-parapet',
+    'campus-rooms-door',
+    '3d-buildings',
+    'route-bg',
+    'route-line'
+  ];
   layers3D.forEach(function(id) {
     if (map.getLayer(id)) {
       map.setLayoutProperty(id, 'visibility', is2D ? 'none' : 'visible');
@@ -360,6 +536,7 @@ window.setMapMode = function(mode) {
       map.setLayoutProperty(id, 'visibility', is2D ? 'visible' : 'none');
     }
   });
+  if (typeof updateDoorplateSignage === 'function') updateDoorplateSignage();
 };
 
 function generate3DRouteFeatures(coords, width, thickness) {
@@ -420,6 +597,8 @@ function generate3DRouteFeatures(coords, width, thickness) {
 }
 
 map.on('load', () => {
+  setupMarkerLayers();
+
   if (!map.getLayer('3d-buildings')) {
     map.addLayer({
       'id': '3d-buildings',
@@ -442,11 +621,12 @@ map.on('load', () => {
   }
 });
 
-window.updateGeoJSON = function(data, floorId, activeFloorId, activeStairTransitions, isSingleFloorRoute) {
+window.updateGeoJSON = function(data, floorId, activeFloorId, activeStairTransitions, isSingleFloorRoute, activeBlockIds) {
   currentGeoData = data;
   currentFloorId = floorId;
   if (activeStairTransitions !== undefined) window._activeStairTransitions = activeStairTransitions;
   if (isSingleFloorRoute !== undefined) window._isSingleFloorRoute = isSingleFloorRoute;
+  if (activeBlockIds !== undefined && Array.isArray(activeBlockIds)) window._routeBlockIds = activeBlockIds;
   window.renderGeoJSONLayers(data, floorId, activeFloorId);
 };
 
@@ -510,6 +690,21 @@ window.renderGeoJSONLayers = function(data, floorId, activeFloorId) {
       }
     }
     return true;
+  }).map(function(f) {
+    if (f.properties.type === 'block') {
+      var bId = (f.properties.id || '').toString();
+      var isRouteBlock = (window._routeBlockIds && window._routeBlockIds.indexOf(bId) !== -1);
+      if (isRouteBlock) {
+        var copy = Object.assign({}, f);
+        copy.properties = Object.assign({}, f.properties, {
+          height: 0.05,
+          min_height: 0,
+          isRouteBlock: true
+        });
+        return copy;
+      }
+    }
+    return f;
   });
 
   var polygonData = { type: 'FeatureCollection', features: polyFeatures };
@@ -519,6 +714,66 @@ window.renderGeoJSONLayers = function(data, floorId, activeFloorId) {
   } else {
     map.addSource('campus-data', { type: 'geojson', data: polygonData });
   }
+
+  // ── Extract Doorplate Anchors for Physical In-World Room Signage ──
+  var doorplateMap = {};
+  polyFeatures.forEach(function(f) {
+    if (!f.properties) return;
+    var props = f.properties;
+    var rid = (props.roomId || props.id || props.name || '').toString();
+    if (!rid) return;
+
+    if (props.part === 'doorplate' && props.doorLng && props.doorLat) {
+      doorplateMap[rid] = {
+        id: rid,
+        name: props.name || 'Room',
+        lng: props.doorLng,
+        lat: props.doorLat,
+        elevation: props.doorElev !== undefined ? props.doorElev : (props.min_height || 2.36),
+        ux: props.ux || 1,
+        uy: props.uy || 0,
+        nx: props.nx !== undefined ? props.nx : 0,
+        ny: props.ny !== undefined ? props.ny : 1,
+        ptA: props.ptA || [props.doorLng - 0.000004, props.doorLat],
+        ptB: props.ptB || [props.doorLng + 0.000004, props.doorLat],
+        floorId: props.floorId,
+        level: props.level,
+        isTarget: (props.id === '${targetRoom?._id || ''}' || props.roomId === '${targetRoom?._id || ''}')
+      };
+    } else if (props.type === 'room' && props.name && props.category !== 'corridor' && !doorplateMap[rid]) {
+      if (f.geometry && f.geometry.coordinates && f.geometry.coordinates[0]) {
+        var ring = f.geometry.coordinates[0];
+        if (ring.length >= 4) {
+          var p1 = ring[0], p2 = ring[1];
+          var midLng = (p1[0] + p2[0]) / 2;
+          var midLat = (p1[1] + p2[1]) / 2;
+          var lvl = props.level !== undefined ? Number(props.level) : 0;
+          var elev = (lvl * 3.5) + 2.36;
+          var dx = p2[0] - p1[0], dy = p2[1] - p1[1];
+          var dlen = Math.hypot(dx, dy) || 1e-6;
+          var uX = dx / dlen, uY = dy / dlen;
+          doorplateMap[rid] = {
+            id: rid,
+            name: props.name,
+            lng: midLng,
+            lat: midLat,
+            elevation: elev,
+            ux: uX,
+            uy: uY,
+            nx: -uY,
+            ny: uX,
+            ptA: [midLng - uX * 0.000004, midLat - uY * 0.000004],
+            ptB: [midLng + uX * 0.000004, midLat + uY * 0.000004],
+            floorId: props.floorId,
+            level: props.level,
+            isTarget: (props.id === '${targetRoom?._id || ''}' || props.roomId === '${targetRoom?._id || ''}')
+          };
+        }
+      }
+    }
+  });
+  window._activeDoorplates = Object.values(doorplateMap);
+  if (typeof updateDoorplateSignage === 'function') updateDoorplateSignage();
 
   // Draw 2D & 3D Navigation Route line if coordinates exist
   ${pathCoordinates ? `
@@ -535,8 +790,8 @@ window.renderGeoJSONLayers = function(data, floorId, activeFloorId) {
       map.addSource('nav-route-2d', { type: 'geojson', data: route2DGeoJSON });
     }
 
-    var mainFeatures = generate3DRouteFeatures(rawRouteCoords, 0.000004, 0.04);
-    var bgFeatures = generate3DRouteFeatures(rawRouteCoords, 0.000006, 0.06);
+    var mainFeatures = generate3DRouteFeatures(rawRouteCoords, 0.000004, 0.06);
+    var bgFeatures = generate3DRouteFeatures(rawRouteCoords, 0.000007, 0.08);
 
     if (map.getSource('route')) {
       map.getSource('route').setData({ type: 'FeatureCollection', features: mainFeatures });
@@ -604,13 +859,150 @@ window.renderGeoJSONLayers = function(data, floorId, activeFloorId) {
     }
   ` : ''}
 
-  // ── 6B. 3D EXTRUSION LAYER FOR ROOMS (OPAQUE, DRAW FIRST) ──
+  // ── 6B. DIGITAL TWIN: CORRIDORS (NEUTRAL POLISHED CONCRETE WALKWAYS) ──
+  if (!map.getLayer('campus-rooms-corridor')) {
+    map.addLayer({
+      'id': 'campus-rooms-corridor',
+      'type': 'fill-extrusion',
+      'source': 'campus-data',
+      'filter': ['all', ['==', ['get', 'type'], 'room'], ['==', ['get', 'part'], 'corridor']],
+      'layout': { 'visibility': is2D ? 'none' : 'visible' },
+      'paint': {
+        'fill-extrusion-color': ['coalesce', ['get', 'color'], '#cbd5e1'],
+        'fill-extrusion-height': ['coalesce', ['get', 'height'], 0.05],
+        'fill-extrusion-base': ['coalesce', ['get', 'min_height'], 0],
+        'fill-extrusion-opacity': 0.95
+      }
+    }, '3d-buildings');
+  }
+
+  // ── 6C. DIGITAL TWIN: DADO / BASEBOARD TIER (minH to minH + 0.80m) ──
+  if (!map.getLayer('campus-rooms-base')) {
+    map.addLayer({
+      'id': 'campus-rooms-base',
+      'type': 'fill-extrusion',
+      'source': 'campus-data',
+      'filter': ['all', ['==', ['get', 'type'], 'room'], ['==', ['get', 'part'], 'base']],
+      'layout': { 'visibility': is2D ? 'none' : 'visible' },
+      'paint': {
+        'fill-extrusion-color': ['coalesce', ['get', 'color'], '#1e293b'],
+        'fill-extrusion-height': ['coalesce', ['get', 'height'], 0.80],
+        'fill-extrusion-base': ['coalesce', ['get', 'min_height'], 0],
+        'fill-extrusion-opacity': 0.95
+      }
+    }, '3d-buildings');
+  }
+
+  // ── 6D. DIGITAL TWIN: PLASTER WALL BODY (minH + 0.80m to minH + 2.75m) ──
+  if (!map.getLayer('campus-rooms-upper')) {
+    map.addLayer({
+      'id': 'campus-rooms-upper',
+      'type': 'fill-extrusion',
+      'source': 'campus-data',
+      'filter': ['all', ['==', ['get', 'type'], 'room'], ['==', ['get', 'part'], 'body']],
+      'layout': { 'visibility': is2D ? 'none' : 'visible' },
+      'paint': {
+        'fill-extrusion-color': [
+          'case',
+          ['==', ['get', 'roomId'], '${targetRoom?._id || ''}'], '#fecdd3',
+          ['coalesce', ['get', 'color'], '#e2e8f0']
+        ],
+        'fill-extrusion-height': ['coalesce', ['get', 'height'], 2.75],
+        'fill-extrusion-base': ['coalesce', ['get', 'min_height'], 0.80],
+        'fill-extrusion-opacity': 0.95
+      }
+    }, '3d-buildings');
+  }
+
+  // ── 6E. DIGITAL TWIN: 3D PARTITION DIVIDER WALLS (minH to minH + 2.92m) ──
+  // Creates crisp structural divider seams between adjacent rooms
+  if (!map.getLayer('campus-rooms-partition')) {
+    map.addLayer({
+      'id': 'campus-rooms-partition',
+      'type': 'fill-extrusion',
+      'source': 'campus-data',
+      'filter': ['all', ['==', ['get', 'type'], 'room'], ['==', ['get', 'part'], 'partition']],
+      'layout': { 'visibility': is2D ? 'none' : 'visible' },
+      'paint': {
+        'fill-extrusion-color': ['coalesce', ['get', 'color'], '#1e293b'],
+        'fill-extrusion-height': ['coalesce', ['get', 'height'], 2.92],
+        'fill-extrusion-base': ['coalesce', ['get', 'min_height'], 0],
+        'fill-extrusion-opacity': 1.0
+      }
+    }, '3d-buildings');
+  }
+
+  // ── 6F. DIGITAL TWIN: RECESSED INSET CEILING / ROOF TRAY (inset 0.18m, 2.70m -> 2.75m) ──
+  // Sunken ceiling plane creating natural architectural shadow creases against perimeter walls
+  if (!map.getLayer('campus-rooms-roof')) {
+    map.addLayer({
+      'id': 'campus-rooms-roof',
+      'type': 'fill-extrusion',
+      'source': 'campus-data',
+      'filter': ['all', ['==', ['get', 'type'], 'room'], ['==', ['get', 'part'], 'roof']],
+      'layout': { 'visibility': is2D ? 'none' : 'visible' },
+      'paint': {
+        'fill-extrusion-color': [
+          'case',
+          ['==', ['get', 'roomId'], '${targetRoom?._id || ''}'], '#f43f5e',
+          ['coalesce', ['get', 'color'], '#f8fafc']
+        ],
+        'fill-extrusion-height': ['coalesce', ['get', 'height'], 2.75],
+        'fill-extrusion-base': ['coalesce', ['get', 'min_height'], 2.70],
+        'fill-extrusion-opacity': 0.98
+      }
+    }, '3d-buildings');
+  }
+
+  // ── 6G. DIGITAL TWIN: RAISED PARAPET LIP & CATEGORY COPING TRIM (minH + 2.75m to minH + 2.90m) ──
+  if (!map.getLayer('campus-rooms-parapet')) {
+    map.addLayer({
+      'id': 'campus-rooms-parapet',
+      'type': 'fill-extrusion',
+      'source': 'campus-data',
+      'filter': ['all', ['==', ['get', 'type'], 'room'], ['==', ['get', 'part'], 'parapet']],
+      'layout': { 'visibility': is2D ? 'none' : 'visible' },
+      'paint': {
+        'fill-extrusion-color': [
+          'case',
+          ['==', ['get', 'roomId'], '${targetRoom?._id || ''}'], '#be123c',
+          ['coalesce', ['get', 'color'], '#64748b']
+        ],
+        'fill-extrusion-height': ['coalesce', ['get', 'height'], 2.90],
+        'fill-extrusion-base': ['coalesce', ['get', 'min_height'], 2.75],
+        'fill-extrusion-opacity': 1.0
+      }
+    }, '3d-buildings');
+  }
+
+  // ── 6H. DIGITAL TWIN: CORRIDOR DOOR PORTALS (ILLUMINATED FRAMES & ENTRANCES) ──
+  if (!map.getLayer('campus-rooms-door')) {
+    map.addLayer({
+      'id': 'campus-rooms-door',
+      'type': 'fill-extrusion',
+      'source': 'campus-data',
+      'filter': ['all', ['==', ['get', 'type'], 'room'], ['any', ['==', ['get', 'part'], 'door'], ['==', ['get', 'part'], 'door_frame'], ['==', ['get', 'part'], 'door_threshold'], ['==', ['get', 'part'], 'doorplate']]],
+      'layout': { 'visibility': is2D ? 'none' : 'visible' },
+      'paint': {
+        'fill-extrusion-color': ['coalesce', ['get', 'color'], '#f59e0b'],
+        'fill-extrusion-height': ['coalesce', ['get', 'height'], 2.50],
+        'fill-extrusion-base': ['coalesce', ['get', 'min_height'], 0],
+        'fill-extrusion-opacity': 1.0
+      }
+    }, '3d-buildings');
+  }
+
+  // ── 6I. 3D EXTRUSION LAYER FOR ROOMS / STAIRS (FALLBACK & STAIRCASES) ──
   if (!map.getLayer('campus-rooms')) {
     map.addLayer({
       'id': 'campus-rooms',
       'type': 'fill-extrusion',
       'source': 'campus-data',
-      'filter': ['!=', ['get', 'type'], 'block'],
+      'filter': [
+        'any',
+        ['==', ['get', 'type'], 'stairs'],
+        ['all', ['==', ['get', 'type'], 'room'], ['!has', 'part']]
+      ],
       'layout': { 'visibility': is2D ? 'none' : 'visible' },
       'paint': {
         'fill-extrusion-color': [
@@ -625,7 +1017,7 @@ window.renderGeoJSONLayers = function(data, floorId, activeFloorId) {
     }, '3d-buildings');
   }
 
-  // ── 6A. 3D EXTRUSION LAYER FOR BLOCKS (MATCH 3D BUILDINGS STYLE) ──
+  // ── 6A. 3D EXTRUSION LAYER FOR BLOCKS (TRANSLUCENT OUTER GLASS ENVELOPE) ──
   if (!map.getLayer('campus-blocks')) {
     map.addLayer({
       'id': 'campus-blocks',
@@ -634,10 +1026,18 @@ window.renderGeoJSONLayers = function(data, floorId, activeFloorId) {
       'filter': ['==', ['get', 'type'], 'block'],
       'layout': { 'visibility': is2D ? 'none' : 'visible' },
       'paint': {
-        'fill-extrusion-color': '#1f2937',
+        'fill-extrusion-color': [
+          'case',
+          ['boolean', ['get', 'isRouteBlock'], false], '#334155',
+          '#1e293b'
+        ],
         'fill-extrusion-height': ['coalesce', ['get', 'height'], 6],
         'fill-extrusion-base': ['coalesce', ['get', 'min_height'], 0],
-        'fill-extrusion-opacity': 0.6
+        'fill-extrusion-opacity': [
+          'case',
+          ['boolean', ['get', 'isRouteBlock'], false], 0.20,
+          0.22
+        ]
       }
     }, '3d-buildings');
   }
@@ -651,10 +1051,10 @@ window.renderGeoJSONLayers = function(data, floorId, activeFloorId) {
         'source': 'route-bg-source',
         'layout': { 'visibility': is2D ? 'none' : 'visible' },
         'paint': {
-          'fill-extrusion-color': '#6d28d9',
+          'fill-extrusion-color': '#4c1d95',
           'fill-extrusion-height': ['get', 'height'],
           'fill-extrusion-base': ['get', 'min_height'],
-          'fill-extrusion-opacity': 0.6
+          'fill-extrusion-opacity': 0.7
         }
       });
     }
@@ -665,7 +1065,7 @@ window.renderGeoJSONLayers = function(data, floorId, activeFloorId) {
         'source': 'route',
         'layout': { 'visibility': is2D ? 'none' : 'visible' },
         'paint': {
-          'fill-extrusion-color': '#4c1d95',
+          'fill-extrusion-color': '#8b5cf6',
           'fill-extrusion-height': ['get', 'height'],
           'fill-extrusion-base': ['get', 'min_height'],
           'fill-extrusion-opacity': 1.0
@@ -674,18 +1074,19 @@ window.renderGeoJSONLayers = function(data, floorId, activeFloorId) {
     }
   ` : ''}
 
-  // ── 9. LABELS ──
+  // ── 9. LABELS (2D / BLOCKS ONLY) ──
   if (!map.getLayer('campus-labels')) {
     map.addLayer({
       'id': 'campus-labels',
       'type': 'symbol',
       'source': 'campus-data',
-      'filter': ['has', 'name'],
+      'filter': ['all', ['!=', ['get', 'type'], 'room'], ['has', 'name']],
       'layout': {
         'text-field': ['get', 'name'],
         'text-size': 12,
         'text-anchor': 'top',
-        'text-offset': [0, 1]
+        'text-offset': [0, 1],
+        'visibility': is2D ? 'visible' : 'none'
       },
       'paint': {
         'text-color': is2D ? '#0f172a' : '#ffffff',
@@ -695,204 +1096,468 @@ window.renderGeoJSONLayers = function(data, floorId, activeFloorId) {
     });
   }
 
+  // ── 9B. 3D DIGITAL TWIN ROOM BILLBOARD LABELS ──
+  if (!map.getLayer('campus-room-labels')) {
+    map.addLayer({
+      'id': 'campus-room-labels',
+      'type': 'symbol',
+      'source': 'campus-data',
+      'filter': [
+        'all',
+        ['==', ['get', 'type'], 'room'],
+        ['==', ['get', 'part'], 'parapet'],
+        ['!=', ['get', 'category'], 'corridor'],
+        ['has', 'name']
+      ],
+      'layout': {
+        'text-field': ['get', 'name'],
+        'text-size': 11,
+        'text-max-width': 8,
+        'text-anchor': 'center',
+        'text-offset': [0, 0],
+        'visibility': 'none' // Managed via high-precision 3D projected HTML badges to prevent ground draping
+      },
+      'paint': {
+        'text-color': '#ffffff',
+        'text-halo-color': 'rgba(15, 23, 42, 0.95)',
+        'text-halo-width': 2
+      }
+    });
+  }
+
+  // ── 10. RAYCASTING & ROOM INTERACTION HANDLERS ──
+  if (!window._roomClickAttached) {
+    window._roomClickAttached = true;
+    var clickLayers = ['campus-rooms-roof', 'campus-rooms-upper', 'campus-rooms-base', 'campus-rooms-parapet', 'campus-rooms'];
+    clickLayers.forEach(function(lyrId) {
+      if (map.getLayer(lyrId)) {
+        map.on('click', lyrId, function(e) {
+          if (!e.features || !e.features.length) return;
+          var p = e.features[0].properties || {};
+          if (window.ReactNativeWebView) {
+            window.ReactNativeWebView.postMessage(JSON.stringify({
+              type: 'ROOM_CLICK',
+              roomId: p.roomId || p.id,
+              name: p.name,
+              category: p.category,
+              department: p.department,
+              capacity: p.capacity,
+              floorId: p.floorId,
+              level: p.level
+            }));
+          }
+        });
+        map.on('mouseenter', lyrId, function() {
+          map.getCanvas().style.cursor = 'pointer';
+        });
+        map.on('mouseleave', lyrId, function() {
+          map.getCanvas().style.cursor = '';
+        });
+      }
+    });
+  }
+
   // Ensure visibilities match current mode
   window.setMapMode(currentMapMode);
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 3D USER POSITION MARKER — Mapbox GL JS fill-extrusion based.
-// Shows the user as a glowing disc floating at their ACTUAL floor altitude.
-// A vertical stem connects the disc down to ground level.
-//
-// Altitude mapping:
-//   Ground floor (level 0) → altitude = 1.5m  (person standing on ground)
-//   1st floor   (level 1) → altitude = 5.0m  (3.5m floor + 1.5m person)
-//   2nd floor   (level 2) → altitude = 8.5m  (7.0m + 1.5m)
-//   etc.
-//
-// generateCirclePolygon: creates a GeoJSON polygon approximation of a circle
-// centered at (lng, lat) with given radius in meters, using numPts points.
+// USER POSITION & DIRECTION ARROW MARKER — Native 3D WebGL Extrusions
+// Signature violet circular puck with real-time rotating white navigation arrow
+// elevated directly to the route ribbon elevation and synchronized in 3D perspective.
 // ─────────────────────────────────────────────────────────────────────────────
-function generateCirclePolygon(lng, lat, radiusMeters, numPts) {
-  var pts = numPts || 20;
+function generateCirclePolygon(lng, lat, radiusMeters, numPoints) {
+  numPoints = numPoints || 24;
+  var dLat = radiusMeters / 111139;
+  var dLng = radiusMeters / (111139 * Math.cos(lat * Math.PI / 180));
   var coords = [];
-  var earthR = 6371000;
-  for (var i = 0; i <= pts; i++) {
-    var angle = (i / pts) * 2 * Math.PI;
-    var dx = radiusMeters * Math.cos(angle);
-    var dy = radiusMeters * Math.sin(angle);
-    var dLat = dy / earthR * (180 / Math.PI);
-    var dLng = dx / (earthR * Math.cos(lat * Math.PI / 180)) * (180 / Math.PI);
-    coords.push([lng + dLng, lat + dLat]);
+  for (var i = 0; i <= numPoints; i++) {
+    var theta = (i / numPoints) * 2 * Math.PI;
+    coords.push([lng + dLng * Math.cos(theta), lat + dLat * Math.sin(theta)]);
   }
-  return coords;
+  return [coords];
 }
 
-function initUser3DMarker(map, lng, lat, elevation) {
-  var elev = elevation || 0;
-  var discR = 2.5;  // disc radius meters
-  var stemR = 0.6;  // stem radius meters
-  var discCoords = generateCirclePolygon(lng, lat, discR, 20);
-  var stemCoords = generateCirclePolygon(lng, lat, stemR, 12);
+function generateArrowPolygon(lng, lat, headingDeg, lengthMeters, widthMeters) {
+  lengthMeters = lengthMeters || 2.2;
+  widthMeters = widthMeters || 1.4;
+  var rad = ((headingDeg || 0) * Math.PI) / 180;
+  var forwardY = Math.cos(rad);
+  var forwardX = Math.sin(rad);
+  var rightX = Math.cos(rad);
+  var rightY = -Math.sin(rad);
 
-  // ── Ground shadow circle (always at z=0, subtle) ──
-  var shadowCoords = generateCirclePolygon(lng, lat, discR * 1.4, 20);
-  if (!map.getSource('user-shadow')) {
-    map.addSource('user-shadow', {
+  var mToLat = 1 / 111139;
+  var mToLng = 1 / (111139 * Math.cos(lat * Math.PI / 180));
+
+  var tipDist = lengthMeters * 0.6;
+  var backDist = lengthMeters * 0.4;
+  var notchDist = lengthMeters * 0.15;
+  var halfW = widthMeters * 0.5;
+
+  var pTip = [lng + (forwardX * tipDist) * mToLng, lat + (forwardY * tipDist) * mToLat];
+  var pRight = [lng + (-forwardX * backDist + rightX * halfW) * mToLng, lat + (-forwardY * backDist + rightY * halfW) * mToLat];
+  var pNotch = [lng + (-forwardX * notchDist) * mToLng, lat + (-forwardY * notchDist) * mToLat];
+  var pLeft = [lng + (-forwardX * backDist - rightX * halfW) * mToLng, lat + (-forwardY * backDist - rightY * halfW) * mToLat];
+
+  return [[pTip, pRight, pNotch, pLeft, pTip]];
+}
+
+function setupMarkerLayers() {
+  if (!map) return;
+  if (!map.getSource('user-marker-source')) {
+    map.addSource('user-marker-source', {
       type: 'geojson',
-      data: { type: 'Feature', geometry: { type: 'Polygon', coordinates: [shadowCoords] }, properties: { base: 0, top: 0.05 } }
+      data: { type: 'FeatureCollection', features: [] }
     });
+  }
+  if (!map.getLayer('user-marker-glow')) {
     map.addLayer({
-      id: 'user-shadow-layer',
-      type: 'fill-extrusion',
-      source: 'user-shadow',
-      paint: {
-        'fill-extrusion-color': '#7c3aed',
-        'fill-extrusion-base': 0,
-        'fill-extrusion-height': 0.05,
+      'id': 'user-marker-glow',
+      'type': 'fill-extrusion',
+      'source': 'user-marker-source',
+      'filter': ['==', ['get', 'part'], 'glow'],
+      'paint': {
+        'fill-extrusion-color': '#a855f7',
+        'fill-extrusion-height': ['get', 'height'],
+        'fill-extrusion-base': ['get', 'min_height'],
         'fill-extrusion-opacity': 0.35
       }
     });
   }
-
-  // ── Vertical stem: thin pillar from ground to disc height ──
-  if (!map.getSource('user-stem')) {
-    map.addSource('user-stem', {
-      type: 'geojson',
-      data: { type: 'Feature', geometry: { type: 'Polygon', coordinates: [stemCoords] }, properties: { base: 0, top: elev } }
-    });
+  if (!map.getLayer('user-marker-puck')) {
     map.addLayer({
-      id: 'user-stem-layer',
-      type: 'fill-extrusion',
-      source: 'user-stem',
-      paint: {
-        'fill-extrusion-color': '#a78bfa',
-        'fill-extrusion-base': ['get', 'base'],
-        'fill-extrusion-height': ['get', 'top'],
-        'fill-extrusion-opacity': 0.7
+      'id': 'user-marker-puck',
+      'type': 'fill-extrusion',
+      'source': 'user-marker-source',
+      'filter': ['==', ['get', 'part'], 'puck'],
+      'paint': {
+        'fill-extrusion-color': '#7c3aed',
+        'fill-extrusion-height': ['get', 'height'],
+        'fill-extrusion-base': ['get', 'min_height'],
+        'fill-extrusion-opacity': 0.95
       }
     });
   }
-
-  // ── User disc: glowing filled circle at their floor altitude ──
-  if (!map.getSource('user-disc')) {
-    map.addSource('user-disc', {
-      type: 'geojson',
-      data: { type: 'Feature', geometry: { type: 'Polygon', coordinates: [discCoords] }, properties: { base: elev, top: elev + 0.6 } }
-    });
+  if (!map.getLayer('user-marker-arrow')) {
     map.addLayer({
-      id: 'user-disc-layer',
-      type: 'fill-extrusion',
-      source: 'user-disc',
-      paint: {
-        'fill-extrusion-color': '#8b5cf6',
-        'fill-extrusion-base': ['get', 'base'],
-        'fill-extrusion-height': ['get', 'top'],
+      'id': 'user-marker-arrow',
+      'type': 'fill-extrusion',
+      'source': 'user-marker-source',
+      'filter': ['==', ['get', 'part'], 'arrow'],
+      'paint': {
+        'fill-extrusion-color': '#ffffff',
+        'fill-extrusion-height': ['get', 'height'],
+        'fill-extrusion-base': ['get', 'min_height'],
         'fill-extrusion-opacity': 1.0
       }
     });
   }
+}
 
-  // ── Outer glow ring: slightly larger, transparent disc ──
-  if (!map.getSource('user-glow')) {
-    var glowCoords = generateCirclePolygon(lng, lat, discR * 1.6, 20);
-    map.addSource('user-glow', {
-      type: 'geojson',
-      data: { type: 'Feature', geometry: { type: 'Polygon', coordinates: [glowCoords] }, properties: { base: elev - 0.1, top: elev + 0.15 } }
-    });
-    map.addLayer({
-      id: 'user-glow-layer',
-      type: 'fill-extrusion',
-      source: 'user-glow',
-      paint: {
-        'fill-extrusion-color': '#c4b5fd',
-        'fill-extrusion-base': ['get', 'base'],
-        'fill-extrusion-height': ['get', 'top'],
-        'fill-extrusion-opacity': 0.4
+function updateBadgePosition() {
+  var badge = document.getElementById('user-floor-badge');
+  if (!badge || !window._lastUserPos) return;
+  var fl = window._lastUserFloorLevel || 0;
+  // If Ground Floor (0), hide badge! Only show for elevated floors (Floor 1, Floor 2, etc.)
+  if (fl <= 0) {
+    badge.style.display = 'none';
+    return;
+  }
+  var lng = window._lastUserPos.lng;
+  var lat = window._lastUserPos.lat;
+  var effElev = window._lastUserElev !== undefined ? window._lastUserElev : (fl * 3.5 + 0.54);
+  var screenPos = null;
+
+  if (map && map.transform && map.transform.pixelMatrix && typeof mapboxgl.MercatorCoordinate !== 'undefined') {
+    try {
+      var coord = mapboxgl.MercatorCoordinate.fromLngLat([lng, lat], effElev + 1.2);
+      var m = map.transform.pixelMatrix;
+      var x = coord.x, y = coord.y, z = coord.z;
+      var clipW = m[3] * x + m[7] * y + m[11] * z + m[15];
+      if (clipW > 0) {
+        screenPos = [
+          (m[0] * x + m[4] * y + m[8] * z + m[12]) / clipW,
+          (m[1] * x + m[5] * y + m[9] * z + m[13]) / clipW
+        ];
       }
-    });
+    } catch(e) {}
   }
 
-  // Animate glow pulsing
-  var glowOpacity = 0.4;
-  var glowDir = -1;
-  setInterval(function() {
-    if (!map.getLayer('user-glow-layer')) return;
-    glowOpacity += glowDir * 0.04;
-    if (glowOpacity <= 0.15) { glowOpacity = 0.15; glowDir = 1; }
-    if (glowOpacity >= 0.55) { glowOpacity = 0.55; glowDir = -1; }
-    map.setPaintProperty('user-glow-layer', 'fill-extrusion-opacity', glowOpacity);
-  }, 80);
-}
-
-function updateUser3DMarker(map, lng, lat, elevation) {
-  var elev = Math.max(0, elevation || 0);
-  var discR = 2.5;
-  var stemR = 0.6;
-
-  var discCoords = generateCirclePolygon(lng, lat, discR, 20);
-  var stemCoords = generateCirclePolygon(lng, lat, stemR, 12);
-  var shadowCoords = generateCirclePolygon(lng, lat, discR * 1.4, 20);
-  var glowCoords = generateCirclePolygon(lng, lat, discR * 1.6, 20);
-
-  if (map.getSource('user-shadow')) {
-    map.getSource('user-shadow').setData({
-      type: 'Feature',
-      geometry: { type: 'Polygon', coordinates: [shadowCoords] },
-      properties: { base: 0, top: 0.05 }
-    });
+  if (!screenPos && map) {
+    var p2d = map.project([lng, lat]);
+    if (p2d) {
+      screenPos = [p2d.x, p2d.y - 20];
+    }
   }
 
-  if (map.getSource('user-stem')) {
-    map.getSource('user-stem').setData({
-      type: 'Feature',
-      geometry: { type: 'Polygon', coordinates: [stemCoords] },
-      properties: { base: 0, top: Math.max(0.1, elev) }
-    });
-  }
-
-  if (map.getSource('user-disc')) {
-    map.getSource('user-disc').setData({
-      type: 'Feature',
-      geometry: { type: 'Polygon', coordinates: [discCoords] },
-      properties: { base: elev, top: elev + 0.6 }
-    });
-  }
-
-  if (map.getSource('user-glow')) {
-    map.getSource('user-glow').setData({
-      type: 'Feature',
-      geometry: { type: 'Polygon', coordinates: [glowCoords] },
-      properties: { base: elev - 0.1, top: elev + 0.15 }
-    });
+  if (screenPos) {
+    badge.style.left = Math.round(screenPos[0]) + 'px';
+    badge.style.top = Math.round(screenPos[1] - 14) + 'px';
+    badge.textContent = window._lastUserFloorName || ('Floor ' + fl);
+    badge.style.display = 'flex';
+  } else {
+    badge.style.display = 'none';
   }
 }
 
-window._user3DMarkerInitialized = false;
-window.currentUserElevation = 0;
+window._activeDoorplates = [];
 
-window.updateUserPos = function(lat, lng, heading, elevation) {
-  var elev = Math.max(0, elevation || 0);
-  window.currentUserElevation = elev;
+function updateDoorplateSignage() {
+  var container = document.getElementById('doorplate-labels');
+  if (!container || !map) return;
+  var zoom = map.getZoom();
+  // Distant View: Zoom < 17.8: completely hide room nameplates to eliminate clutter
+  if (zoom < 17.8 || !window._activeDoorplates || window._activeDoorplates.length === 0) {
+    container.style.display = 'none';
+    return;
+  }
+  container.style.display = 'block';
 
-  if (!window._user3DMarkerInitialized && map.isStyleLoaded()) {
-    initUser3DMarker(map, lng, lat, elev);
-    window._user3DMarkerInitialized = true;
-  } else if (window._user3DMarkerInitialized) {
-    updateUser3DMarker(map, lng, lat, elev);
+  var is2D = (currentMapMode === '2D');
+  var m = map.transform && map.transform.pixelMatrix;
+  var hasMercator = (typeof mapboxgl.MercatorCoordinate !== 'undefined');
+
+  // Dynamic Visibility & Perspective LOD:
+  // 17.8 to 19.0: Smooth fade-in
+  // >= 19.0: Full opacity and natural distance scaling
+  var baseOpacity = zoom >= 19.0 ? 1.0 : Math.max(0.05, (zoom - 17.8) / 1.2);
+  var scale = Math.min(1.25, Math.max(0.60, Math.pow(1.5, zoom - 19.0)));
+
+  // Directional Culling: calculate camera horizontal vector
+  var bearingRad = (map.getBearing() * Math.PI) / 180;
+  var camX = -Math.sin(bearingRad);
+  var camY = -Math.cos(bearingRad);
+
+  function projectPoint(pt, elev) {
+    if (m && hasMercator && !is2D) {
+      try {
+        var coord = mapboxgl.MercatorCoordinate.fromLngLat([pt[0], pt[1]], elev);
+        var x = coord.x, y = coord.y, z = coord.z;
+        var clipW = m[3] * x + m[7] * y + m[11] * z + m[15];
+        if (clipW > 0) {
+          return [
+            (m[0] * x + m[4] * y + m[8] * z + m[12]) / clipW,
+            (m[1] * x + m[5] * y + m[9] * z + m[13]) / clipW
+          ];
+        }
+      } catch(e) {}
+    }
+    if (map.project) {
+      var p2d = map.project([pt[0], pt[1]]);
+      if (p2d) return [p2d.x, p2d.y];
+    }
+    return null;
   }
 
-  if (heading !== undefined && heading !== null) {
-    window.updateUserHeading(heading);
+  var existingIds = {};
+  for (var i = 0; i < window._activeDoorplates.length; i++) {
+    var r = window._activeDoorplates[i];
+    existingIds[r.id] = true;
+    var el = document.getElementById('dp-lbl-' + r.id);
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'dp-lbl-' + r.id;
+      el.className = 'doorplate-sign' + (r.isTarget ? ' target-room' : '');
+      el.textContent = r.name;
+      container.appendChild(el);
+    }
+
+    // Directional Backface Culling in 3D:
+    // When normal · cam > 0.15, door faces away from camera (culled)
+    if (!is2D && (r.nx !== undefined && r.ny !== undefined)) {
+      var dot = r.nx * camX + r.ny * camY;
+      if (dot > 0.15) {
+        el.style.display = 'none';
+        continue;
+      }
+    }
+
+    var elev = is2D ? 0.05 : (r.elevation || 2.36);
+    var pA = r.ptA ? projectPoint(r.ptA, elev) : null;
+    var pB = r.ptB ? projectPoint(r.ptB, elev) : null;
+    var centerPos = projectPoint([r.lng, r.lat], elev);
+
+    var screenX = 0, screenY = 0, alpha = 0;
+    if (pA && pB) {
+      screenX = (pA[0] + pB[0]) / 2;
+      screenY = (pA[1] + pB[1]) / 2;
+      var dX = pB[0] - pA[0];
+      var dY = pB[1] - pA[1];
+      alpha = Math.atan2(dY, dX) * 180 / Math.PI;
+      if (alpha > 90) alpha -= 180;
+      else if (alpha < -90) alpha += 180;
+    } else if (centerPos) {
+      screenX = centerPos[0];
+      screenY = centerPos[1];
+      alpha = 0;
+    } else {
+      el.style.display = 'none';
+      continue;
+    }
+
+    // Viewport frustum bounds check
+    if (screenX >= -80 && screenX <= window.innerWidth + 80 &&
+        screenY >= -40 && screenY <= window.innerHeight + 40) {
+      el.style.left = Math.round(screenX) + 'px';
+      el.style.top = Math.round(screenY) + 'px';
+      el.style.transform = 'translate(-50%, -50%) rotate(' + alpha.toFixed(1) + 'deg) scale(' + scale.toFixed(2) + ')';
+      el.style.opacity = baseOpacity.toFixed(2);
+      el.style.display = 'block';
+    } else {
+      el.style.display = 'none';
+    }
   }
 
-  // Smoothly follow user (only pan, don't change zoom/pitch)
-  map.easeTo({ center: [lng, lat], duration: 400, easing: function(t) { return t; } });
+  var children = container.children;
+  for (var c = children.length - 1; c >= 0; c--) {
+    var child = children[c];
+    var cid = child.id.replace('dp-lbl-', '');
+    if (!existingIds[cid]) {
+      container.removeChild(child);
+    }
+  }
+}
+
+map.on('render', function() {
+  updateBadgePosition();
+  updateDoorplateSignage();
+});
+
+// Initial user position anchored directly to route start vertex (x, y, z)
+map.on('load', function() {
+  setupMarkerLayers();
+  var hasInitZ = ${initElev !== undefined && initElev !== null && initElev > 0 ? 'true' : 'false'};
+  window.updateUserPos(${initLat}, ${initLng}, 0, ${initElev}, ${initLevel}, ${initLevel > 0 ? `'Floor ' + initLevel` : `''`}, hasInitZ);
+});
+
+// Start marker
+${initLat && initLng ? `
+  const startEl = document.createElement('div');
+  startEl.className = 'start-marker';
+  new mapboxgl.Marker({ element: startEl }).setLngLat([${initLng}, ${initLat}]).addTo(map);
+` : ''}
+
+// Destination marker
+${destX && destY ? `
+  const destEl = document.createElement('div');
+  destEl.className = 'dest-marker';
+  new mapboxgl.Marker({ element: destEl }).setLngLat([${destY}, ${destX}]).addTo(map);
+` : ''}
+
+window.updateUserPos = function(lat, lng, heading, elevation, floorLevel, floorName, hasValidZ) {
+  window._lastUserCoords = [lng, lat];
+  window._lastUserPos = { lat: lat, lng: lng };
+  if (heading !== undefined && heading !== null) window._lastUserHeading = heading;
+  if (floorLevel !== undefined && floorLevel !== null) window._lastUserFloorLevel = Number(floorLevel);
+  if (floorName !== undefined) window._lastUserFloorName = floorName;
+
+  var fl = window._lastUserFloorLevel || 0;
+  var h = window._lastUserHeading || 0;
+
+  var effElev;
+  if (hasValidZ && elevation !== undefined && elevation !== null && !isNaN(elevation)) {
+    effElev = Number(elevation);
+  } else if (fl > 0) {
+    effElev = fl * 3.5 + 0.54;
+  } else {
+    effElev = 0.54;
+  }
+  window._lastUserElev = effElev;
+
+  var baseElev = (currentMapMode === '2D') ? 0.05 : effElev + 0.08;
+
+  setupMarkerLayers();
+
+  if (map.getSource('user-marker-source')) {
+    var glowCoords = generateCirclePolygon(lng, lat, 2.2);
+    var puckCoords = generateCirclePolygon(lng, lat, 1.2);
+    var arrowCoords = generateArrowPolygon(lng, lat, h, 2.0, 1.3);
+
+    map.getSource('user-marker-source').setData({
+      type: 'FeatureCollection',
+      features: [
+        {
+          type: 'Feature',
+          properties: { part: 'glow', min_height: baseElev + 0.02, height: baseElev + 0.07 },
+          geometry: { type: 'Polygon', coordinates: glowCoords }
+        },
+        {
+          type: 'Feature',
+          properties: { part: 'puck', min_height: baseElev + 0.07, height: baseElev + 0.22 },
+          geometry: { type: 'Polygon', coordinates: puckCoords }
+        },
+        {
+          type: 'Feature',
+          properties: { part: 'arrow', min_height: baseElev + 0.23, height: baseElev + 0.35 },
+          geometry: { type: 'Polygon', coordinates: arrowCoords }
+        }
+      ]
+    });
+  }
+
+  updateBadgePosition();
+
+  // Smoothly follow user only when NOT in free-roam mode and user is not actively interacting
+  if (!window._isFreeRoam && !window._userInteracting) {
+    map.easeTo({ center: [lng, lat], duration: 400, easing: function(t) { return t; } });
+  }
 };
 
 window.updateUserHeading = function(heading) {
-  // Heading is stored for future use in direction arrow layer
-  window._userHeading = heading || 0;
+  if (heading === undefined || heading === null) return;
+  window._lastUserHeading = heading;
+  if (!window._lastUserPos) return;
+
+  var lat = window._lastUserPos.lat;
+  var lng = window._lastUserPos.lng;
+  var fl = window._lastUserFloorLevel || 0;
+  var effElev = window._lastUserElev !== undefined ? window._lastUserElev : (fl > 0 ? fl * 3.5 + 0.54 : 0.54);
+  var baseElev = (currentMapMode === '2D') ? 0.05 : effElev + 0.08;
+
+  if (map.getSource('user-marker-source')) {
+    var glowCoords = generateCirclePolygon(lng, lat, 2.2);
+    var puckCoords = generateCirclePolygon(lng, lat, 1.2);
+    var arrowCoords = generateArrowPolygon(lng, lat, heading, 2.0, 1.3);
+
+    map.getSource('user-marker-source').setData({
+      type: 'FeatureCollection',
+      features: [
+        {
+          type: 'Feature',
+          properties: { part: 'glow', min_height: baseElev + 0.02, height: baseElev + 0.07 },
+          geometry: { type: 'Polygon', coordinates: glowCoords }
+        },
+        {
+          type: 'Feature',
+          properties: { part: 'puck', min_height: baseElev + 0.07, height: baseElev + 0.22 },
+          geometry: { type: 'Polygon', coordinates: puckCoords }
+        },
+        {
+          type: 'Feature',
+          properties: { part: 'arrow', min_height: baseElev + 0.23, height: baseElev + 0.35 },
+          geometry: { type: 'Polygon', coordinates: arrowCoords }
+        }
+      ]
+    });
+  }
+};
+
+window.recenterCamera = function(customCoords) {
+  window._isFreeRoam = false;
+  window._userInteracting = false;
+  notifyFreeRoam(false);
+
+  var target = customCoords || window._lastUserCoords || [${center[1]}, ${center[0]}];
+  if (map && target) {
+    map.flyTo({
+      center: target,
+      zoom: 19,
+      pitch: currentMapMode === '2D' ? 0 : 60,
+      bearing: currentMapMode === '2D' ? 0 : -17.6,
+      duration: 700
+    });
+  }
 };
 </script></body></html>`;
 }
@@ -900,8 +1565,28 @@ window.updateUserHeading = function(heading) {
 export default function NavigationScreen({ navigation, route }) {
   const { colors, language } = useContext(ThemeContext);
   const insets = useSafeAreaInsets();
-  const { room: initialRoom, campusId: initialCampusId, mapData: initialMapData } = route.params || {};
+  const {
+    room: initialRoom,
+    campusId: initialCampusId,
+    mapData: initialMapData,
+    retraceJourney,
+  } = route.params || {};
+
+  const isRetracing = Boolean(retraceJourney);
+  const [retraceMessage, setRetraceMessage] = useState(null);
+  const [retraceMode, setRetraceMode] = useState(RETURN_MODES.RETRACE_ROUTE);
+  const returnMatcherRef = useRef(null);
+  const fallbackTriggeredRef = useRef(false);
+
   const [targetRoom, setTargetRoom] = useState(() => {
+    if (isRetracing && retraceJourney?.startPoint) {
+      return {
+        name: retraceJourney.startPoint.name || "Original Starting Point",
+        x: retraceJourney.startPoint.x,
+        y: retraceJourney.startPoint.y,
+        floorId: retraceJourney.startFloor || retraceJourney.startPoint.floorId,
+      };
+    }
     if (!initialRoom) return null;
     const normFloorId = typeof initialRoom.floorId === 'object' && initialRoom.floorId !== null
       ? initialRoom.floorId._id
@@ -909,7 +1594,7 @@ export default function NavigationScreen({ navigation, route }) {
     return { ...initialRoom, floorId: normFloorId };
   });
   const [mapData, setMapData] = useState(initialMapData);
-  const [campusId, setCampusId] = useState(initialCampusId || initialRoom?.campusId);
+  const [campusId, setCampusId] = useState(initialCampusId || initialRoom?.campusId || retraceJourney?.campusId);
   const [routeData, setRouteData] = useState(null);
   const [currentStep, setCurrentStep] = useState(0);
   const [userPos, setUserPos] = useState(null);
@@ -935,6 +1620,42 @@ export default function NavigationScreen({ navigation, route }) {
         }
         true;
       `);
+    }
+  };
+
+  const [isFreeRoam, setIsFreeRoam] = useState(false);
+
+  const handleRecenter = () => {
+    setIsFreeRoam(false);
+    if (webViewRef.current) {
+      if (userPos) {
+        webViewRef.current.injectJavaScript(`
+          if (typeof window.recenterCamera === 'function') {
+            window.recenterCamera([${userPos.y}, ${userPos.x}]);
+          }
+          true;
+        `);
+      } else {
+        webViewRef.current.injectJavaScript(`
+          if (typeof window.recenterCamera === 'function') {
+            window.recenterCamera();
+          }
+          true;
+        `);
+      }
+    }
+  };
+
+  const handleWebViewMessage = (event) => {
+    try {
+      const data = JSON.parse(event.nativeEvent.data);
+      if (data.type === 'FREE_ROAM_CHANGED') {
+        setIsFreeRoam(!!data.isFreeRoam);
+      } else if (data.type === 'ROOM_CLICK') {
+        console.log('[DigitalTwin] Room tapped in 3D:', data.name, data.roomId);
+      }
+    } catch (e) {
+      // ignore non-JSON messages
     }
   };
 
@@ -1024,12 +1745,9 @@ export default function NavigationScreen({ navigation, route }) {
   // ── Sync Barometer baseline when known floor changes (e.g. QR calibration) ──
   useEffect(() => {
     if (currentFloor && mapData?.floors) {
-      const floorObj = mapData.floors.find(f =>
-        (f._id || f).toString() ===
-        (typeof currentFloor === 'object' ? currentFloor._id : currentFloor).toString()
-      );
-      if (floorObj && typeof floorObj.level === 'number') {
-        AmbientFloorDetector.setKnownFloor(floorObj.level);
+      const resolved = resolveFloorInfo(currentFloor, mapData.floors);
+      if (resolved && typeof resolved.level === 'number') {
+        AmbientFloorDetector.setKnownFloor(resolved.level);
       }
     }
   }, [currentFloor, mapData]);
@@ -1057,12 +1775,33 @@ export default function NavigationScreen({ navigation, route }) {
     const targetFloorId = getFloorIdString(targetRoom?.floorId) || getFloorIdString(currentFloor) || getFloorIdString(route.params?.floorId) || getFloorIdString(mapData?.floors?.[0]?._id);
     const currentFloorId = getFloorIdString(currentFloor);
 
-    // Compute active stair transitions from current routeData
+    // Compute active stair transitions and active blocks from current routeData
     const floorLevelMap = {};
+    const floorBlockMap = {};
     if (mapData?.floors && mapData.floors.length > 0) {
       mapData.floors.forEach(f => {
         const fid = (f._id || f).toString();
         floorLevelMap[fid] = f.level !== undefined ? f.level : 0;
+        if (f.blockId) {
+          floorBlockMap[fid] = (f.blockId._id || f.blockId).toString();
+        }
+      });
+    }
+
+    const activeBlocks = new Set();
+    if (targetRoom) {
+      const tbId = (targetRoom.blockId?._id || targetRoom.blockId || '').toString();
+      if (tbId) activeBlocks.add(tbId);
+      const tfId = (targetRoom.floorId?._id || targetRoom.floorId || '').toString();
+      if (tfId && floorBlockMap[tfId]) activeBlocks.add(floorBlockMap[tfId]);
+    }
+    if (currentFloorId && floorBlockMap[currentFloorId]) {
+      activeBlocks.add(floorBlockMap[currentFloorId]);
+    }
+    if (routeData?.path && routeData.path.length > 0) {
+      routeData.path.forEach(p => {
+        const fid = p.floorId?._id?.toString() || p.floorId?.toString() || '';
+        if (fid && floorBlockMap[fid]) activeBlocks.add(floorBlockMap[fid]);
       });
     }
 
@@ -1092,7 +1831,7 @@ export default function NavigationScreen({ navigation, route }) {
     if (geoJSONData && webViewRef.current) {
       webViewRef.current.injectJavaScript(`
         if (typeof window.updateGeoJSON === 'function') {
-          window.updateGeoJSON(${JSON.stringify(geoJSONData)}, '${targetFloorId || ''}', '${currentFloorId || ''}', ${JSON.stringify(activeStairs)}, ${isSingleFloor ? 'true' : 'false'});
+          window.updateGeoJSON(${JSON.stringify(geoJSONData)}, '${targetFloorId || ''}', '${currentFloorId || ''}', ${JSON.stringify(activeStairs)}, ${isSingleFloor ? 'true' : 'false'}, ${JSON.stringify([...activeBlocks])});
         }
         true;
       `);
@@ -1119,18 +1858,57 @@ export default function NavigationScreen({ navigation, route }) {
   useEffect(() => {
     if (userPos && webViewRef.current) {
       const snappedPos = snapPositionToRoute(userPos, routeData?.path, currentStep);
-      // Priority: VerticalTracker z (stair navigation) > AmbientFloorDetector (barometer)
-      const elev = posEngine.verticalTrackingActive
-        ? (posEngine.position.z || 0)
-        : ambientAltRef.current;
+      
+      const resolvedFloor = resolveFloorInfo(currentFloor || userPos.floorId || userPos.floor, mapData?.floors);
+      const currentLevel = resolvedFloor.level;
+      const floorName = resolvedFloor.name;
+
+      const isStairTracking = !!(posEngine.verticalTrackingActive || userPos.verticalTrackingActive);
+      const hasValidZ = isStairTracking || !!(userPos.hasValidElevation && userPos.elevationSource === 'staircase_connector');
+      const elev = isStairTracking
+        ? (userPos.z ?? posEngine.position.z ?? 0)
+        : (ambientAltRef.current && ambientAltRef.current !== 0 ? ambientAltRef.current : (currentLevel * 3.5 + 0.54));
+
       webViewRef.current.injectJavaScript(`
         if (typeof window.updateUserPos === 'function') {
-          window.updateUserPos(${snappedPos.x}, ${snappedPos.y}, ${posEngine.heading}, ${elev});
+          window.updateUserPos(${snappedPos.x}, ${snappedPos.y}, ${heading || posEngine.heading || 0}, ${elev}, ${currentLevel}, '${floorName}', ${hasValidZ ? 'true' : 'false'});
         }
         true;
       `);
     }
-  }, [userPos, routeData, currentStep, ambientFloorIndex]);
+  }, [userPos, routeData, currentStep, ambientFloorIndex, heading, currentFloor, mapData]);
+
+  // Continuous compass heading listener for dynamic arrow rotation (active during preview and navigation)
+  useEffect(() => {
+    Magnetometer.setUpdateInterval(100);
+    const smoothH = { current: 0 };
+    const magSub = Magnetometer.addListener(({ x, y }) => {
+      const angle = Math.atan2(y, x) * (180 / Math.PI);
+      const normalizedH = (angle + 360) % 360;
+
+      let diff = normalizedH - smoothH.current;
+      if (diff > 180) diff -= 360;
+      if (diff < -180) diff += 360;
+
+      if (Math.abs(diff) > 1.0) {
+        smoothH.current = (smoothH.current + diff * 0.3 + 360) % 360;
+        const h = Math.round(smoothH.current);
+        setHeading(h);
+        posEngine.updateHeading(h);
+
+        webViewRef.current?.injectJavaScript(`
+          if (typeof window.updateUserHeading === 'function') {
+            window.updateUserHeading(${h});
+          }
+          true;
+        `);
+      }
+    });
+
+    return () => {
+      magSub?.remove();
+    };
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -1147,14 +1925,33 @@ export default function NavigationScreen({ navigation, route }) {
     }
   }, [campusId, mapData]);
 
+  // Initialize return route if retracing journey
+  useEffect(() => {
+    if (isRetracing && retraceJourney) {
+      returnMatcherRef.current = new ReturnPathMatcher(retraceJourney);
+      const returnRoute = returnMatcherRef.current.returnRoute;
+      if (returnRoute) {
+        setRouteData(returnRoute);
+        routeDataStableRef.current = returnRoute;
+        setLiveDistance(Math.round(returnRoute.distance));
+        setLiveStepDist(Math.round(returnRoute.directions?.[0]?.distance || 0));
+        setTotalSteps(returnRoute.directions?.length || 0);
+        if (returnRoute.path?.[0]?.floorId) {
+          setCurrentFloor(returnRoute.path[0].floorId);
+        }
+      }
+    }
+  }, [isRetracing, retraceJourney]);
+
   // Preview route automatically when mapData and room (or emergencyMode) are available
   useEffect(() => {
-    if (mapData && (targetRoom || route.params?.emergencyMode) && locationPerm !== null && !routeData) {
+    if (!isRetracing && mapData && (targetRoom || route.params?.emergencyMode) && locationPerm !== null && !routeData) {
       previewRoute();
     }
-  }, [mapData, targetRoom, route.params?.emergencyMode, locationPerm, routeData]);
+  }, [isRetracing, mapData, targetRoom, route.params?.emergencyMode, locationPerm, routeData]);
 
   const previewRoute = async () => {
+    if (isRetracing) return;
     try {
       // Save to recent (fire-and-forget)
       if (targetRoom) {
@@ -1336,7 +2133,7 @@ export default function NavigationScreen({ navigation, route }) {
 
   useEffect(() => {
     const unsub = posEngine.onPositionUpdate(pos => {
-      setUserPos({ x: pos.x, y: pos.y, floor: pos.floor });
+      setUserPos({ ...pos });
       setHeading(pos.heading);
     });
     return unsub;
@@ -1376,6 +2173,9 @@ export default function NavigationScreen({ navigation, route }) {
       // ── 2. Step detection: try native Pedometer first, fall back to manual ──
       const handleStep = () => {
         posEngine.processStep(posEngine.heading);
+        if (!isRetracing) {
+          journeyRecorder.recordPosition(posEngine.position);
+        }
         sensorFusionRef.current.onStep();
         const fusion = sensorFusionRef.current.getMovementState();
         setVerticalMovementState(fusion.state);
@@ -1384,9 +2184,14 @@ export default function NavigationScreen({ navigation, route }) {
           verticalTrackerRef.current.onStep(fusion);
           const vertPos = verticalTrackerRef.current.getPosition();
           if (vertPos) {
-            posEngine.updateVerticalPosition(vertPos.z, vertPos.floorId);
             posEngine.position.x = vertPos.x;
             posEngine.position.y = vertPos.y;
+            posEngine.updateVerticalPosition(vertPos.z, vertPos.floorId, {
+              verticalProgress: verticalTrackerRef.current.state.smoothProgress,
+              verticalTrackingActive: true,
+              movementState: fusion.state,
+              elevationSource: 'staircase_tracker'
+            });
             setUserPos({ ...posEngine.position });
           }
         }
@@ -1557,6 +2362,22 @@ export default function NavigationScreen({ navigation, route }) {
                 } else {
                   offRouteCountRef.current = 0; // Reset if user is back on track
                 }
+
+                // ── TAKE ME BACK: ReturnPathMatcher matching & deviation tracking
+                if (isRetracing && returnMatcherRef.current) {
+                  const match = returnMatcherRef.current.matchPosition(activeLat, activeLng, currentFloor);
+                  if (match.status === "REQUEST_FALLBACK") {
+                    setRetraceMessage(match.message);
+                    if (!fallbackTriggeredRef.current) {
+                      fallbackTriggeredRef.current = true;
+                      handleFallbackToFastestRoute(activeLat, activeLng);
+                    }
+                  } else if (match.status === "RECONNECTING" || match.status === "DEVIATED") {
+                    setRetraceMessage(match.message);
+                  } else if (match.status === "ON_TRACK") {
+                    setRetraceMessage(match.message === "Return route restored." ? "Return route restored." : null);
+                  }
+                }
               }
             }
           }
@@ -1610,6 +2431,21 @@ export default function NavigationScreen({ navigation, route }) {
             setLiveStepDist(Math.round(nextDir?.distance || 0));
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
+            // Record node and floor transition for normal journey recording
+            if (!isRetracing) {
+              if (targetNode) journeyRecorder.recordNode(targetNode);
+              if (nextDir?.isFloorChange) {
+                journeyRecorder.recordFloorTransition({
+                  transitionNode: nextDir.instruction,
+                  fromFloor: nextDir.fromFloorId,
+                  toFloor: nextDir.toFloorId,
+                  fromFloorLevel: nextDir.fromFloorLevel,
+                  toFloorLevel: nextDir.targetFloorLevel,
+                  changeType: nextDir.floorChangeType,
+                });
+              }
+            }
+
             if (voiceEnabled && nextDir) {
               // ── FLOOR-CHANGE: Only announce if it's genuinely an INDOOR transition
               // Outdoor/street path types don't have floor changes — skip to avoid confusion
@@ -1647,8 +2483,20 @@ export default function NavigationScreen({ navigation, route }) {
             setLiveDistance(0);
             setLiveStepDist(0);
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            if (voiceEnabled) Speech.speak(formatSpeech("You have arrived at " + (targetRoom?.name || "your destination")), { language: "en-US" });
+            if (voiceEnabled) {
+              const arrivalText = isRetracing
+                ? "You have returned to " + (targetRoom?.name || "your original starting point")
+                : "You have arrived at " + (targetRoom?.name || "your destination");
+              Speech.speak(formatSpeech(arrivalText), { language: "en-US" });
+            }
             Animated.spring(arrivedAnim, { toValue: 1, friction: 8, tension: 40, useNativeDriver: true }).start();
+
+            // Finalize local journey session if normal navigation
+            if (!isRetracing) {
+              journeyRecorder.finishJourney({
+                distance: liveDistance || routeData?.distance || 0,
+              });
+            }
           }
         }
       }
@@ -1669,11 +2517,13 @@ export default function NavigationScreen({ navigation, route }) {
         verticalTrackerRef.current.activate(activeConnector);
         sensorFusionRef.current.setStaircaseContext(true, activeConnector.direction);
 
-        verticalTrackerRef.current.onFloorReached = (newFloorId) => {
-          console.log("[NavX] Floor reached via vertical tracking:", newFloorId);
+        verticalTrackerRef.current.onFloorReached = (newFloorId, reachedElevation) => {
+          console.log("[NavX] Floor reached via vertical tracking:", newFloorId, reachedElevation);
           if (newFloorId) {
+            const resolved = resolveFloorInfo(newFloorId, mapData?.floors);
             setCurrentFloor(newFloorId);
-            posEngine.setFloor(newFloorId);
+            posEngine.setFloor(newFloorId, resolved.level, reachedElevation);
+            setCompletedFloorTransitions(prev => prev + 1);
           }
         };
       }
@@ -1684,7 +2534,7 @@ export default function NavigationScreen({ navigation, route }) {
         sensorFusionRef.current.setStaircaseContext(false);
       }
     }
-  }, [currentStep, isNavigating, routeData]);
+  }, [currentStep, isNavigating, routeData, mapData]);
 
   useEffect(() => {
     if (offRoute && isNavigating && userPos) {
@@ -1736,13 +2586,48 @@ export default function NavigationScreen({ navigation, route }) {
     }
   };
 
+  const handleFallbackToFastestRoute = async (currentLat, currentLng) => {
+    try {
+      setRetraceMode(RETURN_MODES.FASTEST_ROUTE);
+      setRetraceMessage("You're away from your original route. Finding the best way back...");
+      const startDest = retraceJourney?.startPoint;
+      let result = null;
+      if (startDest) {
+        try {
+          if (startDest.roomId) {
+            result = await findRouteToRoom({
+              startX: currentLat,
+              startY: currentLng,
+              roomId: String(startDest.roomId),
+              campusId: String(campusId || retraceJourney?.campusId),
+            });
+          }
+        } catch (e) {
+          result = null;
+        }
+      }
+
+      if (result && result.path && result.path.length > 0) {
+        setRouteData(result);
+        routeDataStableRef.current = result;
+        setCurrentStep(0);
+        setRetraceMessage("Return route restored (Fastest Route).");
+        if (voiceEnabled) {
+          Speech.speak("Rerouting to your starting point via the fastest route.", { language: "en-US" });
+        }
+      }
+    } catch (err) {
+      console.warn("[TakeMeBack] Fallback route failed:", err);
+    }
+  };
+
   const startNavigation = async () => {
     if (!mapData || (!targetRoom && !route.params?.emergencyMode)) return;
     try {
       setError(null);
       setArrived(false);
 
-      if (!routeDataStableRef.current) {
+      if (!routeDataStableRef.current && !isRetracing) {
         // If preview failed, try again
         await previewRoute();
       }
@@ -1757,12 +2642,35 @@ export default function NavigationScreen({ navigation, route }) {
           setCurrentFloor(activeRouteData.path[0].floorId);
         }
 
+        // Initialize JourneyRecorder for normal navigation
+        if (!isRetracing) {
+          journeyRecorder.startJourney({
+            campusId: campusId || activeRouteData.campusId,
+            buildingId: targetRoom?.blockId?._id || targetRoom?.blockId || null,
+            startPoint: {
+              name: "Campus Entrance",
+              x: userPos?.x || activeRouteData.path?.[0]?.x || 0,
+              y: userPos?.y || activeRouteData.path?.[0]?.y || 0,
+              floorId: activeRouteData.path?.[0]?.floorId || null,
+            },
+            destination: targetRoom,
+            startFloor: activeRouteData.path?.[0]?.floorId || null,
+            destinationFloor: targetRoom?.floorId || null,
+            initialNodes: activeRouteData.path || [],
+          });
+        } else {
+          returnMatcherRef.current?.resetDeviation();
+          fallbackTriggeredRef.current = false;
+        }
+
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         if (voiceEnabled) {
-          let destinationName = targetRoom?.name || "your destination";
-          const prefix = activeRouteData.routeType === 'nearest_reachable'
-            ? `No direct path found. Navigating to the nearest accessible point near ${destinationName}. `
-            : `Starting navigation to ${destinationName}. `;
+          let destinationName = targetRoom?.name || (isRetracing ? "your starting point" : "your destination");
+          const prefix = isRetracing
+            ? `Retracing your route back to ${destinationName}. `
+            : (activeRouteData.routeType === 'nearest_reachable'
+                ? `No direct path found. Navigating to the nearest accessible point near ${destinationName}. `
+                : `Starting navigation to ${destinationName}. `);
 
           // Inform user about floor changes ahead
           const floorChangeNote = (activeRouteData.totalFloorTransitions || 0) > 0
@@ -1934,22 +2842,85 @@ export default function NavigationScreen({ navigation, route }) {
       fontWeight: '700',
       letterSpacing: 0.3,
     },
+    recenterFab: {
+      position: 'absolute',
+      bottom: 16,
+      right: 16,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.surface || '#1e293b',
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      borderRadius: 24,
+      borderWidth: 1,
+      borderColor: colors.border || 'rgba(255, 255, 255, 0.15)',
+      ...SHADOWS.lg,
+      elevation: 8,
+      zIndex: 10,
+    },
+    recenterFabActive: {
+      backgroundColor: colors.primary,
+      borderColor: colors.primary,
+    },
+    recenterFabText: {
+      color: '#fff',
+      fontSize: 12,
+      fontWeight: '700',
+      marginLeft: 6,
+    },
+    retraceBanner: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.secondary || '#8b5cf6',
+      paddingVertical: 6,
+      paddingHorizontal: 12,
+      gap: 6,
+    },
+    retraceBannerText: {
+      color: '#fff',
+      fontSize: 11,
+      fontWeight: '800',
+      letterSpacing: 0.5,
+    },
   });
 
   return (
     <View style={s.container}>
       {/* Header */}
       <View style={[s.header, { paddingTop: Math.max(insets.top, 12) }]}>
-        <AnimatedPressable style={s.backBtn} onPress={() => navigation.goBack()}>
+        <AnimatedPressable style={s.backBtn} onPress={() => { if (!isRetracing && !arrived) journeyRecorder.cancelJourney(); navigation.goBack(); }}>
           <Ionicons name="arrow-back" size={22} color={colors.text} />
         </AnimatedPressable>
         <Text style={s.headerTitle} numberOfLines={1}>
-          {targetRoom?.name || "Navigation"}
+          {targetRoom?.name || (isRetracing ? "Take Me Back" : "Navigation")}
         </Text>
         <AnimatedPressable style={s.voiceBtn} onPress={() => setVoiceEnabled(!voiceEnabled)}>
           <Ionicons name={voiceEnabled ? "volume-high" : "volume-mute"} size={20} color={voiceEnabled ? colors.accent : colors.textMuted} />
         </AnimatedPressable>
       </View>
+
+      {/* Retrace Journey Banner */}
+      {isRetracing && (
+        <View style={s.retraceBanner}>
+          <Ionicons name="return-up-back" size={16} color="#fff" />
+          <Text style={s.retraceBannerText}>
+            {retraceMode === RETURN_MODES.FASTEST_ROUTE
+              ? "TAKE ME BACK · FASTEST ROUTE"
+              : "TAKE ME BACK · RETRACING ROUTE"}
+          </Text>
+        </View>
+      )}
+
+      {retraceMessage && (
+        <View style={[s.errorBox, { backgroundColor: colors.warning + "20", borderColor: colors.warning + "50" }]}>
+          <Ionicons name="navigate-circle" size={18} color={colors.warning} />
+          <Text style={{ color: colors.warning, fontSize: 13, fontWeight: "600", marginLeft: 8, flex: 1 }}>
+            {retraceMessage}
+          </Text>
+        </View>
+      )}
 
       {error && (
         <View style={s.errorBox}>
@@ -1966,7 +2937,7 @@ export default function NavigationScreen({ navigation, route }) {
       )}
 
       {/* Map Area */}
-      <View style={s.mapArea}>
+      <View style={s.mapArea} pointerEvents="auto">
         <WebView
           ref={webViewRef}
           source={{ html: mapHtml, baseUrl: '' }}
@@ -1981,6 +2952,7 @@ export default function NavigationScreen({ navigation, route }) {
           mixedContentMode="always"
           allowsInlineMediaPlayback={true}
           startInLoadingState={true}
+          onMessage={handleWebViewMessage}
           onLoadEnd={() => {
             if (userPos && webViewRef.current) {
               webViewRef.current.injectJavaScript(`
@@ -2049,6 +3021,23 @@ export default function NavigationScreen({ navigation, route }) {
           );
         })()}
 
+        {/* Re-center Map Floating Action Button */}
+        <TouchableOpacity
+          style={[s.recenterFab, isFreeRoam && s.recenterFabActive]}
+          onPress={handleRecenter}
+          activeOpacity={0.8}
+          accessibilityRole="button"
+          accessibilityLabel="Re-center map on user position"
+        >
+          <Ionicons
+            name={isFreeRoam ? "locate" : "navigate"}
+            size={18}
+            color={isFreeRoam ? "#ffffff" : colors.primary}
+          />
+          {isFreeRoam && (
+            <Text style={s.recenterFabText}>Re-center</Text>
+          )}
+        </TouchableOpacity>
 
         {/* Direction card */}
         {isNavigating && currentDir && !arrived && (
@@ -2115,12 +3104,12 @@ export default function NavigationScreen({ navigation, route }) {
             <Text style={s.btnText}>{gpsLoading ? "Calculating Route..." : "Start Navigation"}</Text>
           </AnimatedPressable>
         ) : (
-          <AnimatedPressable style={[s.startBtn, s.stopBtn]} onPress={() => { setIsNavigating(false); Speech.stop(); }}>
+          <AnimatedPressable style={[s.startBtn, s.stopBtn]} onPress={() => { setIsNavigating(false); Speech.stop(); if (!isRetracing && !arrived) journeyRecorder.cancelJourney(); }}>
             <Ionicons name="stop" size={20} color="#fff" />
             <Text style={s.btnText}>Stop Navigation</Text>
           </AnimatedPressable>
         )}
-        <AnimatedPressable style={s.arToggle} onPress={() => navigation.navigate("AR", { routeData, room: targetRoom, heading: posEngine.heading, userPos, campusId })}>
+        <AnimatedPressable style={s.arToggle} onPress={() => navigation.navigate("AR", { routeData, room: targetRoom, heading: posEngine.heading, userPos, campusId, isRetracing })}>
           <Ionicons name="camera" size={18} color={colors.primary} />
           <Text style={{ color: colors.primary, fontWeight: "700", fontSize: 14, marginLeft: 8 }}>Switch to AR View</Text>
         </AnimatedPressable>

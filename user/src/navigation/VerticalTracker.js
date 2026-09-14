@@ -16,6 +16,8 @@ export default class VerticalTracker {
       currentPosition: null,
       startFloorId: null,
       endFloorId: null,
+      startElevation: 0,
+      endElevation: 0,
       floorReached: false,
     };
   }
@@ -26,20 +28,29 @@ export default class VerticalTracker {
    */
   activate(connector) {
     if (!connector) return;
+    const startElevation = connector.startElevation ?? 0;
+    const direction = connector.direction || 'UP';
+    const endElevation = connector.endElevation ?? (startElevation + (direction === 'DOWN' ? -3.5 : 3.5));
+    const totalSteps = (connector.totalSteps && connector.totalSteps > 0) ? connector.totalSteps : 16;
+
     this.state = {
       ...this._getInitialState(),
       isActive: true,
       connector,
-      direction: connector.direction,
-      totalSteps: connector.totalSteps,
+      direction,
+      totalSteps,
       startFloorId: connector.startFloorId,
       endFloorId: connector.endFloorId,
+      startElevation,
+      endElevation,
       currentPosition: { 
-        x: connector.startNode.x, 
-        y: connector.startNode.y, 
-        z: connector.startElevation, 
-        nodeId: connector.startNode.nodeId,
-        floorId: connector.startFloorId
+        x: connector.startNode?.x ?? 0, 
+        y: connector.startNode?.y ?? 0, 
+        z: startElevation, 
+        nodeId: connector.startNode?.nodeId,
+        floorId: connector.startFloorId,
+        hasValidElevation: true,
+        elevationSource: 'staircase_connector'
       }
     };
   }
@@ -55,68 +66,83 @@ export default class VerticalTracker {
    * Process a step event
    * @param {Object} fusionState Movement state from SensorFusion
    */
-  onStep(fusionState) {
+  onStep(fusionState = {}) {
     if (!this.state.isActive || this.state.floorReached) return;
-    if (fusionState.state !== 'CLIMBING' && fusionState.state !== 'DESCENDING') return;
-    // Optional: Check if direction matches connector direction
-    // if (fusionState.direction !== this.state.direction) return;
+    // Accept CLIMBING, DESCENDING, or WALKING when active on a staircase connector
+    const validStates = ['CLIMBING', 'DESCENDING', 'WALKING'];
+    if (fusionState && fusionState.state && !validStates.includes(fusionState.state)) return;
 
+    const totalSteps = Math.max(1, this.state.totalSteps || 16);
     this.state.stepsClimbed += 1;
-    this.state.rawProgress = Math.min(1.0, Math.max(0.0, this.state.stepsClimbed / this.state.totalSteps));
+    this.state.rawProgress = Math.min(1.0, Math.max(0.0, this.state.stepsClimbed / totalSteps));
     
     // Exponential smoothing
     this.state.smoothProgress = 0.3 * this.state.rawProgress + 0.7 * this.state.smoothProgress;
+    if (this.state.stepsClimbed >= totalSteps) {
+      this.state.smoothProgress = Math.max(this.state.smoothProgress, this.state.rawProgress);
+    }
 
     this._mapMatch();
 
-    if (this.state.smoothProgress >= 0.95) {
+    if (this.state.smoothProgress >= 0.95 || this.state.stepsClimbed >= totalSteps) {
       this._onFloorReached();
     }
   }
 
   /**
-   * Map match the current progress to the intermediate nodes
+   * Map match the current progress to the intermediate nodes and compute continuous 3D elevation
    */
   _mapMatch() {
-    const nodes = this.state.connector.intermediateNodes;
-    if (!nodes || nodes.length < 2) return;
+    if (!this.state.connector) return;
 
-    const progress = this.state.smoothProgress;
-    const segments = nodes.length - 1;
-    const exactIndex = progress * segments;
-    const lowerIndex = Math.floor(exactIndex);
-    const upperIndex = Math.min(segments, Math.ceil(exactIndex));
+    const progress = Math.min(1.0, Math.max(0.0, this.state.smoothProgress));
+    const startElev = this.state.startElevation ?? this.state.connector.startElevation ?? 0;
+    const endElev = this.state.endElevation ?? this.state.connector.endElevation ?? (startElev + 3.5);
+    const currentZ = startElev + (endElev - startElev) * progress;
 
-    if (lowerIndex === upperIndex) {
-      const node = nodes[lowerIndex];
-      this.state.currentPosition = {
-        x: node.x,
-        y: node.y,
-        z: node.z,
-        nodeId: node.nodeId,
-        floorId: node.floorId
-      };
-      return;
+    const startNode = this.state.connector.startNode || {};
+    const endNode = this.state.connector.endNode || {};
+    const intermediateNodes = this.state.connector.intermediateNodes;
+
+    let x = (startNode.x ?? 0) + ((endNode.x ?? startNode.x ?? 0) - (startNode.x ?? 0)) * progress;
+    let y = (startNode.y ?? 0) + ((endNode.y ?? startNode.y ?? 0) - (startNode.y ?? 0)) * progress;
+    let nodeId = progress < 0.5 ? startNode.nodeId : endNode.nodeId;
+    let floorId = progress < 0.5 ? this.state.startFloorId : this.state.endFloorId;
+
+    if (intermediateNodes && intermediateNodes.length >= 2) {
+      const segments = intermediateNodes.length - 1;
+      const exactIndex = progress * segments;
+      const lowerIndex = Math.floor(exactIndex);
+      const upperIndex = Math.min(segments, Math.ceil(exactIndex));
+
+      if (lowerIndex === upperIndex) {
+        const node = intermediateNodes[lowerIndex];
+        x = node.x ?? x;
+        y = node.y ?? y;
+        nodeId = node.nodeId || nodeId;
+        if (node.floorId) floorId = node.floorId;
+      } else {
+        const t = exactIndex - lowerIndex;
+        const nodeA = intermediateNodes[lowerIndex];
+        const nodeB = intermediateNodes[upperIndex];
+
+        x = (nodeA.x ?? x) + ((nodeB.x ?? x) - (nodeA.x ?? x)) * t;
+        y = (nodeA.y ?? y) + ((nodeB.y ?? y) - (nodeA.y ?? y)) * t;
+
+        const nearestNode = t < 0.5 ? nodeA : nodeB;
+        nodeId = nearestNode.nodeId || nodeId;
+        if (nearestNode.floorId) floorId = nearestNode.floorId;
+      }
     }
-
-    const t = exactIndex - lowerIndex;
-    const nodeA = nodes[lowerIndex];
-    const nodeB = nodes[upperIndex];
-
-    const getZ = (n) => n.z !== undefined && n.z !== null ? n.z : 0;
-
-    const x = nodeA.x + (nodeB.x - nodeA.x) * t;
-    const y = nodeA.y + (nodeB.y - nodeA.y) * t;
-    const z = getZ(nodeA) + (getZ(nodeB) - getZ(nodeA)) * t;
-
-    const nearestNode = t < 0.5 ? nodeA : nodeB;
 
     this.state.currentPosition = {
       x,
       y,
-      z,
-      nodeId: nearestNode.nodeId,
-      floorId: nearestNode.floorId
+      z: currentZ,
+      nodeId,
+      floorId,
+      hasValidElevation: true,
+      elevationSource: 'staircase_connector'
     };
   }
 
@@ -125,18 +151,21 @@ export default class VerticalTracker {
    */
   _onFloorReached() {
     this.state.floorReached = true;
-    const endNode = this.state.connector.endNode;
+    const endNode = this.state.connector?.endNode || {};
+    const endElev = this.state.endElevation ?? this.state.connector?.endElevation ?? 0;
     
     this.state.currentPosition = {
-      x: endNode.x,
-      y: endNode.y,
-      z: this.state.connector.endElevation,
+      x: endNode.x ?? (this.state.currentPosition?.x ?? 0),
+      y: endNode.y ?? (this.state.currentPosition?.y ?? 0),
+      z: endElev,
       nodeId: endNode.nodeId,
-      floorId: this.state.endFloorId
+      floorId: this.state.endFloorId,
+      hasValidElevation: true,
+      elevationSource: 'staircase_connector'
     };
 
     if (typeof this.onFloorReached === 'function') {
-      this.onFloorReached(this.state.endFloorId);
+      this.onFloorReached(this.state.endFloorId, endElev);
     }
   }
 
@@ -145,7 +174,7 @@ export default class VerticalTracker {
    * @returns {Object|null}
    */
   getPosition() {
-    if (!this.state.isActive) return null;
+    if (!this.state.isActive && !this.state.floorReached) return null;
     return this.state.currentPosition;
   }
 }

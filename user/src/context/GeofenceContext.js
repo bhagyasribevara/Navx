@@ -1,8 +1,10 @@
 import React, { createContext, useContext, useState, useRef, useCallback, useEffect } from "react";
+import { AppState } from "react-native";
 import * as Location from "expo-location";
 import * as Haptics from "expo-haptics";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import api from "../api";
+import journeyRecorder from "../journey/JourneyRecorder";
 
 const GeofenceContext = createContext();
 
@@ -35,7 +37,9 @@ const wipeAllCampusData = async (campusId) => {
       keysToRemove.push(`navx_offline_${campusId}`);
     }
     await AsyncStorage.multiRemove(keysToRemove);
-    console.log("🗑️ All campus data wiped from device");
+    // Automatically purge all local journey history upon campus wipe
+    await journeyRecorder.clearAllJourneys();
+    console.log("🗑️ All campus data and local journeys wiped from device");
   } catch (e) {
     console.error("Failed to wipe campus data:", e);
   }
@@ -49,6 +53,7 @@ export function GeofenceProvider({ children }) {
   const [detectedFloorIndex, setDetectedFloorIndex] = useState(0);
   const baseAltitudeRef = useRef(null);
   const watcherRef = useRef(null);
+  const exitConfirmationCountRef = useRef(0);
 
   const { user, token, logout, loading: authLoading } = require("./AuthContext").useAuth();
 
@@ -125,39 +130,52 @@ export function GeofenceProvider({ children }) {
 
             // Add a 10m buffer for GPS drift during active monitoring
             if (dist > activeCampus.radius + 10) {
+              exitConfirmationCountRef.current += 1;
               console.log(
-                `🚫 User exited campus boundary (${Math.round(dist)}m > ${activeCampus.radius}m)`
+                `⚠️ User outside campus boundary (${Math.round(dist)}m > ${activeCampus.radius}m) - confirmation ${exitConfirmationCountRef.current}/3`
               );
 
-              // Haptic alert
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+              // Require 3 consecutive readings outside to verify exit and prevent accidental GPS jitter wipe
+              if (exitConfirmationCountRef.current >= 3) {
+                console.log(
+                  `🚫 Confirmed campus boundary exit (${Math.round(dist)}m > ${activeCampus.radius}m). Purging local journey data.`
+                );
 
-              // If guest, log out immediately
-              if (user?.isGuest) {
-                console.log("Logging out guest user due to local boundary exit.");
-                logout();
-              } else {
-                // Registered Student: WIPE ONLY OFFLINE MAP, but keep app session!
-                try {
-                  await AsyncStorage.removeItem(`navx_offline_${activeCampus.id}`);
-                  console.log(`🗑️ Offline map database removed for campus ${activeCampus.id}`);
-                  
-                  const { Alert } = require("react-native");
-                  Alert.alert(
-                    "Exited Campus Boundary",
-                    "You have exited the campus. The offline map database has been deleted, but all student ERP dashboard features remain fully active."
-                  );
-                } catch (e) {
-                  console.error("Failed to remove offline map database:", e);
+                // Wipe all local journey data on device immediately
+                await journeyRecorder.handleCampusExit();
+
+                // Haptic alert
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+
+                // If guest, log out immediately
+                if (user?.isGuest) {
+                  console.log("Logging out guest user due to local boundary exit.");
+                  logout();
+                } else {
+                  // Registered Student: WIPE ONLY OFFLINE MAP, but keep app session!
+                  try {
+                    await AsyncStorage.removeItem(`navx_offline_${activeCampus.id}`);
+                    console.log(`🗑️ Offline map database removed for campus ${activeCampus.id}`);
+                    
+                    const { Alert } = require("react-native");
+                    Alert.alert(
+                      "Exited Campus Boundary",
+                      "You have exited the campus. All local journey history and offline maps have been safely cleared from this device."
+                    );
+                  } catch (e) {
+                    console.error("Failed to remove offline map database:", e);
+                  }
+                }
+
+                // Stop watcher
+                if (watcherRef.current) {
+                  watcherRef.current.remove();
+                  watcherRef.current = null;
                 }
               }
-
-              // Stop watcher
-              if (watcherRef.current) {
-                watcherRef.current.remove();
-                watcherRef.current = null;
-              }
             } else {
+              // User is within campus boundary - reset exit confirmation counter
+              exitConfirmationCountRef.current = 0;
               // User is within campus boundary - auto detect floor based on altitude
               if (loc.coords.altitude !== null && loc.coords.altitude !== undefined) {
                 if (baseAltitudeRef.current === null) {
@@ -331,6 +349,45 @@ export function GeofenceProvider({ children }) {
       deactivateCampus();
     }
   }, [user, activeCampus, deactivateCampus, authLoading]);
+
+  // AppState change listener: Validate campus geofence when app returns to foreground
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", async (nextAppState) => {
+      if (
+        nextAppState === "active" &&
+        activeCampus?.location?.lat &&
+        activeCampus?.location?.lng &&
+        activeCampus?.radius
+      ) {
+        try {
+          const { status } = await Location.getForegroundPermissionsAsync();
+          if (status === "granted") {
+            const loc = await Location.getCurrentPositionAsync({
+              accuracy: Location.Accuracy.Balanced,
+              timeout: 6000,
+            });
+            const dist = haversine(
+              loc.coords.latitude,
+              loc.coords.longitude,
+              activeCampus.location.lat,
+              activeCampus.location.lng
+            );
+            // If user resumed app outside campus radius, purge all local journeys
+            if (dist > activeCampus.radius + 10) {
+              console.log(
+                `🚫 Foreground resume: User outside campus boundary (${Math.round(dist)}m > ${activeCampus.radius}m). Purging journeys.`
+              );
+              await journeyRecorder.handleCampusExit();
+            }
+          }
+        } catch (locErr) {
+          console.warn("[GeofenceContext] Foreground campus validation skipped:", locErr?.message);
+        }
+      }
+    });
+
+    return () => subscription.remove();
+  }, [activeCampus?.location?.lat, activeCampus?.location?.lng, activeCampus?.radius]);
 
   // Clear the revoked state (user acknowledged and wants to rescan)
   const clearRevocation = useCallback(() => {

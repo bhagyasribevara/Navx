@@ -6,7 +6,22 @@ const PIXEL_PER_METER = 20; // Scale factor
 
 export class PositionEngine {
   constructor() {
-    this.position = { x: 0, y: 0, z: 0, floor: null };
+    this.position = {
+      x: 0,
+      y: 0,
+      z: 0,
+      floorId: null,
+      floor: null, // backward compatibility with code expecting pos.floor
+      floorLevel: 0,
+      nodeId: null,
+      movementState: 'STATIONARY',
+      verticalProgress: 0.0,
+      verticalTrackingActive: false,
+      verticalDirection: null,
+      activeConnectorId: null,
+      hasValidElevation: false,
+      elevationSource: 'unknown'
+    };
     this.heading = 0; // degrees
     this.isCalibrated = false;
     this.lastQRTime = 0;
@@ -25,12 +40,33 @@ export class PositionEngine {
   }
 
   notify() {
-    this.listeners.forEach(cb => cb({ ...this.position, heading: this.heading }));
+    this.listeners.forEach(cb => cb({
+      ...this.position,
+      heading: this.heading,
+      verticalTrackingActive: this.verticalTrackingActive
+    }));
   }
 
   // QR Code positioning - highest accuracy, acts as anchor
-  setPositionFromQR(x, y, floorId) {
-    this.position = { x, y, floor: floorId };
+  setPositionFromQR(x, y, floorId, floorLevel = 0, z = null) {
+    const validZ = (z !== undefined && z !== null && !isNaN(z))
+      ? z
+      : (floorLevel != null ? Number(floorLevel) * 3.5 + 0.54 : 0.54);
+
+    this.position = {
+      ...this.position,
+      x,
+      y,
+      z: validZ,
+      floorId: floorId ? floorId.toString() : null,
+      floor: floorId ? floorId.toString() : null,
+      floorLevel: floorLevel !== null && floorLevel !== undefined ? Number(floorLevel) : 0,
+      hasValidElevation: true,
+      elevationSource: (z !== undefined && z !== null) ? 'node' : 'floor',
+      verticalTrackingActive: false,
+      verticalProgress: 0.0
+    };
+    this.verticalTrackingActive = false;
     this.isCalibrated = true;
     this.lastQRTime = Date.now();
     this.driftCorrection = { x: 0, y: 0 };
@@ -101,18 +137,64 @@ export class PositionEngine {
   }
 
   // Update vertical position (elevation) — called by VerticalTracker during staircase progress
-  updateVerticalPosition(z, floorId) {
-    this.position.z = z;
-    if (floorId !== undefined && floorId !== null) {
-      this.position.floor = floorId;
+  updateVerticalPosition(z, floorId = null, floorLevelOrOptions = null, verticalProgress = 0.0, elevationSource = 'staircase') {
+    let floorLevel = null;
+    let progress = verticalProgress;
+    let source = elevationSource;
+    let movementState = null;
+    let isTrackingActive = true;
+
+    if (floorLevelOrOptions && typeof floorLevelOrOptions === 'object') {
+      if (floorLevelOrOptions.floorLevel !== undefined) floorLevel = floorLevelOrOptions.floorLevel;
+      if (floorLevelOrOptions.verticalProgress !== undefined) progress = floorLevelOrOptions.verticalProgress;
+      if (floorLevelOrOptions.elevationSource !== undefined) source = floorLevelOrOptions.elevationSource;
+      if (floorLevelOrOptions.movementState !== undefined) movementState = floorLevelOrOptions.movementState;
+      if (floorLevelOrOptions.verticalTrackingActive !== undefined) isTrackingActive = floorLevelOrOptions.verticalTrackingActive;
+    } else if (floorLevelOrOptions !== null && floorLevelOrOptions !== undefined) {
+      floorLevel = floorLevelOrOptions;
     }
-    this.verticalTrackingActive = true;
+
+    if (z !== undefined && z !== null && !isNaN(z)) {
+      this.position.z = z;
+      this.position.hasValidElevation = true;
+      this.position.elevationSource = source;
+    }
+    if (floorId !== undefined && floorId !== null) {
+      this.position.floorId = floorId.toString();
+      this.position.floor = floorId.toString();
+    }
+    if (floorLevel !== undefined && floorLevel !== null) {
+      this.position.floorLevel = Number(floorLevel);
+    }
+    if (movementState !== null) {
+      this.position.movementState = movementState;
+    }
+    this.position.verticalProgress = Math.max(0.0, Math.min(1.0, progress || 0.0));
+    this.position.verticalTrackingActive = isTrackingActive;
+    this.verticalTrackingActive = isTrackingActive;
     this.notify();
   }
 
-  // Set floor explicitly (e.g., after floor transition completes)
-  setFloor(floorId) {
-    this.position.floor = floorId;
+  // Set floor explicitly (e.g., after floor transition completes or floor selection changes)
+  setFloor(floorId, floorLevel = null, elevation = null, elevationSource = 'floor') {
+    if (floorId !== undefined && floorId !== null) {
+      this.position.floorId = floorId.toString();
+      this.position.floor = floorId.toString();
+    }
+    if (floorLevel !== undefined && floorLevel !== null) {
+      this.position.floorLevel = Number(floorLevel);
+    }
+    if (elevation !== undefined && elevation !== null && !isNaN(elevation)) {
+      this.position.z = elevation;
+      this.position.hasValidElevation = true;
+      this.position.elevationSource = elevationSource;
+    } else if (floorLevel !== undefined && floorLevel !== null) {
+      this.position.z = Number(floorLevel) * 3.5 + 0.54;
+      this.position.hasValidElevation = true;
+      this.position.elevationSource = 'floor';
+    }
+    this.position.verticalTrackingActive = false;
+    this.position.verticalProgress = 0.0;
     this.verticalTrackingActive = false;
     this.notify();
   }
@@ -287,12 +369,28 @@ export class PositionEngine {
   }
 
   reset() {
-    this.position = { x: 0, y: 0, z: 0, floor: null };
+    this.position = {
+      x: 0,
+      y: 0,
+      z: 0,
+      floorId: null,
+      floor: null,
+      floorLevel: 0,
+      nodeId: null,
+      movementState: 'STATIONARY',
+      verticalProgress: 0.0,
+      verticalTrackingActive: false,
+      verticalDirection: null,
+      activeConnectorId: null,
+      hasValidElevation: false,
+      elevationSource: 'unknown'
+    };
     this.heading = 0;
     this.isCalibrated = false;
     this.stepCount = 0;
     this.driftCorrection = { x: 0, y: 0 };
     this.verticalTrackingActive = false;
+    this.notify();
   }
 }
 
@@ -329,3 +427,6 @@ export class StepDetector {
     this.lastMagnitude = magnitude;
   }
 }
+
+const defaultPosEngine = new PositionEngine();
+export default defaultPosEngine;

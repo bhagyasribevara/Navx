@@ -1,6 +1,7 @@
 const router = require('express').Router();
 const NavNode = require('../models/NavNode');
 const { authenticateJWT, optionalAuthenticateJWT, enforceCampusIsolation } = require('../utils/auth');
+const { invalidateGraphCache } = require('./navigation');
 
 // GET all nodes (filter by floorId, campusId)
 router.get('/', optionalAuthenticateJWT, enforceCampusIsolation, async (req, res, next) => {
@@ -34,6 +35,7 @@ router.post('/', authenticateJWT, enforceCampusIsolation, async (req, res, next)
   try {
     const node = new NavNode(req.body);
     await node.save();
+    invalidateGraphCache(node.campusId);
     res.status(201).json(node);
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -49,6 +51,8 @@ router.post('/bulk', authenticateJWT, enforceCampusIsolation, async (req, res, n
       req.body.nodes = nodesArray.map(n => ({ ...n, campusId: req.admin.campusId }));
     }
     const nodes = await NavNode.insertMany(req.body.nodes);
+    const targetCampusId = req.admin?.campusId || nodes[0]?.campusId;
+    if (targetCampusId) invalidateGraphCache(targetCampusId);
     res.status(201).json(nodes);
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -60,6 +64,7 @@ router.put('/:id', authenticateJWT, enforceCampusIsolation, async (req, res, nex
   try {
     const node = await NavNode.findByIdAndUpdate(req.params.id, req.body, { new: true });
     if (!node) return res.status(404).json({ error: 'Node not found' });
+    invalidateGraphCache(node.campusId);
     res.json(node);
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -69,7 +74,7 @@ router.put('/:id', authenticateJWT, enforceCampusIsolation, async (req, res, nex
 // DELETE node
 router.delete('/:id', authenticateJWT, enforceCampusIsolation, async (req, res, next) => {
   try {
-    await NavNode.findByIdAndUpdate(req.params.id, { isActive: false });
+    const deletedNode = await NavNode.findByIdAndUpdate(req.params.id, { isActive: false });
     
     // Also delete any paths connected to this node
     const NavPath = require('../models/NavPath');
@@ -77,6 +82,8 @@ router.delete('/:id', authenticateJWT, enforceCampusIsolation, async (req, res, 
       { $or: [{ nodeA: req.params.id }, { nodeB: req.params.id }] },
       { isActive: false }
     );
+
+    if (deletedNode) invalidateGraphCache(deletedNode.campusId);
 
     res.json({ message: 'Node and connected paths deleted' });
   } catch (err) {

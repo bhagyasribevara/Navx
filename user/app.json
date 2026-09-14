@@ -14,7 +14,10 @@
       "backgroundColor": "#f0eef6"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSMotionUsageDescription": "NavX uses motion and pedometer sensors to detect steps and vertical staircase navigation."
+      }
     },
     "android": {
       "package": "com.yusufabdul07.navxroot",
@@ -29,7 +32,8 @@
         "ACCESS_COARSE_LOCATION",
         "ACCESS_FINE_LOCATION",
         "ACCESS_NETWORK_STATE",
-        "CAMERA"
+        "CAMERA",
+        "ACTIVITY_RECOGNITION"
       ]
     },
     "web": {

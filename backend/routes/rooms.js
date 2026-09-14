@@ -1,11 +1,15 @@
 const router = require('express').Router();
 const Room = require('../models/Room');
 const { authenticateJWT, optionalAuthenticateJWT, enforceCampusIsolation } = require('../utils/auth');
+const { invalidateGraphCache } = require('./navigation');
 
 // GET all rooms (filter by floorId, blockId, campusId)
 router.get('/', optionalAuthenticateJWT, enforceCampusIsolation, async (req, res, next) => {
   try {
-    const filter = { isActive: true };
+    const filter = { 
+      isActive: true,
+      $nor: [{ type: 'entrance', name: /\bDoor$/i }]
+    };
     if (req.query.floorId) filter.floorId = req.query.floorId;
     if (req.query.blockId) filter.blockId = req.query.blockId;
     if (req.query.campusId) filter.campusId = req.query.campusId;
@@ -24,7 +28,10 @@ router.get('/', optionalAuthenticateJWT, enforceCampusIsolation, async (req, res
 router.get('/search/:query', optionalAuthenticateJWT, enforceCampusIsolation, async (req, res, next) => {
   try {
     const query = req.params.query;
-    const filter = { isActive: true };
+    const filter = { 
+      isActive: true,
+      $nor: [{ type: 'entrance', name: /\bDoor$/i }]
+    };
     if (req.query.campusId) filter.campusId = req.query.campusId;
     
     const Block = require('../models/Block');
@@ -81,6 +88,7 @@ router.post('/', authenticateJWT, enforceCampusIsolation, async (req, res, next)
   try {
     const room = new Room(req.body);
     await room.save();
+    invalidateGraphCache(room.campusId);
     res.status(201).json(room);
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -100,6 +108,7 @@ router.put('/:id', authenticateJWT, enforceCampusIsolation, async (req, res, nex
       await syncStairsNavigation(room);
     }
     
+    invalidateGraphCache(room.campusId);
     res.json(room);
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -119,6 +128,7 @@ router.delete('/:id', authenticateJWT, enforceCampusIsolation, async (req, res, 
     await NavNode.updateMany({ roomId: req.params.id }, { isActive: false });
     await NavPath.updateMany({ $or: [{ nodeA: { $in: nodeIds } }, { nodeB: { $in: nodeIds } }] }, { isActive: false });
 
+    if (room) invalidateGraphCache(room.campusId);
     res.json({ message: 'Room deleted' });
   } catch (err) {
     next(err);

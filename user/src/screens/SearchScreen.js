@@ -25,6 +25,13 @@ const SUGGESTED = [
   "Computer Lab", "Library", "Principal Office", "Canteen", "Auditorium", "Seminar Hall",
 ];
 
+const isValidDestination = (r) => {
+  if (!r) return false;
+  if (r.type === 'corridor') return false;
+  if (r.name && r.name.toLowerCase().endsWith(' door') && (r.type === 'entrance' || r.type === 'other')) return false;
+  return true;
+};
+
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 export default function SearchScreen({ navigation, route }) {
@@ -51,7 +58,8 @@ export default function SearchScreen({ navigation, route }) {
     if (query.length >= 2) {
       const timer = setTimeout(() => {
         searchRooms(query, campusId).then(data => {
-          const filtered = activeCat ? data.filter(r => r.type === activeCat) : data;
+          const validData = (Array.isArray(data) ? data : []).filter(isValidDestination);
+          const filtered = activeCat ? validData.filter(r => r.type === activeCat) : validData;
           setResults(filtered);
           Animated.spring(listAnim, { toValue: 1, tension: 100, friction: 12, useNativeDriver: true }).start();
         }).catch(() => setResults([]));
@@ -59,7 +67,8 @@ export default function SearchScreen({ navigation, route }) {
       return () => clearTimeout(timer);
     } else if (activeCat) {
       getRoomsByCat(campusId, activeCat).then(data => {
-        setResults(data);
+        const validData = (Array.isArray(data) ? data : []).filter(isValidDestination);
+        setResults(validData);
         Animated.spring(listAnim, { toValue: 1, tension: 100, friction: 12, useNativeDriver: true }).start();
       }).catch(() => setResults([]));
     } else {
@@ -79,9 +88,11 @@ export default function SearchScreen({ navigation, route }) {
       let data = [];
       if (query.length >= 2) {
         data = await searchRooms(query, campusId);
+        data = (Array.isArray(data) ? data : []).filter(isValidDestination);
         if (activeCat) data = data.filter(r => r.type === activeCat);
       } else if (activeCat) {
         data = await getRoomsByCat(campusId, activeCat);
+        data = (Array.isArray(data) ? data : []).filter(isValidDestination);
       }
       setResults(data);
       Animated.spring(listAnim, { toValue: 1, tension: 100, friction: 12, useNativeDriver: true }).start();

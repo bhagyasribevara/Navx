@@ -31,9 +31,13 @@ async function getCachedGraph(campusId) {
   ]);
 
   const floorMap = {};
-  floors.forEach(f => { floorMap[f._id.toString()] = f.level; });
+  const floorBlockMap = {};
+  floors.forEach(f => {
+    floorMap[f._id.toString()] = f.level;
+    if (f.blockId) floorBlockMap[f._id.toString()] = f.blockId.toString();
+  });
 
-  let graph = buildGraph(nodes, paths, floorMap, rooms);
+  let graph = buildGraph(nodes, paths, floorMap, rooms, floorBlockMap);
   graph = autoConnectGraph(graph);
 
   const entry = { graph, nodes, paths, floors, rooms, floorMap, timestamp: Date.now() };
@@ -298,7 +302,7 @@ router.post('/route-to-room', async (req, res, next) => {
       }
 
       const virtualStartId = 'user_gps_start';
-      graph[virtualStartId] = { id: virtualStartId, x: startX, y: startY, neighbors: [], type: 'user' };
+      graph[virtualStartId] = { id: virtualStartId, x: startX, y: startY, floorId: null, floorLevel: 0, neighbors: [], type: 'user' };
       
       const kNearest = withDists.slice(0, Math.min(3, withDists.length));
       kNearest.forEach(n => {
@@ -522,7 +526,7 @@ router.get('/map-data/:campusId', async (req, res, next) => {
     const [nodes, paths, rooms, qrcodes, beacons] = await Promise.all([
       NavNode.find({ campusId, isActive: true }),
       NavPath.find({ campusId, isActive: true }),
-      Room.find({ campusId, isActive: true }),
+      Room.find({ campusId, isActive: true, $nor: [{ type: 'entrance', name: /\bDoor$/i }] }),
       require('../models/QRCode').find({ campusId, isActive: true }),
       require('../models/Beacon').find({ campusId, isActive: true })
     ]);
@@ -541,4 +545,7 @@ router.get('/map-data/:campusId', async (req, res, next) => {
   }
 });
 
+router.invalidateGraphCache = invalidateGraphCache;
+
 module.exports = router;
+

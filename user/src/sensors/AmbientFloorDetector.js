@@ -31,6 +31,8 @@ class AmbientFloorDetector {
     this._onFloorChange = null;
     this._lastReportedFloor = null;
     this._pendingKnownFloor = null;
+    this._floorCandidate = null;
+    this._candidateCount = 0;
   }
 
   /**
@@ -143,6 +145,8 @@ class AmbientFloorDetector {
     this.currentFloorIndex = floorIndex;
     this.currentAltitudeMeters = knownDeltaAlt + 1.5;
     this._lastReportedFloor = floorIndex;
+    this._floorCandidate = null;
+    this._candidateCount = 0;
     this._ema = knownDeltaAlt; // reset smoother
     
     if (this._onFloorChange) {
@@ -152,25 +156,49 @@ class AmbientFloorDetector {
   }
 
   _updateFromDelta(deltaAlt) {
-    // Smooth: use median of last 5 readings to reduce noise
+    // Smooth: use exponential moving average to reduce high-frequency barometric noise
     const smoothedDelta = this._smoothedDelta(deltaAlt);
     
-    // 3.5m per floor (standard floor height assumption)
-    const rawFloorIndex = Math.round(smoothedDelta / 3.5);
-    const floorIndex = Math.max(0, rawFloorIndex); // Cannot be below ground
+    // Calibrated floor threshold mapping:
+    // Floor height constant H = 3.5m.
+    // Ground Floor: slab = 0m, phone at chest level ~1.3m -> deltaAlt < 2.2m
+    // Floor 1: slab = 3.5m, phone at chest level ~4.8m -> 2.2m <= deltaAlt < 5.7m
+    // Floor 2: slab = 7.0m, phone at chest level ~8.3m -> 5.7m <= deltaAlt < 9.2m
+    // Floor k: [k * 3.5 - 1.3, (k + 1) * 3.5 - 1.3)
+    let candidate = 0;
+    if (smoothedDelta >= 2.2) {
+      candidate = Math.floor((smoothedDelta - 2.2) / 3.5) + 1;
+    }
+    candidate = Math.max(0, candidate);
 
-    // Altitude = floor * 3.5m + 1.5m (person's approximate eye/chest level)
+    // Hysteresis: require 3 consecutive identical candidate readings to change floor,
+    // completely eliminating boundary fluttering and transient pressure spikes.
+    if (candidate !== this.currentFloorIndex) {
+      if (this._floorCandidate === candidate) {
+        this._candidateCount++;
+        if (this._candidateCount >= 3) {
+          this.currentFloorIndex = candidate;
+          this._floorCandidate = null;
+          this._candidateCount = 0;
+        }
+      } else {
+        this._floorCandidate = candidate;
+        this._candidateCount = 1;
+      }
+    } else {
+      this._floorCandidate = null;
+      this._candidateCount = 0;
+    }
+
     const altitudeMeters = Math.max(0, smoothedDelta + 1.5);
-
-    this.currentFloorIndex = floorIndex;
     this.currentAltitudeMeters = altitudeMeters;
 
-    // Only fire callback when floor actually changes (reduce noise)
-    if (this._lastReportedFloor !== floorIndex) {
-      this._lastReportedFloor = floorIndex;
+    // Fire callback when floor index changes
+    if (this._lastReportedFloor !== this.currentFloorIndex) {
+      this._lastReportedFloor = this.currentFloorIndex;
       if (this._onFloorChange) {
         this._onFloorChange({
-          floorIndex,
+          floorIndex: this.currentFloorIndex,
           altitudeMeters,
         });
       }
@@ -209,6 +237,8 @@ class AmbientFloorDetector {
     this.isRunning = false;
     this.buffer = [];
     this._ema = null;
+    this._floorCandidate = null;
+    this._candidateCount = 0;
     console.log('[AmbientFloorDetector] Stopped');
   }
 }

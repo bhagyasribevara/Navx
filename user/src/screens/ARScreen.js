@@ -442,6 +442,7 @@ export default function ARScreen({ navigation, route }) {
     heading: initialHeading = 0,
     userPos: initialUserPos,
     campusId,
+    isRetracing = false,
   } = route.params || {};
 
   const [permission, requestPermission] = useCameraPermissions();
@@ -524,7 +525,10 @@ export default function ARScreen({ navigation, route }) {
       ]).start();
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       if (voiceEnabled) {
-        Speech.speak(formatSpeech("You have arrived at " + (targetRoom?.name || "your destination")), { language: "en-US" });
+        const text = isRetracing
+          ? "You have arrived back at " + (targetRoom?.name || "your starting point")
+          : "You have arrived at " + (targetRoom?.name || "your destination");
+        Speech.speak(formatSpeech(text), { language: "en-US" });
       }
     }
   }, [arrived]);
@@ -783,6 +787,14 @@ export default function ARScreen({ navigation, route }) {
           pointerEvents="none"
         />
       </View>
+
+      {/* ── RETRACE JOURNEY BADGE ── */}
+      {isRetracing && (
+        <View style={[styles.retraceBadge, { top: Math.max(insets.top, 12) + 2 }]}>
+          <Ionicons name="return-up-back" size={14} color="#fff" />
+          <Text style={styles.retraceBadgeText}>TAKE ME BACK · RETRACING</Text>
+        </View>
+      )}
 
       {/* ── TOP DIRECTION CARD (Glassmorphic — matching reference) ── */}
       {!arrived && currentDir && (
@@ -1097,4 +1109,27 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.md,
   },
   arrivedBtnText: { color: "#fff", fontWeight: "800", fontSize: 15 },
+  retraceBadge: {
+    position: 'absolute',
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#8b5cf6',
+    paddingVertical: 5,
+    paddingHorizontal: 14,
+    borderRadius: 20,
+    gap: 6,
+    zIndex: 50,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.35,
+    shadowRadius: 4,
+    elevation: 6,
+  },
+  retraceBadgeText: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
 });

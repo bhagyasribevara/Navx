@@ -2,6 +2,7 @@ const router = require('express').Router();
 const NavPath = require('../models/NavPath');
 const NavNode = require('../models/NavNode');
 const { authenticateJWT, optionalAuthenticateJWT, enforceCampusIsolation } = require('../utils/auth');
+const { invalidateGraphCache } = require('./navigation');
 
 // GET all paths (filter by floorId, campusId)
 router.get('/', optionalAuthenticateJWT, enforceCampusIsolation, async (req, res, next) => {
@@ -27,6 +28,42 @@ router.post('/', authenticateJWT, enforceCampusIsolation, async (req, res, next)
     if (!nodeA || !nodeB) {
       return res.status(400).json({ error: 'Invalid node IDs' });
     }
+
+    // Validation: prevent bogus flat hallway paths between different elevations or across blocks
+    const Floor = require('../models/Floor');
+    let levelA = 0, levelB = 0;
+    let blockA = nodeA.blockId ? nodeA.blockId.toString() : null;
+    let blockB = nodeB.blockId ? nodeB.blockId.toString() : null;
+
+    if (nodeA.floorId) {
+      const fA = await Floor.findById(nodeA.floorId).lean();
+      if (fA) {
+        levelA = fA.level ?? 0;
+        if (!blockA && fA.blockId) blockA = fA.blockId.toString();
+      }
+    }
+    if (nodeB.floorId) {
+      const fB = await Floor.findById(nodeB.floorId).lean();
+      if (fB) {
+        levelB = fB.level ?? 0;
+        if (!blockB && fB.blockId) blockB = fB.blockId.toString();
+      }
+    }
+
+    const isLevelDiff = Math.abs(levelA - levelB) >= 1;
+    const requestedType = req.body.type || 'hallway';
+
+    if (isLevelDiff && requestedType !== 'stairs' && requestedType !== 'elevator' && requestedType !== 'ramp') {
+      return res.status(400).json({
+        error: `Cannot create flat path of type "${requestedType}" between Level ${levelA} and Level ${levelB}. Please designate as "stairs" or "elevator".`
+      });
+    }
+
+    if (blockA && blockB && blockA !== blockB && (levelA > 0 || levelB > 0)) {
+      return res.status(400).json({
+        error: `Cannot create elevated path between different buildings without a skybridge/ramp.`
+      });
+    }
     
     // Auto-calculate distance in meters if not provided
     if (!req.body.distance) {
@@ -37,6 +74,7 @@ router.post('/', authenticateJWT, enforceCampusIsolation, async (req, res, next)
     
     const path = new NavPath(req.body);
     await path.save();
+    invalidateGraphCache(path.campusId);
     res.status(201).json(path);
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -52,6 +90,8 @@ router.post('/bulk', authenticateJWT, enforceCampusIsolation, async (req, res, n
       req.body.paths = pathsArray.map(p => ({ ...p, campusId: req.admin.campusId }));
     }
     const paths = await NavPath.insertMany(req.body.paths);
+    const targetCampusId = req.admin?.campusId || paths[0]?.campusId;
+    if (targetCampusId) invalidateGraphCache(targetCampusId);
     res.status(201).json(paths);
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -63,6 +103,7 @@ router.put('/:id', authenticateJWT, enforceCampusIsolation, async (req, res, nex
   try {
     const path = await NavPath.findByIdAndUpdate(req.params.id, req.body, { new: true });
     if (!path) return res.status(404).json({ error: 'Path not found' });
+    invalidateGraphCache(path.campusId);
     res.json(path);
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -72,7 +113,8 @@ router.put('/:id', authenticateJWT, enforceCampusIsolation, async (req, res, nex
 // DELETE path
 router.delete('/:id', authenticateJWT, enforceCampusIsolation, async (req, res, next) => {
   try {
-    await NavPath.findByIdAndUpdate(req.params.id, { isActive: false });
+    const deletedPath = await NavPath.findByIdAndUpdate(req.params.id, { isActive: false });
+    if (deletedPath) invalidateGraphCache(deletedPath.campusId);
     res.json({ message: 'Path deleted' });
   } catch (err) {
     next(err);

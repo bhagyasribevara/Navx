@@ -347,6 +347,260 @@ router.get('/geojson/:id', async (req, res, next) => {
       }
     });
 
+    function getPolygonArea(ring) {
+      let area = 0;
+      for (let i = 0; i < ring.length - 1; i++) {
+        area += ring[i][0] * ring[i+1][1] - ring[i+1][0] * ring[i][1];
+      }
+      return area / 2;
+    }
+
+    function insetPolygon(ring, distanceMeters = 0.18) {
+      if (!ring || ring.length < 4) return ring;
+      const area = getPolygonArea(ring);
+      const isCCW = area > 0;
+      const mToLat = 1 / 111139;
+      const avgLat = ring[0][1];
+      const mToLng = 1 / (111139 * Math.cos(avgLat * Math.PI / 180));
+      const n = ring.length - 1;
+      const inset = [];
+
+      for (let i = 0; i < n; i++) {
+        const prev = ring[(i - 1 + n) % n];
+        const curr = ring[i];
+        const next = ring[(i + 1) % n];
+
+        const v1x = (curr[0] - prev[0]) / mToLng;
+        const v1y = (curr[1] - prev[1]) / mToLat;
+        const l1 = Math.hypot(v1x, v1y) || 1e-6;
+        const u1x = v1x / l1, u1y = v1y / l1;
+
+        const v2x = (next[0] - curr[0]) / mToLng;
+        const v2y = (next[1] - curr[1]) / mToLat;
+        const l2 = Math.hypot(v2x, v2y) || 1e-6;
+        const u2x = v2x / l2, u2y = v2y / l2;
+
+        const n1x = isCCW ? -u1y : u1y;
+        const n1y = isCCW ? u1x : -u1x;
+        const n2x = isCCW ? -u2y : u2y;
+        const n2y = isCCW ? u2x : -u2x;
+
+        let bx = n1x + n2x;
+        let by = n1y + n2y;
+        const blen = Math.hypot(bx, by);
+        if (blen > 1e-6) {
+          bx /= blen;
+          by /= blen;
+        } else {
+          bx = n1x;
+          by = n1y;
+        }
+
+        const dot = bx * n1x + by * n1y;
+        const scale = Math.min(Math.max(dot > 1e-4 ? 1 / dot : 1, 1), 2.0);
+
+        const shiftX = bx * distanceMeters * scale * mToLng;
+        const shiftY = by * distanceMeters * scale * mToLat;
+
+        inset.push([curr[0] + shiftX, curr[1] + shiftY]);
+      }
+      inset.push([inset[0][0], inset[0][1]]);
+      return inset;
+    }
+
+    function generatePartitionWalls(ring, thicknessMeters = 0.12) {
+      if (!ring || ring.length < 2) return [];
+      const walls = [];
+      const mToLat = 1 / 111139;
+      const avgLat = ring[0][1];
+      const mToLng = 1 / (111139 * Math.cos(avgLat * Math.PI / 180));
+      const halfW = thicknessMeters / 2;
+
+      for (let i = 0; i < ring.length - 1; i++) {
+        const p1 = ring[i];
+        const p2 = ring[i+1];
+
+        const dx = (p2[0] - p1[0]) / mToLng;
+        const dy = (p2[1] - p1[1]) / mToLat;
+        const len = Math.hypot(dx, dy);
+        if (len < 0.2) continue;
+
+        const ux = dx / len, uy = dy / len;
+        const nx = -uy * halfW * mToLng;
+        const ny = ux * halfW * mToLat;
+
+        const c1 = [p1[0] + nx, p1[1] + ny];
+        const c2 = [p2[0] + nx, p2[1] + ny];
+        const c3 = [p2[0] - nx, p2[1] - ny];
+        const c4 = [p1[0] - nx, p1[1] - ny];
+
+        walls.push([[c1, c2, c3, c4, c1]]);
+      }
+      return walls;
+    }
+
+    function lineSegmentsIntersect(p1, p2, p3, p4) {
+      const d = (p2[0] - p1[0]) * (p4[1] - p3[1]) - (p2[1] - p1[1]) * (p4[0] - p3[0]);
+      if (Math.abs(d) < 1e-12) return null;
+      const u = ((p3[0] - p1[0]) * (p4[1] - p3[1]) - (p3[1] - p1[1]) * (p4[0] - p3[0])) / d;
+      const v = ((p3[0] - p1[0]) * (p2[1] - p1[1]) - (p3[1] - p1[1]) * (p2[0] - p1[0])) / d;
+      if (u >= 0 && u <= 1 && v >= 0 && v <= 1) {
+        return [p1[0] + u * (p2[0] - p1[0]), p1[1] + u * (p2[1] - p1[1]), u];
+      }
+      return null;
+    }
+
+    function distToSegmentSquared(p, v, w) {
+      const l2 = (v[0] - w[0])**2 + (v[1] - w[1])**2;
+      if (l2 === 0) return { distSq: (p[0] - v[0])**2 + (p[1] - v[1])**2, t: 0, proj: v };
+      let t = ((p[0] - v[0]) * (w[0] - v[0]) + (p[1] - v[1]) * (w[1] - v[1])) / l2;
+      t = Math.max(0.1, Math.min(0.9, t));
+      const proj = [v[0] + t * (w[0] - v[0]), v[1] + t * (w[1] - v[1])];
+      const distSq = (p[0] - proj[0])**2 + (p[1] - proj[1])**2;
+      return { distSq, t, proj };
+    }
+
+    function generateDoorPortals(ring, floorPaths, doorWidthMeters = 1.2, wallDepthMeters = 0.22) {
+      if (!ring || ring.length < 4) return null;
+      const mToLat = 1 / 111139;
+      const avgLat = ring[0][1];
+      const mToLng = 1 / (111139 * Math.cos(avgLat * Math.PI / 180));
+
+      let bestEdge = -1;
+      let bestT = 0.5;
+      let corridorRefPoint = null;
+
+      // 1. Check path intersection
+      if (Array.isArray(floorPaths) && floorPaths.length > 0) {
+        for (let pIdx = 0; pIdx < floorPaths.length; pIdx++) {
+          const p = floorPaths[pIdx];
+          for (let i = 0; i < ring.length - 1; i++) {
+            const hit = lineSegmentsIntersect(ring[i], ring[i+1], p.pA, p.pB);
+            if (hit) {
+              bestEdge = i;
+              bestT = Math.max(0.12, Math.min(0.88, hit[2]));
+              corridorRefPoint = p.pA;
+              break;
+            }
+          }
+          if (bestEdge !== -1) break;
+        }
+
+        // 2. Check nearest corridor path
+        if (bestEdge === -1) {
+          let minDist = Infinity;
+          for (let pIdx = 0; pIdx < floorPaths.length; pIdx++) {
+            const p = floorPaths[pIdx];
+            const midP = [(p.pA[0] + p.pB[0])/2, (p.pA[1] + p.pB[1])/2];
+            for (let i = 0; i < ring.length - 1; i++) {
+              const res = distToSegmentSquared(midP, ring[i], ring[i+1]);
+              if (res.distSq < minDist) {
+                minDist = res.distSq;
+                bestEdge = i;
+                bestT = res.t;
+                corridorRefPoint = midP;
+              }
+            }
+          }
+        }
+      }
+
+      // 3. Fallback to first edge with len >= 2m
+      if (bestEdge === -1) {
+        for (let i = 0; i < ring.length - 1; i++) {
+          const dx = (ring[i+1][0] - ring[i][0]) / mToLng;
+          const dy = (ring[i+1][1] - ring[i][1]) / mToLat;
+          if (Math.hypot(dx, dy) >= 2.0) {
+            bestEdge = i;
+            bestT = 0.5;
+            break;
+          }
+        }
+      }
+      if (bestEdge === -1) bestEdge = 0;
+
+      const p1 = ring[bestEdge];
+      const p2 = ring[bestEdge+1];
+      const dx = (p2[0] - p1[0]) / mToLng;
+      const dy = (p2[1] - p1[1]) / mToLat;
+      const len = Math.hypot(dx, dy) || 1e-6;
+
+      const ux = dx / len, uy = dy / len;
+      let nx = -uy;
+      let ny = ux;
+
+      if (corridorRefPoint) {
+        const doorMidLng = p1[0] + (p2[0] - p1[0]) * bestT;
+        const doorMidLat = p1[1] + (p2[1] - p1[1]) * bestT;
+        const dPlus = Math.hypot((doorMidLng + nx * mToLng) - corridorRefPoint[0], (doorMidLat + ny * mToLat) - corridorRefPoint[1]);
+        const dMinus = Math.hypot((doorMidLng - nx * mToLng) - corridorRefPoint[0], (doorMidLat - ny * mToLat) - corridorRefPoint[1]);
+        if (dMinus < dPlus) {
+          nx = -nx;
+          ny = -ny;
+        }
+      }
+
+      function makeBox(w, outwardOffset, inwardDepth) {
+        const halfW = (w / 2) / len;
+        const tStart = Math.max(0.02, bestT - halfW);
+        const tEnd = Math.min(0.98, bestT + halfW);
+
+        const pt1 = [p1[0] + (p2[0] - p1[0]) * tStart, p1[1] + (p2[1] - p1[1]) * tStart];
+        const pt2 = [p1[0] + (p2[0] - p1[0]) * tEnd, p1[1] + (p2[1] - p1[1]) * tEnd];
+
+        const outX = nx * outwardOffset * mToLng;
+        const outY = ny * outwardOffset * mToLat;
+        const inX = -nx * inwardDepth * mToLng;
+        const inY = -ny * inwardDepth * mToLat;
+
+        const c1 = [pt1[0] + outX, pt1[1] + outY];
+        const c2 = [pt2[0] + outX, pt2[1] + outY];
+        const c3 = [pt2[0] + inX, pt2[1] + inY];
+        const c4 = [pt1[0] + inX, pt1[1] + inY];
+
+        return [[c1, c2, c3, c4, c1]];
+      }
+
+      const doorMidLng = p1[0] + (p2[0] - p1[0]) * bestT;
+      const doorMidLat = p1[1] + (p2[1] - p1[1]) * bestT;
+
+      const plateHalfW = (doorWidthMeters * 0.95 / 2) / len;
+      const plateT1 = Math.max(0.02, bestT - plateHalfW);
+      const plateT2 = Math.min(0.98, bestT + plateHalfW);
+      const ptA = [p1[0] + (p2[0] - p1[0]) * plateT1, p1[1] + (p2[1] - p1[1]) * plateT1];
+      const ptB = [p1[0] + (p2[0] - p1[0]) * plateT2, p1[1] + (p2[1] - p1[1]) * plateT2];
+
+      return {
+        frame: makeBox(doorWidthMeters + 0.15, 0.08, wallDepthMeters),
+        leaf: makeBox(doorWidthMeters, 0.03, wallDepthMeters * 0.7),
+        threshold: makeBox(doorWidthMeters + 0.15, 0.14, 0.08),
+        doorplate: makeBox(doorWidthMeters + 0.05, 0.07, wallDepthMeters * 0.4),
+        doorplateAnchor: {
+          lng: doorMidLng,
+          lat: doorMidLat,
+          ux: ux,
+          uy: uy,
+          nx: nx,
+          ny: ny,
+          ptA: ptA,
+          ptB: ptB
+        }
+      };
+    }
+
+    // Index paths by floorId string for fast corridor-aligned door generation
+    const pathsByFloor = {};
+    paths.forEach(p => {
+      if (p.floorId && p.nodeA && p.nodeB) {
+        const fid = (typeof p.floorId === 'object' ? p.floorId._id : p.floorId).toString();
+        if (!pathsByFloor[fid]) pathsByFloor[fid] = [];
+        pathsByFloor[fid].push({
+          pA: [p.nodeA.y, p.nodeA.x],
+          pB: [p.nodeB.y, p.nodeB.x]
+        });
+      }
+    });
+
     // Convert Rooms to GeoJSON Polygons (with floor-level elevation)
     rooms.forEach(r => {
       if (r.shape && r.shape.points && r.shape.points.length >= 3) {
@@ -466,54 +720,263 @@ router.get('/geojson/:id', async (req, res, next) => {
             coords.push([...coords[0]]);
           }
 
-          if (r.type === 'entrance') {
+          const rType = (r.type || '').toLowerCase();
+          const rName = (r.name || '').toLowerCase();
+          const isCorridor = (rType === 'corridor' || rName.includes('corridor'));
+
+          if (isCorridor) {
+            // Paved walkway / corridor surface (neutral light polished concrete)
             features.push({
               type: 'Feature',
               geometry: { type: 'Polygon', coordinates: [coords] },
               properties: {
-                id: r._id, name: r.name, type: 'room', category: 'entrance', floorId: r.floorId,
+                id: r._id.toString(),
+                roomId: r._id.toString(),
+                name: r.name,
+                type: 'room',
+                category: 'corridor',
+                part: 'corridor',
+                floorId: r.floorId,
+                level: level,
+                color: '#cbd5e1',
+                min_height: minH,
+                height: minH + 0.05
+              }
+            });
+          } else if (rType === 'entrance') {
+            features.push({
+              type: 'Feature',
+              geometry: { type: 'Polygon', coordinates: [coords] },
+              properties: {
+                id: r._id.toString(),
+                roomId: r._id.toString(),
+                name: r.name,
+                type: 'room',
+                category: 'entrance',
+                part: 'entrance',
+                floorId: r.floorId,
+                level: level,
                 color: (r.shape && r.shape.fill) ? r.shape.fill : '#78716c',
-                min_height: minH, height: minH + 2.1
-              }
-            });
-          } else if (r.type === 'classroom' && r.shape && r.shape.wallColors) {
-            const h = minH + 3.0;
-            const dadoH = minH + 1.0;
-            const wallColors = r.shape.wallColors;
-            
-            // Dado Block
-            features.push({
-              type: 'Feature',
-              geometry: { type: 'Polygon', coordinates: [coords] },
-              properties: {
-                id: r._id + '_dado', name: r.name, type: 'room', category: 'classroom', floorId: r.floorId,
-                color: wallColors.bottom || '#b5a68e',
-                min_height: minH, height: dadoH
-              }
-            });
-            // Upper Wall Block
-            features.push({
-              type: 'Feature',
-              geometry: { type: 'Polygon', coordinates: [coords] },
-              properties: {
-                id: r._id + '_upper', name: r.name, type: 'room', category: 'classroom', floorId: r.floorId,
-                color: wallColors.top || '#f6f5ee',
-                min_height: dadoH, height: h
+                min_height: minH,
+                height: minH + 2.2
               }
             });
           } else {
-            // Corridor or default
-            const isCorridor = r.type === 'corridor';
-            const h = isCorridor ? minH + 0.01 : minH + 3.0;
+            // High-Clarity Architectural Room Unit
+            const CATEGORY_PALETTE = {
+              classroom: { base: '#1e293b', wall: '#e2e8f0', roof: '#f8fafc', parapet: '#0284c7' },
+              lab: { base: '#1e293b', wall: '#e2e8f0', roof: '#f8fafc', parapet: '#7c3aed' },
+              computer_lab: { base: '#1e293b', wall: '#e2e8f0', roof: '#f8fafc', parapet: '#0891b2' },
+              office: { base: '#1e293b', wall: '#e2e8f0', roof: '#f8fafc', parapet: '#2563eb' },
+              staff_room: { base: '#1e293b', wall: '#e2e8f0', roof: '#f8fafc', parapet: '#3b82f6' },
+              auditorium: { base: '#1e293b', wall: '#e2e8f0', roof: '#f8fafc', parapet: '#b45309' },
+              seminar_hall: { base: '#1e293b', wall: '#e2e8f0', roof: '#f8fafc', parapet: '#d97706' },
+              restroom: { base: '#1e293b', wall: '#e2e8f0', roof: '#f8fafc', parapet: '#059669' },
+              library: { base: '#1e293b', wall: '#e2e8f0', roof: '#f8fafc', parapet: '#4f46e5' },
+              cafeteria: { base: '#1e293b', wall: '#e2e8f0', roof: '#f8fafc', parapet: '#ea580c' },
+              entrance: { base: '#1e293b', wall: '#e2e8f0', roof: '#f8fafc', parapet: '#16a34a' },
+              corridor: { base: '#64748b', wall: '#cbd5e1', roof: '#cbd5e1', parapet: '#475569' },
+              default: { base: '#1e293b', wall: '#e2e8f0', roof: '#f8fafc', parapet: '#64748b' }
+            };
+
+            const pal = CATEGORY_PALETTE[rType] || CATEGORY_PALETTE.default;
+            const parapetColor = pal.parapet;
+
+            const baseH = minH + 0.80;
+            const wallH = minH + 2.75;
+            const roofH = minH + 2.75;
+            const parapetH = minH + 2.90;
+            const partitionH = minH + 2.92;
+
+            // 1. Charcoal Plinth Baseboard (0 -> 0.80m)
             features.push({
               type: 'Feature',
               geometry: { type: 'Polygon', coordinates: [coords] },
               properties: {
-                id: r._id, name: r.name, type: 'room', category: r.type, floorId: r.floorId,
-                color: r.color || (r.shape && r.shape.fill) ? r.shape.fill : '#3b82f6',
-                min_height: minH, height: h
+                id: r._id.toString() + '_base',
+                roomId: r._id.toString(),
+                name: r.name,
+                type: 'room',
+                category: r.type,
+                part: 'base',
+                floorId: r.floorId,
+                level: level,
+                color: '#1e293b',
+                min_height: minH,
+                height: baseH
               }
             });
+
+            // 2. Main Architectural Plaster Wall Body (0.80m -> 2.75m)
+            features.push({
+              type: 'Feature',
+              geometry: { type: 'Polygon', coordinates: [coords] },
+              properties: {
+                id: r._id.toString() + '_body',
+                roomId: r._id.toString(),
+                name: r.name,
+                type: 'room',
+                category: r.type,
+                part: 'body',
+                floorId: r.floorId,
+                level: level,
+                capacity: r.capacity || 0,
+                color: '#e2e8f0',
+                min_height: baseH,
+                height: wallH
+              }
+            });
+
+            // 3. 3D Partition Divider Walls along boundary edges (width: 0.12m, 0 -> 2.92m)
+            // Ensures contiguous rooms (5-F-10 through 5-F-14) have crisp divider seams
+            const partitionBoxes = generatePartitionWalls(coords, 0.12);
+            for (let i = 0; i < partitionBoxes.length; i++) {
+              features.push({
+                type: 'Feature',
+                geometry: { type: 'Polygon', coordinates: partitionBoxes[i] },
+                properties: {
+                  id: r._id.toString() + '_part_' + i,
+                  roomId: r._id.toString(),
+                  name: r.name,
+                  type: 'room',
+                  category: r.type,
+                  part: 'partition',
+                  floorId: r.floorId,
+                  level: level,
+                  color: '#1e293b',
+                  min_height: minH,
+                  height: partitionH
+                }
+              });
+            }
+
+            // 4. Recessed Inset Ceiling / Roof Tray (inset 0.18m, 2.70m -> 2.75m)
+            // Creates natural shadow crease separating room ceilings from perimeter walls
+            const insetCoords = insetPolygon(coords, 0.18);
+            features.push({
+              type: 'Feature',
+              geometry: { type: 'Polygon', coordinates: [insetCoords] },
+              properties: {
+                id: r._id.toString() + '_roof',
+                roomId: r._id.toString(),
+                name: r.name,
+                type: 'room',
+                category: r.type,
+                part: 'roof',
+                floorId: r.floorId,
+                level: level,
+                color: '#f8fafc',
+                min_height: wallH - 0.05,
+                height: roofH
+              }
+            });
+
+            // 5. Raised Perimeter Parapet Lip with subtle category coping trim (2.75m -> 2.90m)
+            features.push({
+              type: 'Feature',
+              geometry: { type: 'Polygon', coordinates: [coords] },
+              properties: {
+                id: r._id.toString() + '_parapet',
+                roomId: r._id.toString(),
+                name: r.name,
+                type: 'room',
+                category: r.type,
+                part: 'parapet',
+                floorId: r.floorId,
+                level: level,
+                color: parapetColor,
+                min_height: wallH,
+                height: parapetH
+              }
+            });
+
+            // 6. Corridor Door Portals (Illuminated Frame, Recessed Leaf, Threshold Strip)
+            const rPaths = pathsByFloor[floorIdStr] || [];
+            const doorSet = generateDoorPortals(coords, rPaths, 1.2, 0.22);
+            if (doorSet) {
+              // 6a. Outer Illuminated Door Frame / Lintel (Amber Gold #f59e0b)
+              features.push({
+                type: 'Feature',
+                geometry: { type: 'Polygon', coordinates: doorSet.frame },
+                properties: {
+                  id: r._id.toString() + '_door_frame',
+                  roomId: r._id.toString(),
+                  name: r.name,
+                  type: 'room',
+                  category: r.type,
+                  part: 'door_frame',
+                  floorId: r.floorId,
+                  level: level,
+                  color: '#f59e0b',
+                  min_height: minH,
+                  height: minH + 2.25
+                }
+              });
+              // 6b. Recessed Door Leaf / Opening (#0f172a / Deep Slate)
+              features.push({
+                type: 'Feature',
+                geometry: { type: 'Polygon', coordinates: doorSet.leaf },
+                properties: {
+                  id: r._id.toString() + '_door',
+                  roomId: r._id.toString(),
+                  name: r.name,
+                  type: 'room',
+                  category: r.type,
+                  part: 'door',
+                  floorId: r.floorId,
+                  level: level,
+                  color: '#0f172a',
+                  min_height: minH,
+                  height: minH + 2.15
+                }
+              });
+              // 6c. Glowing Door Threshold Strip (#fbbf24)
+              features.push({
+                type: 'Feature',
+                geometry: { type: 'Polygon', coordinates: doorSet.threshold },
+                properties: {
+                  id: r._id.toString() + '_door_threshold',
+                  roomId: r._id.toString(),
+                  name: r.name,
+                  type: 'room',
+                  category: r.type,
+                  part: 'door_threshold',
+                  floorId: r.floorId,
+                  level: level,
+                  color: '#fbbf24',
+                  min_height: minH,
+                  height: minH + 0.08
+                }
+              });
+              // 6d. Physical 3D Doorplate Plaque (Signage Mesh Above Lintel)
+              features.push({
+                type: 'Feature',
+                geometry: { type: 'Polygon', coordinates: doorSet.doorplate },
+                properties: {
+                  id: r._id.toString() + '_doorplate',
+                  roomId: r._id.toString(),
+                  name: r.name,
+                  type: 'room',
+                  category: r.type,
+                  part: 'doorplate',
+                  floorId: r.floorId,
+                  level: level,
+                  color: '#0f172a',
+                  min_height: minH + 2.22,
+                  height: minH + 2.50,
+                  // Signage anchor & orientation vectors:
+                  doorLng: doorSet.doorplateAnchor.lng,
+                  doorLat: doorSet.doorplateAnchor.lat,
+                  doorElev: minH + 2.36,
+                  ux: doorSet.doorplateAnchor.ux,
+                  uy: doorSet.doorplateAnchor.uy,
+                  nx: doorSet.doorplateAnchor.nx,
+                  ny: doorSet.doorplateAnchor.ny,
+                  ptA: doorSet.doorplateAnchor.ptA,
+                  ptB: doorSet.doorplateAnchor.ptB
+                }
+              });
+            }
           }
         }
       }

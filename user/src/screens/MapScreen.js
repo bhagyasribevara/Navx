@@ -8,14 +8,16 @@ import { WebView } from "react-native-webview";
 import { ThemeContext } from "../context/ThemeContext";
 import { useGeofence } from "../context/GeofenceContext";
 import AmbientFloorDetector from "../sensors/AmbientFloorDetector";
+import { PositionEngine } from "../positioning";
 import { getMapData, getCampuses, getGeoJSONMapData, SOCKET_URL, getCachedConfigValue } from "../api";
 import { io } from "socket.io-client";
 import { SHADOWS, RADIUS, ROOM_COLORS } from "../theme/designSystem";
 import * as Location from 'expo-location';
+import { Magnetometer } from 'expo-sensors';
 
 const { height: SH, width: SW } = Dimensions.get('window');
 
-function buildCampusMapHTML(geoJSONData, centerCoords, mapboxUrl, mapMode = '3D') {
+function buildCampusMapHTML(geoJSONData, centerCoords, mapboxUrl, mapMode = '3D', initialPos = null) {
   const center = centerCoords ? [centerCoords.x, centerCoords.y] : [18.4665, 83.6629];
   const initialPitch = mapMode === '2D' ? 0 : 60;
   const initialBearing = mapMode === '2D' ? 0 : -17.6;
@@ -32,8 +34,82 @@ function buildCampusMapHTML(geoJSONData, centerCoords, mapboxUrl, mapMode = '3D'
   .mapboxgl-popup { max-width: 200px; }
   .mapboxgl-popup-content { background: rgba(10, 14, 23, 0.8); color: white; padding: 4px 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.2); font-size: 11px; font-weight: bold; }
   .mapboxgl-popup-tip { border-top-color: rgba(10, 14, 23, 0.8); }
+  .user-marker {
+    position: relative; width: 60px; height: 60px; display: flex; align-items: center; justify-content: center; pointer-events: none;
+  }
+  @keyframes pulseGlow {
+    0% { transform: scale(0.85); opacity: 0.8; }
+    50% { transform: scale(1.4); opacity: 0.3; }
+    100% { transform: scale(0.85); opacity: 0.8; }
+  }
+  .pulse {
+    position: absolute; width: 100%; height: 100%; background: radial-gradient(circle, rgba(139, 92, 246, 0.45) 0%, rgba(139, 92, 246, 0) 65%); border-radius: 50%; animation: pulseGlow 2.5s infinite;
+  }
+  .puck {
+    position: relative; width: 28px; height: 28px; background: linear-gradient(135deg, #A855F7, #6D28D9); border-radius: 50%; box-shadow: 0 4px 14px rgba(109, 40, 217, 0.6); display: flex; align-items: center; justify-content: center; border: 2px solid rgba(255,255,255,0.85); transition: transform 0.15s ease-out;
+  }
+  .floor-badge {
+    position: fixed;
+    top: 0;
+    left: 0;
+    transform: translate(-50%, -100%);
+    background: rgba(15, 23, 42, 0.94);
+    color: #c084fc;
+    border: 1px solid rgba(168, 85, 247, 0.6);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45), 0 0 10px rgba(168, 85, 247, 0.4);
+    padding: 3px 9px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 700;
+    white-space: nowrap;
+    pointer-events: none;
+    letter-spacing: 0.3px;
+    display: none;
+    align-items: center;
+    gap: 3px;
+    z-index: 9999;
+  }
+  .floor-badge::after {
+    content: '';
+    position: absolute;
+    bottom: -4px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 0;
+    height: 0;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 4px solid rgba(15, 23, 42, 0.94);
+  }
+  .doorplate-sign {
+    position: absolute;
+    top: 0;
+    left: 0;
+    transform-origin: 50% 50%;
+    pointer-events: auto;
+    cursor: pointer;
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+    border: 1px solid #f59e0b;
+    border-top: 1.5px solid #fbbf24;
+    color: #f8fafc;
+    padding: 1px 6px;
+    border-radius: 2.5px;
+    font-size: 9.5px;
+    font-weight: 800;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    display: none;
+    white-space: nowrap;
+    user-select: none;
+    will-change: transform, opacity;
+  }
+  .doorplate-sign:active {
+    background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+    border-color: #fbbf24;
+  }
 </style>
-</head><body><div id="map"></div>
+</head><body><div id="map"></div><div id="user-floor-badge" class="floor-badge"></div><div id="doorplate-labels" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;overflow:hidden;z-index:9;"></div>
 <script>
 // Extract mapbox token from the url
 const tokenMatch = '${mapboxUrl}'.match(/access_token=([^&]+)/);
@@ -50,7 +126,7 @@ var map = new mapboxgl.Map({
   maxZoom: 25, // Enable deep zooming into blocks, rooms, and stairs
   pitch: ${initialPitch},
   minPitch: 0,
-  maxPitch: 85, // Enable full 3D pitch and tilt
+  maxPitch: 75, // Clamped to prevent camera frustum clipping on deep zoom
   bearing: ${initialBearing},
   antialias: true,
   dragRotate: true,
@@ -79,8 +155,16 @@ window.setMapMode = function(mode) {
 
   // 3D layers: visible in 3D, hidden in 2D
   var layers3D = [
-    'campus-blocks', 'campus-rooms', '3d-buildings',
-    'user-shadow-layer', 'user-stem-layer', 'user-disc-layer', 'user-glow-layer'
+    'campus-blocks',
+    'campus-rooms',
+    'campus-rooms-corridor',
+    'campus-rooms-base',
+    'campus-rooms-upper',
+    'campus-rooms-partition',
+    'campus-rooms-roof',
+    'campus-rooms-parapet',
+    'campus-rooms-door',
+    '3d-buildings'
   ];
   layers3D.forEach(function(id) {
     if (map.getLayer(id)) {
@@ -90,16 +174,19 @@ window.setMapMode = function(mode) {
 
   // 2D layers: visible in 2D, hidden in 3D
   var layers2D = [
-    'campus-2d-fill', 'campus-2d-line', 'campus-2d-paths', 'campus-2d-nodes', 'campus-labels'
+    'campus-2d-fill', 'campus-2d-line', 'campus-labels'
   ];
   layers2D.forEach(function(id) {
     if (map.getLayer(id)) {
       map.setLayoutProperty(id, 'visibility', is2D ? 'visible' : 'none');
     }
   });
+  if (typeof updateDoorplateSignage === 'function') updateDoorplateSignage();
 };
 
 map.on('load', () => {
+  setupMarkerLayers();
+
   // Add 3D buildings layer from Mapbox Streets
   if (!map.getLayer('3d-buildings')) {
     map.addLayer({
@@ -140,7 +227,8 @@ window.renderGeoJSONLayers = function(data, floorId) {
     if (f.properties.category === 'parking' || (f.properties.name && f.properties.name.toLowerCase().includes('parking'))) return false;
     if (f.properties.type === 'room') {
       if (!floorId) return false;
-      if (f.properties.floorId !== floorId) return false;
+      var rFloorId = (f.properties.floorId || '').toString();
+      if (rFloorId !== floorId.toString()) return false;
     }
     return true;
   });
@@ -152,6 +240,64 @@ window.renderGeoJSONLayers = function(data, floorId) {
   } else {
     map.addSource('campus-data', { type: 'geojson', data: polygonData });
   }
+
+  // ── Extract Doorplate Anchors for Physical In-World Room Signage ──
+  var doorplateMap = {};
+  polyFeatures.forEach(function(f) {
+    if (!f.properties) return;
+    var props = f.properties;
+    var rid = (props.roomId || props.id || props.name || '').toString();
+    if (!rid) return;
+
+    if (props.part === 'doorplate' && props.doorLng && props.doorLat) {
+      doorplateMap[rid] = {
+        id: rid,
+        name: props.name || 'Room',
+        lng: props.doorLng,
+        lat: props.doorLat,
+        elevation: props.doorElev !== undefined ? props.doorElev : (props.min_height || 2.36),
+        ux: props.ux || 1,
+        uy: props.uy || 0,
+        nx: props.nx !== undefined ? props.nx : 0,
+        ny: props.ny !== undefined ? props.ny : 1,
+        ptA: props.ptA || [props.doorLng - 0.000004, props.doorLat],
+        ptB: props.ptB || [props.doorLng + 0.000004, props.doorLat],
+        floorId: props.floorId,
+        level: props.level
+      };
+    } else if (props.type === 'room' && props.name && props.category !== 'corridor' && !doorplateMap[rid]) {
+      if (f.geometry && f.geometry.coordinates && f.geometry.coordinates[0]) {
+        var ring = f.geometry.coordinates[0];
+        if (ring.length >= 4) {
+          var p1 = ring[0], p2 = ring[1];
+          var midLng = (p1[0] + p2[0]) / 2;
+          var midLat = (p1[1] + p2[1]) / 2;
+          var lvl = props.level !== undefined ? Number(props.level) : 0;
+          var elev = (lvl * 3.5) + 2.36;
+          var dx = p2[0] - p1[0], dy = p2[1] - p1[1];
+          var dlen = Math.hypot(dx, dy) || 1e-6;
+          var uX = dx / dlen, uY = dy / dlen;
+          doorplateMap[rid] = {
+            id: rid,
+            name: props.name,
+            lng: midLng,
+            lat: midLat,
+            elevation: elev,
+            ux: uX,
+            uy: uY,
+            nx: -uY,
+            ny: uX,
+            ptA: [midLng - uX * 0.000004, midLat - uY * 0.000004],
+            ptB: [midLng + uX * 0.000004, midLat + uY * 0.000004],
+            floorId: props.floorId,
+            level: props.level
+          };
+        }
+      }
+    }
+  });
+  window._activeDoorplates = Object.values(doorplateMap);
+  if (typeof updateDoorplateSignage === 'function') updateDoorplateSignage();
 
   // ── 1. FLAT 2D FILL LAYER ──
   if (!map.getLayer('campus-2d-fill')) {
@@ -190,13 +336,138 @@ window.renderGeoJSONLayers = function(data, floorId) {
     });
   }
 
-  // ── 5B. 3D EXTRUSION LAYER FOR ROOMS (OPAQUE, DRAW FIRST) ──
+  // ── 5B. DIGITAL TWIN: CORRIDORS (NEUTRAL POLISHED CONCRETE WALKWAYS) ──
+  if (!map.getLayer('campus-rooms-corridor')) {
+    map.addLayer({
+      'id': 'campus-rooms-corridor',
+      'type': 'fill-extrusion',
+      'source': 'campus-data',
+      'filter': ['all', ['==', ['get', 'type'], 'room'], ['==', ['get', 'part'], 'corridor']],
+      'layout': { 'visibility': is2D ? 'none' : 'visible' },
+      'paint': {
+        'fill-extrusion-color': ['coalesce', ['get', 'color'], '#cbd5e1'],
+        'fill-extrusion-height': ['coalesce', ['get', 'height'], 0.05],
+        'fill-extrusion-base': ['coalesce', ['get', 'min_height'], 0],
+        'fill-extrusion-opacity': 0.95
+      }
+    }, '3d-buildings');
+  }
+
+  // ── 5C. DIGITAL TWIN: DADO / BASEBOARD TIER (minH to minH + 0.80m) ──
+  if (!map.getLayer('campus-rooms-base')) {
+    map.addLayer({
+      'id': 'campus-rooms-base',
+      'type': 'fill-extrusion',
+      'source': 'campus-data',
+      'filter': ['all', ['==', ['get', 'type'], 'room'], ['==', ['get', 'part'], 'base']],
+      'layout': { 'visibility': is2D ? 'none' : 'visible' },
+      'paint': {
+        'fill-extrusion-color': ['coalesce', ['get', 'color'], '#1e293b'],
+        'fill-extrusion-height': ['coalesce', ['get', 'height'], 0.80],
+        'fill-extrusion-base': ['coalesce', ['get', 'min_height'], 0],
+        'fill-extrusion-opacity': 0.95
+      }
+    }, '3d-buildings');
+  }
+
+  // ── 5D. DIGITAL TWIN: PLASTER WALL BODY (minH + 0.80m to minH + 2.75m) ──
+  if (!map.getLayer('campus-rooms-upper')) {
+    map.addLayer({
+      'id': 'campus-rooms-upper',
+      'type': 'fill-extrusion',
+      'source': 'campus-data',
+      'filter': ['all', ['==', ['get', 'type'], 'room'], ['==', ['get', 'part'], 'body']],
+      'layout': { 'visibility': is2D ? 'none' : 'visible' },
+      'paint': {
+        'fill-extrusion-color': ['coalesce', ['get', 'color'], '#e2e8f0'],
+        'fill-extrusion-height': ['coalesce', ['get', 'height'], 2.75],
+        'fill-extrusion-base': ['coalesce', ['get', 'min_height'], 0.80],
+        'fill-extrusion-opacity': 0.95
+      }
+    }, '3d-buildings');
+  }
+
+  // ── 5E. DIGITAL TWIN: 3D PARTITION DIVIDER WALLS (minH to minH + 2.92m) ──
+  // Creates crisp structural divider seams between adjacent rooms
+  if (!map.getLayer('campus-rooms-partition')) {
+    map.addLayer({
+      'id': 'campus-rooms-partition',
+      'type': 'fill-extrusion',
+      'source': 'campus-data',
+      'filter': ['all', ['==', ['get', 'type'], 'room'], ['==', ['get', 'part'], 'partition']],
+      'layout': { 'visibility': is2D ? 'none' : 'visible' },
+      'paint': {
+        'fill-extrusion-color': ['coalesce', ['get', 'color'], '#1e293b'],
+        'fill-extrusion-height': ['coalesce', ['get', 'height'], 2.92],
+        'fill-extrusion-base': ['coalesce', ['get', 'min_height'], 0],
+        'fill-extrusion-opacity': 1.0
+      }
+    }, '3d-buildings');
+  }
+
+  // ── 5F. DIGITAL TWIN: RECESSED INSET CEILING / ROOF TRAY (inset 0.18m, 2.70m -> 2.75m) ──
+  // Sunken ceiling plane creating natural architectural shadow creases against perimeter walls
+  if (!map.getLayer('campus-rooms-roof')) {
+    map.addLayer({
+      'id': 'campus-rooms-roof',
+      'type': 'fill-extrusion',
+      'source': 'campus-data',
+      'filter': ['all', ['==', ['get', 'type'], 'room'], ['==', ['get', 'part'], 'roof']],
+      'layout': { 'visibility': is2D ? 'none' : 'visible' },
+      'paint': {
+        'fill-extrusion-color': ['coalesce', ['get', 'color'], '#f8fafc'],
+        'fill-extrusion-height': ['coalesce', ['get', 'height'], 2.75],
+        'fill-extrusion-base': ['coalesce', ['get', 'min_height'], 2.70],
+        'fill-extrusion-opacity': 0.98
+      }
+    }, '3d-buildings');
+  }
+
+  // ── 5G. DIGITAL TWIN: RAISED PARAPET LIP & CATEGORY COPING TRIM (minH + 2.75m to minH + 2.90m) ──
+  if (!map.getLayer('campus-rooms-parapet')) {
+    map.addLayer({
+      'id': 'campus-rooms-parapet',
+      'type': 'fill-extrusion',
+      'source': 'campus-data',
+      'filter': ['all', ['==', ['get', 'type'], 'room'], ['==', ['get', 'part'], 'parapet']],
+      'layout': { 'visibility': is2D ? 'none' : 'visible' },
+      'paint': {
+        'fill-extrusion-color': ['coalesce', ['get', 'color'], '#64748b'],
+        'fill-extrusion-height': ['coalesce', ['get', 'height'], 2.90],
+        'fill-extrusion-base': ['coalesce', ['get', 'min_height'], 2.75],
+        'fill-extrusion-opacity': 1.0
+      }
+    }, '3d-buildings');
+  }
+
+  // ── 5H. DIGITAL TWIN: CORRIDOR DOOR PORTALS (ILLUMINATED FRAMES & ENTRANCES) ──
+  if (!map.getLayer('campus-rooms-door')) {
+    map.addLayer({
+      'id': 'campus-rooms-door',
+      'type': 'fill-extrusion',
+      'source': 'campus-data',
+      'filter': ['all', ['==', ['get', 'type'], 'room'], ['any', ['==', ['get', 'part'], 'door'], ['==', ['get', 'part'], 'door_frame'], ['==', ['get', 'part'], 'door_threshold'], ['==', ['get', 'part'], 'doorplate']]],
+      'layout': { 'visibility': is2D ? 'none' : 'visible' },
+      'paint': {
+        'fill-extrusion-color': ['coalesce', ['get', 'color'], '#f59e0b'],
+        'fill-extrusion-height': ['coalesce', ['get', 'height'], 2.50],
+        'fill-extrusion-base': ['coalesce', ['get', 'min_height'], 0],
+        'fill-extrusion-opacity': 1.0
+      }
+    }, '3d-buildings');
+  }
+
+  // ── 5I. 3D EXTRUSION LAYER FOR ROOMS / STAIRS (FALLBACK & STAIRCASES) ──
   if (!map.getLayer('campus-rooms')) {
     map.addLayer({
       'id': 'campus-rooms',
       'type': 'fill-extrusion',
       'source': 'campus-data',
-      'filter': ['!=', ['get', 'type'], 'block'],
+      'filter': [
+        'any',
+        ['==', ['get', 'type'], 'stairs'],
+        ['all', ['==', ['get', 'type'], 'room'], ['!has', 'part']]
+      ],
       'layout': { 'visibility': is2D ? 'none' : 'visible' },
       'paint': {
         'fill-extrusion-color': [
@@ -211,7 +482,7 @@ window.renderGeoJSONLayers = function(data, floorId) {
     }, '3d-buildings');
   }
 
-  // ── 5A. 3D EXTRUSION LAYER FOR BLOCKS (TRANSLUCENT, DRAW AFTER ROOMS) ──
+  // ── 5A. 3D EXTRUSION LAYER FOR BLOCKS (TRANSLUCENT OUTER GLASS ENVELOPE) ──
   if (!map.getLayer('campus-blocks')) {
     map.addLayer({
       'id': 'campus-blocks',
@@ -220,10 +491,10 @@ window.renderGeoJSONLayers = function(data, floorId) {
       'filter': ['==', ['get', 'type'], 'block'],
       'layout': { 'visibility': is2D ? 'none' : 'visible' },
       'paint': {
-        'fill-extrusion-color': '#1f2937',
+        'fill-extrusion-color': '#1e293b',
         'fill-extrusion-height': ['coalesce', ['get', 'height'], 6],
         'fill-extrusion-base': ['coalesce', ['get', 'min_height'], 0],
-        'fill-extrusion-opacity': 0.6
+        'fill-extrusion-opacity': 0.22
       }
     }, '3d-buildings');
   }
@@ -249,183 +520,444 @@ window.renderGeoJSONLayers = function(data, floorId) {
     });
   }
 
+  // ── 7. 3D DIGITAL TWIN ROOM BILLBOARD LABELS ──
+  if (!map.getLayer('campus-room-labels')) {
+    map.addLayer({
+      'id': 'campus-room-labels',
+      'type': 'symbol',
+      'source': 'campus-data',
+      'filter': [
+        'all',
+        ['==', ['get', 'type'], 'room'],
+        ['==', ['get', 'part'], 'parapet'],
+        ['!=', ['get', 'category'], 'corridor'],
+        ['has', 'name']
+      ],
+      'layout': {
+        'text-field': ['get', 'name'],
+        'text-size': 11,
+        'text-max-width': 8,
+        'text-anchor': 'center',
+        'text-offset': [0, 0],
+        'visibility': 'none' // Managed via high-precision 3D projected HTML badges to prevent ground draping
+      },
+      'paint': {
+        'text-color': '#ffffff',
+        'text-halo-color': 'rgba(15, 23, 42, 0.95)',
+        'text-halo-width': 2
+      }
+    });
+  }
+
+  // ── 8. RAYCASTING & ROOM INTERACTION HANDLERS ──
+  if (!window._roomClickAttached) {
+    window._roomClickAttached = true;
+    var clickLayers = ['campus-rooms-roof', 'campus-rooms-upper', 'campus-rooms-base', 'campus-rooms-parapet', 'campus-rooms'];
+    clickLayers.forEach(function(lyrId) {
+      if (map.getLayer(lyrId)) {
+        map.on('click', lyrId, function(e) {
+          if (!e.features || !e.features.length) return;
+          var p = e.features[0].properties || {};
+          if (window.ReactNativeWebView) {
+            window.ReactNativeWebView.postMessage(JSON.stringify({
+              type: 'ROOM_CLICK',
+              roomId: p.roomId || p.id,
+              name: p.name,
+              category: p.category,
+              department: p.department,
+              capacity: p.capacity,
+              floorId: p.floorId,
+              level: p.level
+            }));
+          }
+        });
+        map.on('mouseenter', lyrId, function() {
+          map.getCanvas().style.cursor = 'pointer';
+        });
+        map.on('mouseleave', lyrId, function() {
+          map.getCanvas().style.cursor = '';
+        });
+      }
+    });
+  }
+
   // Ensure visibilities match current state
   window.setMapMode(currentMapMode);
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 3D USER POSITION MARKER — Mapbox GL JS fill-extrusion based.
-// Shows the user as a glowing disc floating at their ACTUAL floor altitude.
+// USER POSITION & DIRECTION ARROW MARKER — Native 3D WebGL Extrusions
+// Signature violet circular puck with real-time rotating white navigation arrow
+// elevated directly to the floor slab height and synchronized in 3D perspective.
 // ─────────────────────────────────────────────────────────────────────────────
-function generateCirclePolygon(lng, lat, radiusMeters, numPts) {
-  var pts = numPts || 20;
+function generateCirclePolygon(lng, lat, radiusMeters, numPoints) {
+  numPoints = numPoints || 24;
+  var dLat = radiusMeters / 111139;
+  var dLng = radiusMeters / (111139 * Math.cos(lat * Math.PI / 180));
   var coords = [];
-  var earthR = 6371000;
-  for (var i = 0; i <= pts; i++) {
-    var angle = (i / pts) * 2 * Math.PI;
-    var dx = radiusMeters * Math.cos(angle);
-    var dy = radiusMeters * Math.sin(angle);
-    var dLat = dy / earthR * (180 / Math.PI);
-    var dLng = dx / (earthR * Math.cos(lat * Math.PI / 180)) * (180 / Math.PI);
-    coords.push([lng + dLng, lat + dLat]);
+  for (var i = 0; i <= numPoints; i++) {
+    var theta = (i / numPoints) * 2 * Math.PI;
+    coords.push([lng + dLng * Math.cos(theta), lat + dLat * Math.sin(theta)]);
   }
-  return coords;
+  return [coords];
 }
 
-function initUser3DMarker(map, lng, lat, elevation) {
-  var elev = elevation || 0;
-  var discR = 2.5;  // disc radius meters
-  var stemR = 0.6;  // stem radius meters
-  var discCoords = generateCirclePolygon(lng, lat, discR, 20);
-  var stemCoords = generateCirclePolygon(lng, lat, stemR, 12);
+function generateArrowPolygon(lng, lat, headingDeg, lengthMeters, widthMeters) {
+  lengthMeters = lengthMeters || 2.2;
+  widthMeters = widthMeters || 1.4;
+  var rad = ((headingDeg || 0) * Math.PI) / 180;
+  var forwardY = Math.cos(rad);
+  var forwardX = Math.sin(rad);
+  var rightX = Math.cos(rad);
+  var rightY = -Math.sin(rad);
 
-  // ── Ground shadow circle (always at z=0, subtle) ──
-  var shadowCoords = generateCirclePolygon(lng, lat, discR * 1.4, 20);
-  if (!map.getSource('user-shadow')) {
-    map.addSource('user-shadow', {
+  var mToLat = 1 / 111139;
+  var mToLng = 1 / (111139 * Math.cos(lat * Math.PI / 180));
+
+  var tipDist = lengthMeters * 0.6;
+  var backDist = lengthMeters * 0.4;
+  var notchDist = lengthMeters * 0.15;
+  var halfW = widthMeters * 0.5;
+
+  var pTip = [lng + (forwardX * tipDist) * mToLng, lat + (forwardY * tipDist) * mToLat];
+  var pRight = [lng + (-forwardX * backDist + rightX * halfW) * mToLng, lat + (-forwardY * backDist + rightY * halfW) * mToLat];
+  var pNotch = [lng + (-forwardX * notchDist) * mToLng, lat + (-forwardY * notchDist) * mToLat];
+  var pLeft = [lng + (-forwardX * backDist - rightX * halfW) * mToLng, lat + (-forwardY * backDist - rightY * halfW) * mToLat];
+
+  return [[pTip, pRight, pNotch, pLeft, pTip]];
+}
+
+function setupMarkerLayers() {
+  if (!map) return;
+  if (!map.getSource('user-marker-source')) {
+    map.addSource('user-marker-source', {
       type: 'geojson',
-      data: { type: 'Feature', geometry: { type: 'Polygon', coordinates: [shadowCoords] }, properties: { base: 0, top: 0.05 } }
+      data: { type: 'FeatureCollection', features: [] }
     });
+  }
+  if (!map.getLayer('user-marker-glow')) {
     map.addLayer({
-      id: 'user-shadow-layer',
-      type: 'fill-extrusion',
-      source: 'user-shadow',
-      paint: {
-        'fill-extrusion-color': '#7c3aed',
-        'fill-extrusion-base': 0,
-        'fill-extrusion-height': 0.05,
+      'id': 'user-marker-glow',
+      'type': 'fill-extrusion',
+      'source': 'user-marker-source',
+      'filter': ['==', ['get', 'part'], 'glow'],
+      'paint': {
+        'fill-extrusion-color': '#a855f7',
+        'fill-extrusion-height': ['get', 'height'],
+        'fill-extrusion-base': ['get', 'min_height'],
         'fill-extrusion-opacity': 0.35
       }
     });
   }
-
-  // ── Vertical stem: thin pillar from ground to disc height ──
-  if (!map.getSource('user-stem')) {
-    map.addSource('user-stem', {
-      type: 'geojson',
-      data: { type: 'Feature', geometry: { type: 'Polygon', coordinates: [stemCoords] }, properties: { base: 0, top: elev } }
-    });
+  if (!map.getLayer('user-marker-puck')) {
     map.addLayer({
-      id: 'user-stem-layer',
-      type: 'fill-extrusion',
-      source: 'user-stem',
-      paint: {
-        'fill-extrusion-color': '#a78bfa',
-        'fill-extrusion-base': ['get', 'base'],
-        'fill-extrusion-height': ['get', 'top'],
-        'fill-extrusion-opacity': 0.7
+      'id': 'user-marker-puck',
+      'type': 'fill-extrusion',
+      'source': 'user-marker-source',
+      'filter': ['==', ['get', 'part'], 'puck'],
+      'paint': {
+        'fill-extrusion-color': '#7c3aed',
+        'fill-extrusion-height': ['get', 'height'],
+        'fill-extrusion-base': ['get', 'min_height'],
+        'fill-extrusion-opacity': 0.95
       }
     });
   }
-
-  // ── User disc: glowing filled circle at their floor altitude ──
-  if (!map.getSource('user-disc')) {
-    map.addSource('user-disc', {
-      type: 'geojson',
-      data: { type: 'Feature', geometry: { type: 'Polygon', coordinates: [discCoords] }, properties: { base: elev, top: elev + 0.6 } }
-    });
+  if (!map.getLayer('user-marker-arrow')) {
     map.addLayer({
-      id: 'user-disc-layer',
-      type: 'fill-extrusion',
-      source: 'user-disc',
-      paint: {
-        'fill-extrusion-color': '#8b5cf6',
-        'fill-extrusion-base': ['get', 'base'],
-        'fill-extrusion-height': ['get', 'top'],
+      'id': 'user-marker-arrow',
+      'type': 'fill-extrusion',
+      'source': 'user-marker-source',
+      'filter': ['==', ['get', 'part'], 'arrow'],
+      'paint': {
+        'fill-extrusion-color': '#ffffff',
+        'fill-extrusion-height': ['get', 'height'],
+        'fill-extrusion-base': ['get', 'min_height'],
         'fill-extrusion-opacity': 1.0
       }
     });
   }
+}
 
-  // ── Outer glow ring: slightly larger, transparent disc ──
-  if (!map.getSource('user-glow')) {
-    var glowCoords = generateCirclePolygon(lng, lat, discR * 1.6, 20);
-    map.addSource('user-glow', {
-      type: 'geojson',
-      data: { type: 'Feature', geometry: { type: 'Polygon', coordinates: [glowCoords] }, properties: { base: elev - 0.1, top: elev + 0.15 } }
-    });
-    map.addLayer({
-      id: 'user-glow-layer',
-      type: 'fill-extrusion',
-      source: 'user-glow',
-      paint: {
-        'fill-extrusion-color': '#c4b5fd',
-        'fill-extrusion-base': ['get', 'base'],
-        'fill-extrusion-height': ['get', 'top'],
-        'fill-extrusion-opacity': 0.4
+function updateBadgePosition() {
+  var badge = document.getElementById('user-floor-badge');
+  if (!badge || !window._lastUserPos) return;
+  var fl = window._lastUserFloorLevel || 0;
+  // If Ground Floor (0), hide floating badge! Only show for elevated floors (Floor 1, Floor 2, etc.)
+  if (fl <= 0) {
+    badge.style.display = 'none';
+    return;
+  }
+  var lng = window._lastUserPos.lng;
+  var lat = window._lastUserPos.lat;
+  var effElev = window._lastUserElev !== undefined ? window._lastUserElev : (fl * 3.5 + 0.54);
+  var screenPos = null;
+
+  if (map && map.transform && map.transform.pixelMatrix && typeof mapboxgl.MercatorCoordinate !== 'undefined') {
+    try {
+      var coord = mapboxgl.MercatorCoordinate.fromLngLat([lng, lat], effElev + 1.2);
+      var m = map.transform.pixelMatrix;
+      var x = coord.x, y = coord.y, z = coord.z;
+      var clipW = m[3] * x + m[7] * y + m[11] * z + m[15];
+      if (clipW > 0) {
+        screenPos = [
+          (m[0] * x + m[4] * y + m[8] * z + m[12]) / clipW,
+          (m[1] * x + m[5] * y + m[9] * z + m[13]) / clipW
+        ];
       }
-    });
+    } catch(e) {}
   }
 
-  // Animate glow pulsing
-  var glowOpacity = 0.4;
-  var glowDir = -1;
-  setInterval(function() {
-    if (!map.getLayer('user-glow-layer')) return;
-    glowOpacity += glowDir * 0.04;
-    if (glowOpacity <= 0.15) { glowOpacity = 0.15; glowDir = 1; }
-    if (glowOpacity >= 0.55) { glowOpacity = 0.55; glowDir = -1; }
-    map.setPaintProperty('user-glow-layer', 'fill-extrusion-opacity', glowOpacity);
-  }, 80);
-}
-
-function updateUser3DMarker(map, lng, lat, elevation) {
-  var elev = Math.max(0, elevation || 0);
-  var discR = 2.5;
-  var stemR = 0.6;
-
-  var discCoords = generateCirclePolygon(lng, lat, discR, 20);
-  var stemCoords = generateCirclePolygon(lng, lat, stemR, 12);
-  var shadowCoords = generateCirclePolygon(lng, lat, discR * 1.4, 20);
-  var glowCoords = generateCirclePolygon(lng, lat, discR * 1.6, 20);
-
-  if (map.getSource('user-shadow')) {
-    map.getSource('user-shadow').setData({
-      type: 'Feature',
-      geometry: { type: 'Polygon', coordinates: [shadowCoords] },
-      properties: { base: 0, top: 0.05 }
-    });
+  if (!screenPos && map) {
+    var p2d = map.project([lng, lat]);
+    if (p2d) {
+      screenPos = [p2d.x, p2d.y - 20];
+    }
   }
 
-  if (map.getSource('user-stem')) {
-    map.getSource('user-stem').setData({
-      type: 'Feature',
-      geometry: { type: 'Polygon', coordinates: [stemCoords] },
-      properties: { base: 0, top: Math.max(0.1, elev) }
-    });
-  }
-
-  if (map.getSource('user-disc')) {
-    map.getSource('user-disc').setData({
-      type: 'Feature',
-      geometry: { type: 'Polygon', coordinates: [discCoords] },
-      properties: { base: elev, top: elev + 0.6 }
-    });
-  }
-
-  if (map.getSource('user-glow')) {
-    map.getSource('user-glow').setData({
-      type: 'Feature',
-      geometry: { type: 'Polygon', coordinates: [glowCoords] },
-      properties: { base: elev - 0.1, top: elev + 0.15 }
-    });
+  if (screenPos) {
+    badge.style.left = Math.round(screenPos[0]) + 'px';
+    badge.style.top = Math.round(screenPos[1] - 14) + 'px';
+    badge.textContent = window._lastUserFloorName || ('Floor ' + fl);
+    badge.style.display = 'flex';
+  } else {
+    badge.style.display = 'none';
   }
 }
 
-window._user3DMarkerInitialized = false;
+window._activeDoorplates = [];
 
-window.updateUserPos = function(lat, lng, heading, elevation) {
-  var elev = Math.max(0, elevation || 0);
+function updateDoorplateSignage() {
+  var container = document.getElementById('doorplate-labels');
+  if (!container || !map) return;
+  var zoom = map.getZoom();
+  // Distant View: Zoom < 17.8: completely hide room nameplates to eliminate clutter
+  if (zoom < 17.8 || !window._activeDoorplates || window._activeDoorplates.length === 0) {
+    container.style.display = 'none';
+    return;
+  }
+  container.style.display = 'block';
 
-  if (!window._user3DMarkerInitialized && map.isStyleLoaded()) {
-    initUser3DMarker(map, lng, lat, elev);
-    window._user3DMarkerInitialized = true;
-  } else if (window._user3DMarkerInitialized) {
-    updateUser3DMarker(map, lng, lat, elev);
+  var is2D = (currentMapMode === '2D');
+  var m = map.transform && map.transform.pixelMatrix;
+  var hasMercator = (typeof mapboxgl.MercatorCoordinate !== 'undefined');
+
+  // Dynamic Visibility & Perspective LOD:
+  // 17.8 to 19.0: Smooth fade-in
+  // >= 19.0: Full opacity and natural distance scaling
+  var baseOpacity = zoom >= 19.0 ? 1.0 : Math.max(0.05, (zoom - 17.8) / 1.2);
+  var scale = Math.min(1.25, Math.max(0.60, Math.pow(1.5, zoom - 19.0)));
+
+  // Directional Culling: calculate camera horizontal vector
+  var bearingRad = (map.getBearing() * Math.PI) / 180;
+  var camX = -Math.sin(bearingRad);
+  var camY = -Math.cos(bearingRad);
+
+  function projectPoint(pt, elev) {
+    if (m && hasMercator && !is2D) {
+      try {
+        var coord = mapboxgl.MercatorCoordinate.fromLngLat([pt[0], pt[1]], elev);
+        var x = coord.x, y = coord.y, z = coord.z;
+        var clipW = m[3] * x + m[7] * y + m[11] * z + m[15];
+        if (clipW > 0) {
+          return [
+            (m[0] * x + m[4] * y + m[8] * z + m[12]) / clipW,
+            (m[1] * x + m[5] * y + m[9] * z + m[13]) / clipW
+          ];
+        }
+      } catch(e) {}
+    }
+    if (map.project) {
+      var p2d = map.project([pt[0], pt[1]]);
+      if (p2d) return [p2d.x, p2d.y];
+    }
+    return null;
   }
 
-  // Assuming you might use heading later, leaving it here
+  var existingIds = {};
+  for (var i = 0; i < window._activeDoorplates.length; i++) {
+    var r = window._activeDoorplates[i];
+    existingIds[r.id] = true;
+    var el = document.getElementById('dp-lbl-' + r.id);
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'dp-lbl-' + r.id;
+      el.className = 'doorplate-sign';
+      el.textContent = r.name;
+      el.onclick = (function(roomObj) {
+        return function() {
+          if (window.ReactNativeWebView) {
+            window.ReactNativeWebView.postMessage(JSON.stringify({
+              type: 'ROOM_CLICK',
+              roomId: roomObj.id,
+              name: roomObj.name,
+              floorId: roomObj.floorId,
+              level: roomObj.level
+            }));
+          }
+        };
+      })(r);
+      container.appendChild(el);
+    }
+
+    // Directional Backface Culling in 3D:
+    // When normal · cam > 0.15, door faces away from camera (culled)
+    if (!is2D && (r.nx !== undefined && r.ny !== undefined)) {
+      var dot = r.nx * camX + r.ny * camY;
+      if (dot > 0.15) {
+        el.style.display = 'none';
+        continue;
+      }
+    }
+
+    var elev = is2D ? 0.05 : (r.elevation || 2.36);
+    var pA = r.ptA ? projectPoint(r.ptA, elev) : null;
+    var pB = r.ptB ? projectPoint(r.ptB, elev) : null;
+    var centerPos = projectPoint([r.lng, r.lat], elev);
+
+    var screenX = 0, screenY = 0, alpha = 0;
+    if (pA && pB) {
+      screenX = (pA[0] + pB[0]) / 2;
+      screenY = (pA[1] + pB[1]) / 2;
+      var dX = pB[0] - pA[0];
+      var dY = pB[1] - pA[1];
+      alpha = Math.atan2(dY, dX) * 180 / Math.PI;
+      if (alpha > 90) alpha -= 180;
+      else if (alpha < -90) alpha += 180;
+    } else if (centerPos) {
+      screenX = centerPos[0];
+      screenY = centerPos[1];
+      alpha = 0;
+    } else {
+      el.style.display = 'none';
+      continue;
+    }
+
+    // Viewport frustum bounds check
+    if (screenX >= -80 && screenX <= window.innerWidth + 80 &&
+        screenY >= -40 && screenY <= window.innerHeight + 40) {
+      el.style.left = Math.round(screenX) + 'px';
+      el.style.top = Math.round(screenY) + 'px';
+      el.style.transform = 'translate(-50%, -50%) rotate(' + alpha.toFixed(1) + 'deg) scale(' + scale.toFixed(2) + ')';
+      el.style.opacity = baseOpacity.toFixed(2);
+      el.style.display = 'block';
+    } else {
+      el.style.display = 'none';
+    }
+  }
+
+  var children = container.children;
+  for (var c = children.length - 1; c >= 0; c--) {
+    var child = children[c];
+    var cid = child.id.replace('dp-lbl-', '');
+    if (!existingIds[cid]) {
+      container.removeChild(child);
+    }
+  }
+}
+
+map.on('render', function() {
+  updateBadgePosition();
+  updateDoorplateSignage();
+});
+
+window.updateUserPos = function(lat, lng, heading, elevation, floorLevel, floorName, hasValidZ) {
+  window._lastUserPos = { lat: lat, lng: lng };
+  if (heading !== undefined && heading !== null) window._lastUserHeading = heading;
+  if (floorLevel !== undefined && floorLevel !== null) window._lastUserFloorLevel = Number(floorLevel);
+  if (floorName !== undefined) window._lastUserFloorName = floorName;
+
+  var fl = window._lastUserFloorLevel || 0;
+  var h = window._lastUserHeading || 0;
+
+  var effElev;
+  if (hasValidZ && elevation !== undefined && elevation !== null && !isNaN(elevation)) {
+    effElev = Number(elevation);
+  } else if (fl > 0) {
+    effElev = fl * 3.5 + 0.54;
+  } else {
+    effElev = 0.54;
+  }
+  window._lastUserElev = effElev;
+
+  var baseElev = (currentMapMode === '2D') ? 0.05 : effElev + 0.08;
+
+  setupMarkerLayers();
+
+  if (map.getSource('user-marker-source')) {
+    var glowCoords = generateCirclePolygon(lng, lat, 2.2);
+    var puckCoords = generateCirclePolygon(lng, lat, 1.2);
+    var arrowCoords = generateArrowPolygon(lng, lat, h, 2.0, 1.3);
+
+    map.getSource('user-marker-source').setData({
+      type: 'FeatureCollection',
+      features: [
+        {
+          type: 'Feature',
+          properties: { part: 'glow', min_height: baseElev + 0.02, height: baseElev + 0.07 },
+          geometry: { type: 'Polygon', coordinates: glowCoords }
+        },
+        {
+          type: 'Feature',
+          properties: { part: 'puck', min_height: baseElev + 0.07, height: baseElev + 0.22 },
+          geometry: { type: 'Polygon', coordinates: puckCoords }
+        },
+        {
+          type: 'Feature',
+          properties: { part: 'arrow', min_height: baseElev + 0.23, height: baseElev + 0.35 },
+          geometry: { type: 'Polygon', coordinates: arrowCoords }
+        }
+      ]
+    });
+  }
+
+  updateBadgePosition();
 };
+
+window.updateUserHeading = function(heading) {
+  if (heading === undefined || heading === null) return;
+  window._lastUserHeading = heading;
+  if (!window._lastUserPos) return;
+
+  var lat = window._lastUserPos.lat;
+  var lng = window._lastUserPos.lng;
+  var fl = window._lastUserFloorLevel || 0;
+  var baseElev = (currentMapMode === '2D') ? 0.05 : ((fl > 0 ? fl * 3.5 : 0) + 0.1);
+
+  if (map.getSource('user-marker-source')) {
+    var glowCoords = generateCirclePolygon(lng, lat, 2.2);
+    var puckCoords = generateCirclePolygon(lng, lat, 1.2);
+    var arrowCoords = generateArrowPolygon(lng, lat, heading, 2.0, 1.3);
+
+    map.getSource('user-marker-source').setData({
+      type: 'FeatureCollection',
+      features: [
+        {
+          type: 'Feature',
+          properties: { part: 'glow', min_height: baseElev + 0.02, height: baseElev + 0.07 },
+          geometry: { type: 'Polygon', coordinates: glowCoords }
+        },
+        {
+          type: 'Feature',
+          properties: { part: 'puck', min_height: baseElev + 0.07, height: baseElev + 0.22 },
+          geometry: { type: 'Polygon', coordinates: puckCoords }
+        },
+        {
+          type: 'Feature',
+          properties: { part: 'arrow', min_height: baseElev + 0.23, height: baseElev + 0.35 },
+          geometry: { type: 'Polygon', coordinates: arrowCoords }
+        }
+      ]
+    });
+  }
+};
+
+${initialPos ? `
+  map.on('load', function() {
+    setupMarkerLayers();
+    window.updateUserPos(${initialPos.x}, ${initialPos.y}, 0, 0, 0, '');
+  });
+` : ''}
 
 window.panTo = function(lat, lng) {
   var currentPitch = map ? map.getPitch() : 60;
@@ -465,6 +997,7 @@ export default function MapScreen({ navigation, route }) {
 
   const webViewRef = useRef(null);
   const socketRef = useRef(null);
+  const posEngine = useRef(new PositionEngine()).current;
   const panelHeightAnim = useRef(new Animated.Value(SH * 0.45)).current; // Bottom sheet height
 
   const ambientAltRef = useRef(0);
@@ -484,12 +1017,19 @@ export default function MapScreen({ navigation, route }) {
     return () => AmbientFloorDetector.stop();
   }, []);
 
-  // ── Sync Barometer baseline when known floor changes ──
-  useEffect(() => {
-    if (selectedFloor && typeof selectedFloor.level === 'number') {
-      AmbientFloorDetector.setKnownFloor(selectedFloor.level);
+  const handleWebViewMessage = (event) => {
+    try {
+      const data = JSON.parse(event.nativeEvent.data);
+      if (data.type === 'ROOM_CLICK') {
+        const found = mapData?.rooms?.find(r => (r._id || r.id) === data.roomId);
+        if (found) {
+          navigation.navigate("Navigation", { room: found, campusId, mapData });
+        }
+      }
+    } catch (e) {
+      // ignore non-json
     }
-  }, [selectedFloor]);
+  };
 
   const toggleMapMode = (mode) => {
     if (mode === mapMode) return;
@@ -645,6 +1185,15 @@ export default function MapScreen({ navigation, route }) {
     }
   }, [geoJSONData, selectedFloor]);
 
+  // Subscribe to canonical PositionEngine position updates
+  useEffect(() => {
+    const unsub = posEngine.onPositionUpdate(pos => {
+      setUserPos(prev => ({ ...(prev || {}), ...pos }));
+      if (pos.heading) setHeading(pos.heading);
+    });
+    return unsub;
+  }, []);
+
   // Request location permissions and track user location
   useEffect(() => {
     let locationSubscription = null;
@@ -655,7 +1204,13 @@ export default function MapScreen({ navigation, route }) {
       locationSubscription = await Location.watchPositionAsync(
         { accuracy: Location.Accuracy.High, timeInterval: 2000, distanceInterval: 1 },
         (loc) => {
-          setUserPos({ x: loc.coords.latitude, y: loc.coords.longitude });
+          posEngine.processGPSUpdate(loc.coords.latitude, loc.coords.longitude, loc.coords.accuracy || 15);
+          setUserPos(prev => ({
+            ...(prev || {}),
+            ...posEngine.position,
+            x: loc.coords.latitude,
+            y: loc.coords.longitude
+          }));
           setHeading(loc.coords.heading || 0);
         }
       );
@@ -665,18 +1220,59 @@ export default function MapScreen({ navigation, route }) {
     };
   }, []);
 
+  // ── Compass heading listener for dynamic arrow rotation ──
+  useEffect(() => {
+    Magnetometer.setUpdateInterval(100);
+    const smoothH = { current: 0 };
+    const magSub = Magnetometer.addListener(({ x, y }) => {
+      const angle = Math.atan2(y, x) * (180 / Math.PI);
+      const normalizedH = (angle + 360) % 360;
+
+      let diff = normalizedH - smoothH.current;
+      if (diff > 180) diff -= 360;
+      if (diff < -180) diff += 360;
+
+      if (Math.abs(diff) > 1.0) {
+        smoothH.current = (smoothH.current + diff * 0.3 + 360) % 360;
+        const h = Math.round(smoothH.current);
+        setHeading(h);
+
+        webViewRef.current?.injectJavaScript(`
+          if (typeof window.updateUserHeading === 'function') {
+            window.updateUserHeading(${h});
+          }
+          true;
+        `);
+      }
+    });
+
+    return () => {
+      magSub?.remove();
+    };
+  }, []);
+
   // Push user location updates directly into the WebView via JS
   useEffect(() => {
     if (userPos && webViewRef.current) {
-      const elev = ambientAltRef.current;
+      const currentLevel = (userPos.floorLevel != null)
+        ? userPos.floorLevel
+        : (ambientFloorIndex || detectedFloorIndex || 0);
+      const floorName = userPos.floorLevel != null && userPos.floor
+        ? (userPos.floorLevel > 0 ? `Floor ${userPos.floorLevel}` : 'Ground Floor')
+        : (currentLevel > 0 ? `Floor ${currentLevel}` : '');
+      const hasValidZ = !!(userPos.hasValidElevation && userPos.z !== undefined && userPos.z !== null);
+      const elev = hasValidZ
+        ? userPos.z
+        : (ambientAltRef.current && ambientAltRef.current !== 0 ? ambientAltRef.current : (currentLevel * 3.5 + 0.54));
+
       webViewRef.current.injectJavaScript(`
         if (typeof window.updateUserPos === 'function') {
-          window.updateUserPos(${userPos.x}, ${userPos.y}, ${heading}, ${elev});
+          window.updateUserPos(${userPos.x}, ${userPos.y}, ${heading}, ${elev}, ${currentLevel}, '${floorName}', ${hasValidZ ? 'true' : 'false'});
         }
         true;
       `);
     }
-  }, [userPos, heading, ambientFloorIndex]);
+  }, [userPos, heading, ambientFloorIndex, detectedFloorIndex]);
 
 
   // Animate panel height based on state
@@ -713,10 +1309,14 @@ export default function MapScreen({ navigation, route }) {
     }
   };
 
+  const initialUserPosRef = useRef(null);
+  if (userPos && !initialUserPosRef.current) {
+    initialUserPosRef.current = userPos;
+  }
   const mapboxUrl = getCachedConfigValue("EXPO_PUBLIC_MAPBOX_URL", "https://api.mapbox.com/styles/v1/mapbox/streets-v11/tiles/256/{z}/{x}/{y}@2x?access_token=pk.eyJ1IjoidmVua2F0YS1rcmlzaG5hIiwiYSI6ImNtZnYycHN0bTAzY28yanFxeG4wOXVsenAifQ.w1yd6XuvWvarYj33rP1LkA");
   const mapHtml = useMemo(() => {
     const center = mapData?.blocks?.[0]?.shape?.points?.[0];
-    return buildCampusMapHTML(geoJSONData, center, mapboxUrl, mapMode);
+    return buildCampusMapHTML(geoJSONData, center, mapboxUrl, mapMode, initialUserPosRef.current);
   }, [geoJSONData, mapData, mapboxUrl, mapMode]);
 
   const s = StyleSheet.create({
@@ -889,7 +1489,11 @@ export default function MapScreen({ navigation, route }) {
     }
 
     if (selectedFloor) {
-      const rooms = mapData?.rooms?.filter(r => r.floorId === selectedFloor._id) || [];
+      const rooms = mapData?.rooms?.filter(r => 
+        r.floorId === selectedFloor._id &&
+        r.type !== 'corridor' &&
+        !(r.name && r.name.toLowerCase().endsWith(' door') && (r.type === 'entrance' || r.type === 'other'))
+      ) || [];
       if (rooms.length === 0) return <Text style={{ textAlign: "center", color: colors.textSec, marginTop: 40 }}>No rooms found on this floor.</Text>;
       
       return rooms.map(room => (
@@ -985,6 +1589,7 @@ export default function MapScreen({ navigation, route }) {
               mixedContentMode="always"
               allowsInlineMediaPlayback={true}
               startInLoadingState={true}
+              onMessage={handleWebViewMessage}
             />
             {/* 2D / 3D Map Mode Toggle Pill */}
             <View style={s.mapModeToggleContainer}>

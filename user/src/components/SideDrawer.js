@@ -9,6 +9,7 @@ import { useAuth } from "../context/AuthContext";
 import { useGeofence } from "../context/GeofenceContext";
 import { SHADOWS, RADIUS, ROOM_COLORS } from "../theme/designSystem";
 import AnimatedPressable from "./AnimatedPressable";
+import journeyRecorder from "../journey/JourneyRecorder";
 
 const { width: SW, height: SH } = Dimensions.get("window");
 const DRAWER_WIDTH = SW * 0.78;
@@ -45,6 +46,33 @@ export default function SideDrawer({ visible, onClose, recentRooms = [], navigat
   }, [visible]);
 
   if (!visible) return null;
+
+  const handleRetrace = async (journeyId, rm) => {
+    onClose();
+    try {
+      let journey = null;
+      if (journeyId) {
+        journey = await journeyRecorder.getJourneyById(journeyId);
+      }
+      if (journey) {
+        setTimeout(() => {
+          navigation.navigate("Navigation", {
+            retraceJourney: journey,
+            campusId: journey.campusId || rm?.campusId || activeCampusId,
+          });
+        }, 150);
+      } else {
+        setTimeout(() => {
+          navigation.navigate("Navigation", {
+            room: rm,
+            campusId: rm?.campusId || activeCampusId,
+          });
+        }, 150);
+      }
+    } catch (e) {
+      if (__DEV__) console.warn("[SideDrawer] Retrace failed:", e);
+    }
+  };
 
   const menuItems = [
     { icon: "heart-outline", label: "Favorites", color: "#ec4899", screen: "Favorites" },
@@ -123,12 +151,28 @@ export default function SideDrawer({ visible, onClose, recentRooms = [], navigat
     },
     exitText: { marginLeft: 8, color: colors.danger, fontWeight: "700", fontSize: 14 },
     venueBadge: {
-      flexDirection: "row", alignItems: "center",
+      flexDirection: "row",
+      alignItems: "center",
       backgroundColor: colors.primary + "12",
       paddingHorizontal: 10, paddingVertical: 5,
       borderRadius: 8, alignSelf: "flex-start",
     },
     venueName: { fontSize: 12, fontWeight: "700", color: colors.primary, marginLeft: 5 },
+    retraceMiniBtn: {
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: colors.primary,
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+      borderRadius: 8,
+      gap: 4,
+      marginLeft: 6,
+    },
+    retraceMiniBtnText: {
+      color: "#ffffff",
+      fontSize: 10,
+      fontWeight: "800",
+    },
   });
 
   return (
@@ -195,7 +239,7 @@ export default function SideDrawer({ visible, onClose, recentRooms = [], navigat
                 const roomColor = ROOM_COLORS[rm.type] || colors.primary;
                 return (
                   <AnimatedPressable
-                    key={rm._id}
+                    key={rm._id || rm.journeyId || rm.id}
                     style={s.recentCard}
                     onPress={() => {
                       onClose();
@@ -217,7 +261,21 @@ export default function SideDrawer({ visible, onClose, recentRooms = [], navigat
                         {rm.roomNumber ? ` · Room ${rm.roomNumber}` : ""}
                       </Text>
                     </View>
-                    <Ionicons name="navigate-outline" size={15} color={colors.textMuted} />
+                    {rm.lastJourneyId ? (
+                      <TouchableOpacity
+                        style={s.retraceMiniBtn}
+                        onPress={(e) => {
+                          e?.stopPropagation?.();
+                          handleRetrace(rm.lastJourneyId, rm);
+                        }}
+                        activeOpacity={0.8}
+                      >
+                        <Ionicons name="return-up-back" size={12} color="#ffffff" />
+                        <Text style={s.retraceMiniBtnText}>Back</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <Ionicons name="navigate-outline" size={15} color={colors.textMuted} />
+                    )}
                   </AnimatedPressable>
                 );
               })}

@@ -7,6 +7,7 @@ const DigitalTwin = require('../models/DigitalTwin');
 const NavNode = require('../models/NavNode');
 const Block = require('../models/Block');
 const Room = require('../models/Room');
+const { invalidateGraphCache } = require('./navigation');
 
 // Configuration for AI Microservice
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
@@ -463,6 +464,27 @@ router.post('/twin/publish', async (req, res) => {
             return reverseProject(rotX + pos.x, rotZ + pos.z);
           });
 
+          // Calculate door geographic coordinates as an intrinsic attribute of the room
+          let doorGeoPoints = null;
+          if (type === 'classroom') {
+            const dw = 1.0 / 2;
+            const dl = 0.1 / 2;
+            const dz = hl + 0.05; // local center of door
+            
+            const doorCorners = [
+              { x: -dw, z: dz - dl },
+              { x: dw, z: dz - dl },
+              { x: dw, z: dz + dl },
+              { x: -dw, z: dz + dl }
+            ];
+
+            doorGeoPoints = doorCorners.map(c => {
+              const rotX = c.x * cosA + c.z * sinA;
+              const rotZ = -c.x * sinA + c.z * cosA;
+              return reverseProject(rotX + pos.x, rotZ + pos.z);
+            });
+          }
+
           newRooms.push({
             campusId,
             blockId: buildingId,
@@ -476,43 +498,10 @@ router.post('/twin/publish', async (req, res) => {
                 top: comp.wallColorTop || '#f6f5ee',
                 bottom: comp.wallColorBottom || '#b5a68e'
               },
-              fill
+              fill,
+              ...(doorGeoPoints ? { door: { points: doorGeoPoints } } : {})
             }
           });
-
-          if (type === 'classroom') {
-            // Generate Door Geometry based on Spatial Studio PlacedComponentMesh door location
-            // Door is a box: w=1.0, h=2.1, l=0.1 at [0, 1.05, length / 2 + 0.05]
-            const dw = 1.0 / 2;
-            const dl = 0.1 / 2;
-            const dz = hl + 0.05; // local center of door
-            
-            const doorCorners = [
-              { x: -dw, z: dz - dl },
-              { x: dw, z: dz - dl },
-              { x: dw, z: dz + dl },
-              { x: -dw, z: dz + dl }
-            ];
-
-            const doorGeoPoints = doorCorners.map(c => {
-              const rotX = c.x * cosA + c.z * sinA;
-              const rotZ = -c.x * sinA + c.z * cosA;
-              return reverseProject(rotX + pos.x, rotZ + pos.z);
-            });
-
-            newRooms.push({
-              campusId,
-              blockId: buildingId,
-              floorId,
-              name: `${comp.name || 'Room'} Door`,
-              type: 'entrance',
-              shape: {
-                type: 'polygon',
-                points: doorGeoPoints,
-                fill: '#78716c' // Door frame color
-              }
-            });
-          }
         });
 
         // Wipe old un-synced rooms for this floor and insert accurate generated polygons
@@ -520,6 +509,9 @@ router.post('/twin/publish', async (req, res) => {
         if (newRooms.length > 0) {
           await Room.insertMany(newRooms);
         }
+
+        // Invalidate navigation and graph caches
+        invalidateGraphCache(campusId);
       }
     }
 

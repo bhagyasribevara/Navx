@@ -131,19 +131,22 @@ function angleDiff(fromDeg, toDeg) {
 //  Build adjacency list from nodes and paths
 // ──────────────────────────────────────────────
 
-function buildGraph(nodes, paths, floorMap = {}, rooms = []) {
+function buildGraph(nodes, paths, floorMap = {}, rooms = [], floorBlockMap = {}) {
   const graph = {};
 
   // Initialize all nodes
   nodes.forEach(node => {
     const id = node._id.toString();
     const floorId = node.floorId ? node.floorId.toString() : null;
+    const blockId = node.blockId ? node.blockId.toString() : (floorId && floorBlockMap[floorId] ? floorBlockMap[floorId].toString() : null);
     graph[id] = {
       id,
       x: node.x,
       y: node.y,
+      z: node.z !== undefined && node.z !== null ? node.z : null,
       floorId,
-      floorLevel: floorId && floorMap[floorId] != null ? floorMap[floorId] : null,
+      blockId,
+      floorLevel: floorId && floorMap[floorId] != null ? floorMap[floorId] : (node.floorLevel ?? 0),
       type: node.type,
       roomId: node.roomId ? node.roomId.toString() : null,
       neighbors: []
@@ -157,9 +160,30 @@ function buildGraph(nodes, paths, floorMap = {}, rooms = []) {
 
     if (!graph[a] || !graph[b]) return;
 
+    const nodeA = graph[a];
+    const nodeB = graph[b];
+
+    const lvlA = nodeA.floorLevel !== null && nodeA.floorLevel !== undefined ? nodeA.floorLevel : 0;
+    const lvlB = nodeB.floorLevel !== null && nodeB.floorLevel !== undefined ? nodeB.floorLevel : 0;
+    const isLevelDiff = Math.abs(lvlA - lvlB) >= 1;
+
+    // GUARDRAIL 1: Flat hallways or street paths cannot connect different floor levels (must be stairs, elevator, or ramp)
+    if (isLevelDiff && path.type !== 'stairs' && path.type !== 'elevator' && path.type !== 'ramp') {
+      return;
+    }
+
+    // GUARDRAIL 2: Reject cross-building elevated connections (different blocks cannot connect on level > 0)
+    const isElevatedA = lvlA > 0;
+    const isElevatedB = lvlB > 0;
+    if (nodeA.blockId && nodeB.blockId && nodeA.blockId !== nodeB.blockId && (isElevatedA || isElevatedB)) {
+      return;
+    }
+
     const trueDist = haversineDistMeters(graph[a].x, graph[a].y, graph[b].x, graph[b].y);
-    const edgeDist = Math.max(path.distance, trueDist);
-    const effectiveWeight = edgeDist * path.weight * (1 + path.congestionLevel * 0.1);
+    const edgeDist = Math.max(path.distance || 0, trueDist);
+    const weightFactor = path.weight != null ? path.weight : 1;
+    const congestionFactor = 1 + (path.congestionLevel || 0) * 0.1;
+    const effectiveWeight = edgeDist * weightFactor * congestionFactor;
 
     graph[a].neighbors.push({
       nodeId: b,
@@ -291,6 +315,8 @@ function autoConnectGraph(graph) {
 
   console.log(`[Pathfinding] Found ${components.length} disconnected components. Auto-connecting...`);
 
+  const MAX_AUTOCONNECT_DIST = 15; // Strict ceiling on virtual edge distances
+
   // Merge components by connecting closest nodes between them
   while (components.length > 1) {
     let bestDist = Infinity;
@@ -305,16 +331,25 @@ function autoConnectGraph(graph) {
           for (const bId of components[j]) {
             const nodeA = graph[aId];
             const nodeB = graph[bId];
-            
-            // STRICT RULE: Only auto-connect components on the SAME floor.
-            // Never bridge different floors with virtual teleportation edges.
-            const isSameFloor = (nodeA.floorId && nodeB.floorId && nodeA.floorId === nodeB.floorId) ||
-              (nodeA.floorLevel != null && nodeB.floorLevel != null && nodeA.floorLevel === nodeB.floorLevel) ||
-              (!nodeA.floorId && !nodeB.floorId);
 
-            if (!isSameFloor) continue;
+            // STRICT RULE: Only auto-connect components within strict safety boundaries.
+            const lvlA = nodeA.floorLevel !== null && nodeA.floorLevel !== undefined ? nodeA.floorLevel : 0;
+            const lvlB = nodeB.floorLevel !== null && nodeB.floorLevel !== undefined ? nodeB.floorLevel : 0;
+            const isElevatedA = lvlA > 0;
+            const isElevatedB = lvlB > 0;
+
+            // 1. Never connect elevated floors across different blocks or different floors
+            if (isElevatedA || isElevatedB) {
+              if (!nodeA.floorId || !nodeB.floorId || nodeA.floorId !== nodeB.floorId) continue;
+              if (nodeA.blockId && nodeB.blockId && nodeA.blockId !== nodeB.blockId) continue;
+            } else {
+              // 2. Ground / outdoor level: both must be outdoor OR both must belong to same ground floor
+              if (nodeA.floorId && nodeB.floorId && nodeA.floorId !== nodeB.floorId) continue;
+            }
 
             const dist = haversineDistMeters(nodeA.x, nodeA.y, nodeB.x, nodeB.y);
+            if (dist > MAX_AUTOCONNECT_DIST) continue;
+
             if (dist < bestDist) {
               bestDist = dist;
               bestA = aId;
@@ -327,7 +362,7 @@ function autoConnectGraph(graph) {
       }
     }
 
-    if (bestA && bestB) {
+    if (bestA && bestB && bestDist <= MAX_AUTOCONNECT_DIST) {
       const nodeA = graph[bestA];
       const nodeB = graph[bestB];
       const virtualDistance = bestDist || 0.1; // avoid 0
@@ -353,7 +388,7 @@ function autoConnectGraph(graph) {
       components[bestI] = components[bestI].concat(components[bestJ]);
       components.splice(bestJ, 1);
     } else {
-      // If no same-floor components can be merged, stop auto-connect loop
+      // If no safe same-floor components can be merged within distance cap, stop auto-connect loop
       break;
     }
   }
@@ -398,6 +433,7 @@ function reconstructPath(graph, previous, startId, endId, distances) {
       nodeId: nid,
       x: gNode.x,
       y: gNode.y,
+      z: gNode.z !== undefined && gNode.z !== null ? gNode.z : (gNode.floorLevel != null ? gNode.floorLevel * 3.5 + 0.54 : null),
       floorId: gNode.floorId,
       floorLevel: gNode.floorLevel != null ? gNode.floorLevel : null,
       type: gNode.type,
@@ -579,7 +615,12 @@ function generateDirections(detailedPath) {
   for (let i = 0; i < detailedPath.length - 1; i++) {
     const current = detailedPath[i];
     const next    = detailedPath[i + 1];
-    if (current.floorId !== next.floorId) {
+    const currLvl = current.floorLevel != null ? current.floorLevel : 0;
+    const nextLvl = next.floorLevel != null ? next.floorLevel : 0;
+    const isVerticalChange = currLvl !== nextLvl;
+    const isStairOrElevator = (next.type === 'stairs' || current.type === 'stairs' || next.type === 'elevator' || current.type === 'elevator');
+
+    if (isVerticalChange || isStairOrElevator) {
       let changeType = 'floor_change';
       if (next.type === 'elevator' || current.type === 'elevator') changeType = 'elevator';
       else if (next.type === 'stairs' || current.type === 'stairs') changeType = 'stairs';
@@ -587,8 +628,8 @@ function generateDirections(detailedPath) {
         segmentIndex: i,
         fromFloorId: current.floorId,
         toFloorId: next.floorId,
-        fromFloorLevel: current.floorLevel != null ? current.floorLevel : null,
-        toFloorLevel: next.floorLevel != null ? next.floorLevel : null,
+        fromFloorLevel: currLvl,
+        toFloorLevel: nextLvl,
         changeType,
       });
     }
@@ -650,7 +691,12 @@ function generateDirections(detailedPath) {
     let isFloorChange = false;
     let floorChangeData = null;
 
-    if (current.floorId !== next.floorId) {
+    const currLvl = current.floorLevel != null ? current.floorLevel : 0;
+    const nextLvl = next.floorLevel != null ? next.floorLevel : 0;
+    const isVerticalChange = currLvl !== nextLvl;
+    const isStairOrElevator = (next.type === 'stairs' || current.type === 'stairs' || next.type === 'elevator' || current.type === 'elevator');
+
+    if (isVerticalChange || isStairOrElevator) {
       isFloorChange = true;
       floorTransitionCounter++;
 
@@ -662,9 +708,8 @@ function generateDirections(detailedPath) {
       }
 
       // Build natural floor-change instruction with ordinal floor name
-      const targetLevel = next.floorLevel != null ? next.floorLevel : null;
-      if (targetLevel != null) {
-        instruction = `Go to the ${ordinalFloor(targetLevel)}`;
+      if (nextLvl != null) {
+        instruction = `Go to the ${ordinalFloor(nextLvl)}`;
       } else if (changeType === 'elevator') {
         instruction = 'Take the elevator to the next floor';
       } else if (changeType === 'stairs') {
@@ -678,11 +723,16 @@ function generateDirections(detailedPath) {
         floorChangeType: changeType,
         fromFloorId: current.floorId,
         toFloorId: next.floorId,
-        fromFloorLevel: current.floorLevel != null ? current.floorLevel : null,
-        targetFloorLevel: targetLevel,
+        fromFloorLevel: currLvl,
+        targetFloorLevel: nextLvl,
         floorTransitionNumber: floorTransitionCounter,
         totalFloorTransitions,
       };
+    } else if (!current.floorId && next.floorId && currLvl === nextLvl) {
+      // Transition from outdoor to indoor ground floor
+      if (instruction.startsWith('Head ') || instruction === 'Continue straight') {
+        instruction = 'Enter the building';
+      }
     }
 
     // Walking speed depends on segment type

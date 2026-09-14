@@ -156,12 +156,33 @@ export default class SensorFusion {
     // ── Signal 4 (NEW): Device pitch angle from DeviceMotion
     // Forward tilt > 8° while on staircase = strong climbing signal
     // Backward tilt > 8° = descending signal
+    // NOTE: When walking up stairs while looking at phone screen, phone naturally tilts backward (pitch < -8°).
+    // If staircase context indicates UP, do NOT let screen-viewing angle boost descendingScore.
     if (this.hasDeviceMotion && Math.abs(this.pitch) > 8) {
-      totalSignals += 1;
-      if (this.pitch > 8) {
-        climbingScore += 1;
-      } else if (this.pitch < -8) {
-        descendingScore += 1;
+      if (this.isOnStaircase) {
+        if (this.staircaseDirection === 'UP') {
+          if (this.pitch > 8) {
+            climbingScore += 1;
+            totalSignals += 1;
+          }
+          // If pitch < -8°, do not vote descending; user is reading screen while climbing
+        } else if (this.staircaseDirection === 'DOWN') {
+          if (this.pitch < -8) {
+            descendingScore += 1;
+            totalSignals += 1;
+          }
+        } else {
+          totalSignals += 1;
+          if (this.pitch > 8) climbingScore += 1;
+          else if (this.pitch < -8) descendingScore += 1;
+        }
+      } else {
+        totalSignals += 1;
+        if (this.pitch > 8) {
+          climbingScore += 1;
+        } else if (this.pitch < -8) {
+          descendingScore += 1;
+        }
       }
     }
 
