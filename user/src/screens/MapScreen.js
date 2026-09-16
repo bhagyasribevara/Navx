@@ -27,6 +27,7 @@ function buildCampusMapHTML(geoJSONData, centerCoords, mapboxUrl, mapMode = '3D'
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <link href="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css" rel="stylesheet">
 <script src="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <style>
   body{margin:0;padding:0;background-color:#0a0e17;}
   #map{width:100%;height:100vh;background:#0a0e17;}
@@ -81,35 +82,8 @@ function buildCampusMapHTML(geoJSONData, centerCoords, mapboxUrl, mapMode = '3D'
     border-right: 4px solid transparent;
     border-top: 4px solid rgba(15, 23, 42, 0.94);
   }
-  .doorplate-sign {
-    position: absolute;
-    top: 0;
-    left: 0;
-    transform-origin: 50% 50%;
-    pointer-events: auto;
-    cursor: pointer;
-    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
-    border: 1px solid #f59e0b;
-    border-top: 1.5px solid #fbbf24;
-    color: #f8fafc;
-    padding: 1px 6px;
-    border-radius: 2.5px;
-    font-size: 9.5px;
-    font-weight: 800;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.2);
-    letter-spacing: 0.5px;
-    text-transform: uppercase;
-    display: none;
-    white-space: nowrap;
-    user-select: none;
-    will-change: transform, opacity;
-  }
-  .doorplate-sign:active {
-    background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
-    border-color: #fbbf24;
-  }
 </style>
-</head><body><div id="map"></div><div id="user-floor-badge" class="floor-badge"></div><div id="doorplate-labels" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;overflow:hidden;z-index:9;"></div>
+</head><body><div id="map"></div><div id="user-floor-badge" class="floor-badge"></div>
 <script>
 // Extract mapbox token from the url
 const tokenMatch = '${mapboxUrl}'.match(/access_token=([^&]+)/);
@@ -164,6 +138,7 @@ window.setMapMode = function(mode) {
     'campus-rooms-roof',
     'campus-rooms-parapet',
     'campus-rooms-door',
+    'doorplate-3d-text-layer',
     '3d-buildings'
   ];
   layers3D.forEach(function(id) {
@@ -181,7 +156,6 @@ window.setMapMode = function(mode) {
       map.setLayoutProperty(id, 'visibility', is2D ? 'visible' : 'none');
     }
   });
-  if (typeof updateDoorplateSignage === 'function') updateDoorplateSignage();
 };
 
 map.on('load', () => {
@@ -204,6 +178,8 @@ map.on('load', () => {
       }
     });
   }
+
+  ensureDoorplate3DLayer();
 
   if (currentGeoData) {
     window.renderGeoJSONLayers(currentGeoData, currentFloorId);
@@ -241,15 +217,16 @@ window.renderGeoJSONLayers = function(data, floorId) {
     map.addSource('campus-data', { type: 'geojson', data: polygonData });
   }
 
-  // ── Extract Doorplate Anchors for Physical In-World Room Signage ──
+  // ── Extract Doorplate Anchors for Physical In-World Room Signage (100% Coverage Pipeline) ──
   var doorplateMap = {};
+
+  // Pass 1: Extract official doorplate features with high-precision anchors
   polyFeatures.forEach(function(f) {
     if (!f.properties) return;
     var props = f.properties;
-    var rid = (props.roomId || props.id || props.name || '').toString();
-    if (!rid) return;
-
     if (props.part === 'doorplate' && props.doorLng && props.doorLat) {
+      var rid = (props.roomId || props.id || props.name || '').toString().replace('_doorplate', '');
+      if (!rid) return;
       doorplateMap[rid] = {
         id: rid,
         name: props.name || 'Room',
@@ -265,18 +242,65 @@ window.renderGeoJSONLayers = function(data, floorId) {
         floorId: props.floorId,
         level: props.level
       };
-    } else if (props.type === 'room' && props.name && props.category !== 'corridor' && !doorplateMap[rid]) {
+    }
+  });
+
+  // Pass 2: Ensure 100% room coverage — for any room missing a doorplate, procedurally compute outward corridor anchor
+  polyFeatures.forEach(function(f) {
+    if (!f.properties) return;
+    var props = f.properties;
+    if (props.type === 'room' && props.name && props.category !== 'corridor' && props.category !== 'stairs') {
+      var rid = (props.roomId || props.id || props.name || '').toString()
+        .replace(/_(base|body|roof|parapet|partition|door|door_frame|door_threshold|part_\d+)$/, '');
+      if (!rid || doorplateMap[rid]) return;
+
       if (f.geometry && f.geometry.coordinates && f.geometry.coordinates[0]) {
         var ring = f.geometry.coordinates[0];
         if (ring.length >= 4) {
-          var p1 = ring[0], p2 = ring[1];
+          var mToLatLoc = 1 / 111139;
+          var mToLngLoc = 1 / (111139 * Math.cos(ring[0][1] * Math.PI / 180));
+
+          // Compute room centroid
+          var cLng = 0, cLat = 0, ptCount = ring.length - 1;
+          for (var pi = 0; pi < ptCount; pi++) {
+            cLng += ring[pi][0];
+            cLat += ring[pi][1];
+          }
+          cLng /= Math.max(1, ptCount);
+          cLat /= Math.max(1, ptCount);
+
+          // Find longest edge
+          var bestEdge = 0, maxLen = -1;
+          for (var ei = 0; ei < ring.length - 1; ei++) {
+            var edx = (ring[ei+1][0] - ring[ei][0]) / mToLngLoc;
+            var edy = (ring[ei+1][1] - ring[ei][1]) / mToLatLoc;
+            var elen = Math.hypot(edx, edy);
+            if (elen > maxLen) {
+              maxLen = elen;
+              bestEdge = ei;
+            }
+          }
+
+          var p1 = ring[bestEdge], p2 = ring[bestEdge+1];
           var midLng = (p1[0] + p2[0]) / 2;
           var midLat = (p1[1] + p2[1]) / 2;
           var lvl = props.level !== undefined ? Number(props.level) : 0;
           var elev = (lvl * 3.5) + 2.36;
-          var dx = p2[0] - p1[0], dy = p2[1] - p1[1];
-          var dlen = Math.hypot(dx, dy) || 1e-6;
-          var uX = dx / dlen, uY = dy / dlen;
+
+          var dx = (p2[0] - p1[0]) / mToLngLoc;
+          var dy = (p2[1] - p1[1]) / mToLatLoc;
+          var len = Math.hypot(dx, dy) || 1e-6;
+          var uX = dx / len, uY = dy / len;
+          var nX = -uY, nY = uX;
+
+          // Enforce outward normal relative to room centroid
+          var dPlus = Math.hypot((midLng + nX * mToLngLoc) - cLng, (midLat + nY * mToLatLoc) - cLat);
+          var dMinus = Math.hypot((midLng - nX * mToLngLoc) - cLng, (midLat - nY * mToLatLoc) - cLat);
+          if (dPlus < dMinus) {
+            nX = -nX;
+            nY = -nY;
+          }
+
           doorplateMap[rid] = {
             id: rid,
             name: props.name,
@@ -285,8 +309,8 @@ window.renderGeoJSONLayers = function(data, floorId) {
             elevation: elev,
             ux: uX,
             uy: uY,
-            nx: -uY,
-            ny: uX,
+            nx: nX,
+            ny: nY,
             ptA: [midLng - uX * 0.000004, midLat - uY * 0.000004],
             ptB: [midLng + uX * 0.000004, midLat + uY * 0.000004],
             floorId: props.floorId,
@@ -296,8 +320,9 @@ window.renderGeoJSONLayers = function(data, floorId) {
       }
     }
   });
+
   window._activeDoorplates = Object.values(doorplateMap);
-  if (typeof updateDoorplateSignage === 'function') updateDoorplateSignage();
+  if (typeof updateThreeDoorplates === 'function') updateThreeDoorplates(window._activeDoorplates);
 
   // ── 1. FLAT 2D FILL LAYER ──
   if (!map.getLayer('campus-2d-fill')) {
@@ -726,139 +751,216 @@ function updateBadgePosition() {
 }
 
 window._activeDoorplates = [];
+window._doorplateLayerInstance = null;
+window._pendingDoorplates = null;
 
-function updateDoorplateSignage() {
-  var container = document.getElementById('doorplate-labels');
-  if (!container || !map) return;
-  var zoom = map.getZoom();
-  // Distant View: Zoom < 17.8: completely hide room nameplates to eliminate clutter
-  if (zoom < 17.8 || !window._activeDoorplates || window._activeDoorplates.length === 0) {
-    container.style.display = 'none';
+function createDoorplateCanvasTexture(name, isTarget) {
+  var canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 128;
+  var ctx = canvas.getContext('2d');
+
+  // Background: Deep obsidian slate (#0a0f1d, or crimson #881337 for target)
+  ctx.fillStyle = isTarget ? '#881337' : '#0a0f1d';
+  ctx.fillRect(0, 0, 512, 128);
+
+  // Outer illuminated border (Amber gold #f59e0b, or rose #fb7185 for target)
+  ctx.strokeStyle = isTarget ? '#fb7185' : '#f59e0b';
+  ctx.lineWidth = 6;
+  ctx.strokeRect(4, 4, 504, 120);
+
+  // Inner subtle accent frame
+  ctx.strokeStyle = isTarget ? '#fda4af' : '#fbbf24';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(10, 10, 492, 108);
+
+  // High-contrast, clean, sharp typography
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.95)';
+  ctx.shadowBlur = 4;
+  ctx.shadowOffsetX = 1;
+  ctx.shadowOffsetY = 2;
+
+  var text = (name || '').trim();
+  var maxUsableWidth = 470;
+
+  function getWidth(str, sz) {
+    ctx.font = 'bold ' + sz + 'px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    return ctx.measureText(str).width;
+  }
+
+  // Check if single line fits
+  var singleFontSize = 46;
+  while (singleFontSize > 28 && getWidth(text, singleFontSize) > maxUsableWidth) {
+    singleFontSize -= 2;
+  }
+
+  if (getWidth(text, singleFontSize) <= maxUsableWidth && singleFontSize >= 30) {
+    ctx.font = 'bold ' + singleFontSize + 'px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.fillText(text, 256, 64);
+  } else {
+    // Multi-line wrapping: split into two balanced lines
+    var words = text.split(/\s+/);
+    var line1 = '', line2 = '';
+    if (words.length > 1) {
+      var mid = Math.ceil(words.length / 2);
+      line1 = words.slice(0, mid).join(' ');
+      line2 = words.slice(mid).join(' ');
+    } else {
+      var splitIdx = Math.floor(text.length / 2);
+      line1 = text.slice(0, splitIdx) + '-';
+      line2 = text.slice(splitIdx);
+    }
+
+    var multiFontSize = 28;
+    while (multiFontSize > 18 && (getWidth(line1, multiFontSize) > maxUsableWidth || getWidth(line2, multiFontSize) > maxUsableWidth)) {
+      multiFontSize -= 2;
+    }
+
+    ctx.font = 'bold ' + multiFontSize + 'px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.fillText(line1, 256, 44);
+    ctx.fillText(line2, 256, 84);
+  }
+
+  var texture = new THREE.CanvasTexture(canvas);
+  texture.minFilter = THREE.LinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.generateMipmaps = false;
+  return texture;
+}
+
+var campusCenter = [${center[1]}, ${center[0]}]; // [lng, lat]
+var mToLat = 1 / 111139;
+var mToLng = 1 / (111139 * Math.cos(campusCenter[1] * Math.PI / 180));
+
+var doorplate3DLayer = {
+  id: 'doorplate-3d-text-layer',
+  type: 'custom',
+  renderingMode: '3d',
+  onAdd: function(mapInstance, gl) {
+    this.map = mapInstance;
+    this.camera = new THREE.Camera();
+    this.scene = new THREE.Scene();
+    this.renderer = new THREE.WebGLRenderer({
+      canvas: mapInstance.getCanvas(),
+      context: gl,
+      antialias: true,
+      alpha: true
+    });
+    this.renderer.autoClear = false;
+
+    var origin = mapboxgl.MercatorCoordinate.fromLngLat(campusCenter, 0);
+    this.anchor = {
+      x: origin.x,
+      y: origin.y,
+      z: origin.z,
+      scale: origin.meterInMercatorCoordinateUnits()
+    };
+
+    window._doorplateLayerInstance = this;
+    if (window._pendingDoorplates) {
+      window.updateThreeDoorplates(window._pendingDoorplates);
+      window._pendingDoorplates = null;
+    }
+  },
+  render: function(gl, matrix) {
+    if (!this.renderer || !this.scene || !this.anchor) return;
+    var m = new THREE.Matrix4().fromArray(matrix);
+    var l = new THREE.Matrix4()
+      .makeTranslation(this.anchor.x, this.anchor.y, this.anchor.z)
+      .scale(new THREE.Vector3(this.anchor.scale, -this.anchor.scale, this.anchor.scale));
+
+    this.camera.projectionMatrix = m.multiply(l);
+    this.renderer.resetState();
+    this.renderer.render(this.scene, this.camera);
+  }
+};
+
+window.updateThreeDoorplates = function(doorplates) {
+  window._activeDoorplates = doorplates || [];
+  var layer = window._doorplateLayerInstance;
+  if (!layer || !layer.scene || !window.THREE) {
+    window._pendingDoorplates = doorplates;
     return;
   }
-  container.style.display = 'block';
 
-  var is2D = (currentMapMode === '2D');
-  var m = map.transform && map.transform.pixelMatrix;
-  var hasMercator = (typeof mapboxgl.MercatorCoordinate !== 'undefined');
-
-  // Dynamic Visibility & Perspective LOD:
-  // 17.8 to 19.0: Smooth fade-in
-  // >= 19.0: Full opacity and natural distance scaling
-  var baseOpacity = zoom >= 19.0 ? 1.0 : Math.max(0.05, (zoom - 17.8) / 1.2);
-  var scale = Math.min(1.25, Math.max(0.60, Math.pow(1.5, zoom - 19.0)));
-
-  // Directional Culling: calculate camera horizontal vector
-  var bearingRad = (map.getBearing() * Math.PI) / 180;
-  var camX = -Math.sin(bearingRad);
-  var camY = -Math.cos(bearingRad);
-
-  function projectPoint(pt, elev) {
-    if (m && hasMercator && !is2D) {
-      try {
-        var coord = mapboxgl.MercatorCoordinate.fromLngLat([pt[0], pt[1]], elev);
-        var x = coord.x, y = coord.y, z = coord.z;
-        var clipW = m[3] * x + m[7] * y + m[11] * z + m[15];
-        if (clipW > 0) {
-          return [
-            (m[0] * x + m[4] * y + m[8] * z + m[12]) / clipW,
-            (m[1] * x + m[5] * y + m[9] * z + m[13]) / clipW
-          ];
-        }
-      } catch(e) {}
+  var scene = layer.scene;
+  while (scene.children.length > 0) {
+    var obj = scene.children[0];
+    scene.remove(obj);
+    if (obj.geometry) obj.geometry.dispose();
+    if (obj.material) {
+      if (obj.material.map) obj.material.map.dispose();
+      obj.material.dispose();
     }
-    if (map.project) {
-      var p2d = map.project([pt[0], pt[1]]);
-      if (p2d) return [p2d.x, p2d.y];
-    }
-    return null;
   }
 
-  var existingIds = {};
-  for (var i = 0; i < window._activeDoorplates.length; i++) {
-    var r = window._activeDoorplates[i];
-    existingIds[r.id] = true;
-    var el = document.getElementById('dp-lbl-' + r.id);
-    if (!el) {
-      el = document.createElement('div');
-      el.id = 'dp-lbl-' + r.id;
-      el.className = 'doorplate-sign';
-      el.textContent = r.name;
-      el.onclick = (function(roomObj) {
-        return function() {
-          if (window.ReactNativeWebView) {
-            window.ReactNativeWebView.postMessage(JSON.stringify({
-              type: 'ROOM_CLICK',
-              roomId: roomObj.id,
-              name: roomObj.name,
-              floorId: roomObj.floorId,
-              level: roomObj.level
-            }));
-          }
-        };
-      })(r);
-      container.appendChild(el);
-    }
+  if (!doorplates || doorplates.length === 0) {
+    if (layer.map) layer.map.triggerRepaint();
+    return;
+  }
 
-    // Directional Backface Culling in 3D:
-    // When normal · cam > 0.15, door faces away from camera (culled)
-    if (!is2D && (r.nx !== undefined && r.ny !== undefined)) {
-      var dot = r.nx * camX + r.ny * camY;
-      if (dot > 0.15) {
-        el.style.display = 'none';
-        continue;
+  var planeGeo = new THREE.PlaneGeometry(1.15, 0.28);
+
+  doorplates.forEach(function(dp) {
+    if (!dp || !dp.name) return;
+    var texture = createDoorplateCanvasTexture(dp.name, false);
+    var mat = new THREE.MeshBasicMaterial({
+      map: texture,
+      side: THREE.FrontSide,
+      depthTest: true,
+      transparent: true
+    });
+
+    var mesh = new THREE.Mesh(planeGeo, mat);
+
+    var posX = (dp.lng - campusCenter[0]) / mToLng;
+    var posY = (dp.lat - campusCenter[1]) / mToLat;
+    var posZ = dp.elevation !== undefined ? dp.elevation : 2.36;
+
+    var nx = dp.nx !== undefined ? dp.nx : 0;
+    var ny = dp.ny !== undefined ? dp.ny : -1;
+
+    // Offset 0.075m outward in normal direction onto the front face of the black slate
+    var offsetX = posX + nx * 0.075;
+    var offsetY = posY + ny * 0.075;
+    var offsetZ = posZ;
+
+    // Proper rotation matrix: Col 1 [-ny, nx, 0], Col 2 [0, 0, 1], Col 3 [nx, ny, 0]
+    var transformMat = new THREE.Matrix4();
+    transformMat.set(
+      -ny, 0, nx, offsetX,
+      nx,  0, ny, offsetY,
+      0,   1, 0,  offsetZ,
+      0,   0, 0,  1
+    );
+
+    mesh.matrixAutoUpdate = false;
+    mesh.matrix.copy(transformMat);
+    scene.add(mesh);
+  });
+
+  if (layer.map) layer.map.triggerRepaint();
+};
+
+function ensureDoorplate3DLayer() {
+  if (!map) return;
+  if (!map.getLayer('doorplate-3d-text-layer')) {
+    if (window.THREE) {
+      map.addLayer(doorplate3DLayer);
+      if (currentMapMode === '2D') {
+        map.setLayoutProperty('doorplate-3d-text-layer', 'visibility', 'none');
       }
-    }
-
-    var elev = is2D ? 0.05 : (r.elevation || 2.36);
-    var pA = r.ptA ? projectPoint(r.ptA, elev) : null;
-    var pB = r.ptB ? projectPoint(r.ptB, elev) : null;
-    var centerPos = projectPoint([r.lng, r.lat], elev);
-
-    var screenX = 0, screenY = 0, alpha = 0;
-    if (pA && pB) {
-      screenX = (pA[0] + pB[0]) / 2;
-      screenY = (pA[1] + pB[1]) / 2;
-      var dX = pB[0] - pA[0];
-      var dY = pB[1] - pA[1];
-      alpha = Math.atan2(dY, dX) * 180 / Math.PI;
-      if (alpha > 90) alpha -= 180;
-      else if (alpha < -90) alpha += 180;
-    } else if (centerPos) {
-      screenX = centerPos[0];
-      screenY = centerPos[1];
-      alpha = 0;
     } else {
-      el.style.display = 'none';
-      continue;
-    }
-
-    // Viewport frustum bounds check
-    if (screenX >= -80 && screenX <= window.innerWidth + 80 &&
-        screenY >= -40 && screenY <= window.innerHeight + 40) {
-      el.style.left = Math.round(screenX) + 'px';
-      el.style.top = Math.round(screenY) + 'px';
-      el.style.transform = 'translate(-50%, -50%) rotate(' + alpha.toFixed(1) + 'deg) scale(' + scale.toFixed(2) + ')';
-      el.style.opacity = baseOpacity.toFixed(2);
-      el.style.display = 'block';
-    } else {
-      el.style.display = 'none';
-    }
-  }
-
-  var children = container.children;
-  for (var c = children.length - 1; c >= 0; c--) {
-    var child = children[c];
-    var cid = child.id.replace('dp-lbl-', '');
-    if (!existingIds[cid]) {
-      container.removeChild(child);
+      setTimeout(ensureDoorplate3DLayer, 100);
     }
   }
 }
 
 map.on('render', function() {
   updateBadgePosition();
-  updateDoorplateSignage();
 });
 
 window.updateUserPos = function(lat, lng, heading, elevation, floorLevel, floorName, hasValidZ) {

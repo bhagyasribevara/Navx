@@ -311,20 +311,33 @@ function distToSegmentSquared(p, v, w) {
 /**
  * Generates corridor-aligned door portals (illuminated frame, recessed leaf, threshold strip).
  */
-export function generateDoorPortals(ring, floorPaths = null, doorWidthMeters = 1.2, wallDepthMeters = 0.22) {
+export function generateDoorPortals(ring, floorPaths = null, doorWidthMeters = 1.2, wallDepthMeters = 0.22, allCampusPaths = null) {
   if (!ring || ring.length < 4) return null;
   const mToLat = 1 / 111139;
   const avgLat = ring[0][1];
   const mToLng = 1 / (111139 * Math.cos(avgLat * Math.PI / 180));
 
+  // Calculate room centroid for outward normal validation
+  let cLng = 0, cLat = 0, ptCount = ring.length - 1;
+  for (let i = 0; i < ptCount; i++) {
+    cLng += ring[i][0];
+    cLat += ring[i][1];
+  }
+  cLng /= Math.max(1, ptCount);
+  cLat /= Math.max(1, ptCount);
+
   let bestEdge = -1;
   let bestT = 0.5;
   let corridorRefPoint = null;
 
-  // 1. Check path intersection
-  if (Array.isArray(floorPaths) && floorPaths.length > 0) {
-    for (let pIdx = 0; pIdx < floorPaths.length; pIdx++) {
-      const p = floorPaths[pIdx];
+  const candidatePaths = (Array.isArray(floorPaths) && floorPaths.length > 0)
+    ? floorPaths
+    : (Array.isArray(allCampusPaths) ? allCampusPaths : []);
+
+  // 1. Check direct path intersection with room edges
+  if (candidatePaths.length > 0) {
+    for (let pIdx = 0; pIdx < candidatePaths.length; pIdx++) {
+      const p = candidatePaths[pIdx];
       const pA = p.pA || (p.nodeA ? [p.nodeA.y, p.nodeA.x] : null);
       const pB = p.pB || (p.nodeB ? [p.nodeB.y, p.nodeB.x] : null);
       if (!pA || !pB) continue;
@@ -341,22 +354,27 @@ export function generateDoorPortals(ring, floorPaths = null, doorWidthMeters = 1
       if (bestEdge !== -1) break;
     }
 
-    // 2. Check nearest corridor path
+    // 2. Check nearest corridor path across candidate edges
     if (bestEdge === -1) {
       let minDist = Infinity;
-      for (let pIdx = 0; pIdx < floorPaths.length; pIdx++) {
-        const p = floorPaths[pIdx];
+      for (let pIdx = 0; pIdx < candidatePaths.length; pIdx++) {
+        const p = candidatePaths[pIdx];
         const pA = p.pA || (p.nodeA ? [p.nodeA.y, p.nodeA.x] : null);
         const pB = p.pB || (p.nodeB ? [p.nodeB.y, p.nodeB.x] : null);
         if (!pA || !pB) continue;
 
-        const midP = [(pA[0] + pB[0])/2, (pA[1] + pB[1])/2];
+        const midP = [(pA[0] + pB[0]) / 2, (pA[1] + pB[1]) / 2];
         for (let i = 0; i < ring.length - 1; i++) {
+          const dx = (ring[i+1][0] - ring[i][0]) / mToLng;
+          const dy = (ring[i+1][1] - ring[i][1]) / mToLat;
+          const edgeLen = Math.hypot(dx, dy);
+          if (edgeLen < 0.6) continue;
+
           const res = distToSegmentSquared(midP, ring[i], ring[i+1]);
           if (res.distSq < minDist) {
             minDist = res.distSq;
             bestEdge = i;
-            bestT = res.t;
+            bestT = Math.max(0.12, Math.min(0.88, res.t));
             corridorRefPoint = midP;
           }
         }
@@ -364,15 +382,17 @@ export function generateDoorPortals(ring, floorPaths = null, doorWidthMeters = 1
     }
   }
 
-  // 3. Fallback to first edge with len >= 2m
+  // 3. Fallback: select longest edge
   if (bestEdge === -1) {
+    let maxLen = -1;
     for (let i = 0; i < ring.length - 1; i++) {
       const dx = (ring[i+1][0] - ring[i][0]) / mToLng;
       const dy = (ring[i+1][1] - ring[i][1]) / mToLat;
-      if (Math.hypot(dx, dy) >= 2.0) {
+      const len = Math.hypot(dx, dy);
+      if (len > maxLen) {
+        maxLen = len;
         bestEdge = i;
         bestT = 0.5;
-        break;
       }
     }
   }
@@ -388,12 +408,22 @@ export function generateDoorPortals(ring, floorPaths = null, doorWidthMeters = 1
   let nx = -uy;
   let ny = ux;
 
+  const doorMidLng = p1[0] + (p2[0] - p1[0]) * bestT;
+  const doorMidLat = p1[1] + (p2[1] - p1[1]) * bestT;
+
+  // Ensure normal points outward away from room centroid
+  const dPlusCentroid = Math.hypot((doorMidLng + nx * mToLng) - cLng, (doorMidLat + ny * mToLat) - cLat);
+  const dMinusCentroid = Math.hypot((doorMidLng - nx * mToLng) - cLng, (doorMidLat - ny * mToLat) - cLat);
+  if (dPlusCentroid < dMinusCentroid) {
+    nx = -nx;
+    ny = -ny;
+  }
+
+  // If corridor reference point exists, orient towards corridor
   if (corridorRefPoint) {
-    const doorMidLng = p1[0] + (p2[0] - p1[0]) * bestT;
-    const doorMidLat = p1[1] + (p2[1] - p1[1]) * bestT;
-    const dPlus = Math.hypot((doorMidLng + nx * mToLng) - corridorRefPoint[0], (doorMidLat + ny * mToLat) - corridorRefPoint[1]);
-    const dMinus = Math.hypot((doorMidLng - nx * mToLng) - corridorRefPoint[0], (doorMidLat - ny * mToLat) - corridorRefPoint[1]);
-    if (dMinus < dPlus) {
+    const dPlusCorr = Math.hypot((doorMidLng + nx * mToLng) - corridorRefPoint[0], (doorMidLat + ny * mToLat) - corridorRefPoint[1]);
+    const dMinusCorr = Math.hypot((doorMidLng - nx * mToLng) - corridorRefPoint[0], (doorMidLat - ny * mToLat) - corridorRefPoint[1]);
+    if (dMinusCorr < dPlusCorr) {
       nx = -nx;
       ny = -ny;
     }
@@ -419,9 +449,6 @@ export function generateDoorPortals(ring, floorPaths = null, doorWidthMeters = 1
 
     return [[c1, c2, c3, c4, c1]];
   }
-
-  const doorMidLng = p1[0] + (p2[0] - p1[0]) * bestT;
-  const doorMidLat = p1[1] + (p2[1] - p1[1]) * bestT;
 
   const plateHalfW = (doorWidthMeters * 0.95 / 2) / len;
   const plateT1 = Math.max(0.02, bestT - plateHalfW);
