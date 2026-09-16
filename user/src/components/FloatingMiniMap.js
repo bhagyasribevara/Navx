@@ -6,64 +6,14 @@ import { Magnetometer } from "expo-sensors";
 import * as Location from "expo-location";
 import { getCachedConfigValue } from "../api";
 import { SHADOWS } from "../theme/designSystem";
-
-const EARTH_R = 6_371_000;
-const toRad = (d) => (d * Math.PI) / 180;
-
-function haversine(lat1, lon1, lat2, lon2) {
-  const dLat = toRad(lat2 - lat1);
-  const dLon = toRad(lon2 - lon1);
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
-  return EARTH_R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
-function getClosestPointOnSegment(px, py, x1, y1, x2, y2) {
-  const dx = x2 - x1;
-  const dy = y2 - y1;
-  if (dx === 0 && dy === 0) return { x: x1, y: y1 };
-
-  let t = ((px - x1) * dx + (py - y1) * dy) / (dx * dx + dy * dy);
-  t = Math.max(0, Math.min(1, t));
-
-  return {
-    x: x1 + t * dx,
-    y: y1 + t * dy,
-  };
-}
+import {
+  snapPositionToRouteAdvanced,
+  shortestAngleDiff,
+  haversineDistance
+} from "../positioning";
 
 function snapPositionToRoute(pos, path) {
-  if (!pos || !path || path.length === 0) return pos;
-
-  let closestSnapped = pos;
-  let minDistance = Infinity;
-
-  for (let i = 0; i < path.length - 1; i++) {
-    const startNode = path[i];
-    const endNode = path[i + 1];
-    if (!startNode || !endNode) continue;
-
-    const snapped = getClosestPointOnSegment(
-      pos.x,
-      pos.y,
-      startNode.x,
-      startNode.y,
-      endNode.x,
-      endNode.y
-    );
-    const dist = haversine(pos.x, pos.y, snapped.x, snapped.y);
-    if (dist < minDistance) {
-      minDistance = dist;
-      closestSnapped = snapped;
-    }
-  }
-
-  // Snap if within 15 meters of the active path
-  if (minDistance < 15) {
-    return { ...pos, x: closestSnapped.x, y: closestSnapped.y };
-  }
-  return pos;
+  return snapPositionToRouteAdvanced(pos, path, 0, null, 22);
 }
 
 /**

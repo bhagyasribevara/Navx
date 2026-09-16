@@ -17,7 +17,14 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { findRouteToRoom, findRouteToExit, getGeoJSONMapData, SOCKET_URL, getCachedConfigValue } from "../api";
 import { io } from "socket.io-client";
-import { PositionEngine, StepDetector } from "../positioning";
+import {
+  PositionEngine,
+  StepDetector,
+  snapPositionToRouteAdvanced,
+  clampPointToPolygon,
+  shortestAngleDiff,
+  haversineDistance
+} from "../positioning";
 import BarometerService from "../sensors/BarometerService";
 import SensorFusion from "../sensors/SensorFusion";
 import AmbientFloorDetector from "../sensors/AmbientFloorDetector";
@@ -47,35 +54,8 @@ function haversine(lat1, lon1, lat2, lon2) {
 const AVG_STRIDE = 0.72;   // meters per step
 const WALK_SPEED = 1.2;    // m/s fallback
 
-function getClosestPointOnSegment(px, py, x1, y1, x2, y2) {
-  const dx = x2 - x1;
-  const dy = y2 - y1;
-  if (dx === 0 && dy === 0) return { x: x1, y: y1 };
-
-  let t = ((px - x1) * dx + (py - y1) * dy) / (dx * dx + dy * dy);
-  t = Math.max(0, Math.min(1, t)); // clamp to segment
-
-  return {
-    x: x1 + t * dx,
-    y: y1 + t * dy
-  };
-}
-
-function snapPositionToRoute(pos, path, currentStep) {
-  if (!pos || !path || path.length === 0) return pos;
-
-  const startNode = path[currentStep];
-  const endNode = path[Math.min(currentStep + 1, path.length - 1)];
-  if (!startNode || !endNode) return pos;
-
-  const snapped = getClosestPointOnSegment(pos.x, pos.y, startNode.x, startNode.y, endNode.x, endNode.y);
-
-  // Calculate distance between raw and snapped in meters
-  const dist = haversine(pos.x, pos.y, snapped.x, snapped.y);
-  if (dist < 15) { // within 15 meters
-    return { ...pos, x: snapped.x, y: snapped.y };
-  }
-  return pos;
+function snapPositionToRoute(pos, path, currentStep, activeFloorId) {
+  return snapPositionToRouteAdvanced(pos, path, currentStep, activeFloorId, 22);
 }
 
 export function resolveFloorInfo(floorRef, floorsList = []) {
@@ -1585,15 +1565,108 @@ ${destX && destY ? `
   new mapboxgl.Marker({ element: destEl }).setLngLat([${destY}, ${destX}]).addTo(map);
 ` : ''}
 
-window.updateUserPos = function(lat, lng, heading, elevation, floorLevel, floorName, hasValidZ) {
+function shortestAngleDiff(current, target) {
+  return (((target - current + 540) % 360) - 180);
+}
+
+var _markerCurrent = {
+  lat: ${initLat || 18.4665},
+  lng: ${initLng || 83.6629},
+  heading: 0,
+  elev: ${initElev !== undefined && initElev !== null && !isNaN(initElev) ? initElev : (initLevel * 3.5 + 0.54)},
+  floorLevel: ${initLevel || 0}
+};
+var _markerTarget = {
+  lat: ${initLat || 18.4665},
+  lng: ${initLng || 83.6629},
+  heading: 0,
+  elev: ${initElev !== undefined && initElev !== null && !isNaN(initElev) ? initElev : (initLevel * 3.5 + 0.54)},
+  floorLevel: ${initLevel || 0}
+};
+var _animatingMarker = false;
+
+function renderUserMarker(lng, lat, heading, effElev, fl) {
+  if (!map) return;
+  setupMarkerLayers();
+  if (!map.getSource('user-marker-source')) return;
+
+  var baseElev = (currentMapMode === '2D') ? 0.05 : effElev + 0.08;
+  var glowCoords = generateCirclePolygon(lng, lat, 2.2);
+  var puckCoords = generateCirclePolygon(lng, lat, 1.2);
+  var arrowCoords = generateArrowPolygon(lng, lat, heading, 2.0, 1.3);
+
+  map.getSource('user-marker-source').setData({
+    type: 'FeatureCollection',
+    features: [
+      {
+        type: 'Feature',
+        properties: { part: 'glow', min_height: baseElev + 0.02, height: baseElev + 0.07 },
+        geometry: { type: 'Polygon', coordinates: glowCoords }
+      },
+      {
+        type: 'Feature',
+        properties: { part: 'puck', min_height: baseElev + 0.07, height: baseElev + 0.22 },
+        geometry: { type: 'Polygon', coordinates: puckCoords }
+      },
+      {
+        type: 'Feature',
+        properties: { part: 'arrow', min_height: baseElev + 0.23, height: baseElev + 0.35 },
+        geometry: { type: 'Polygon', coordinates: arrowCoords }
+      }
+    ]
+  });
+
   window._lastUserCoords = [lng, lat];
   window._lastUserPos = { lat: lat, lng: lng };
-  if (heading !== undefined && heading !== null) window._lastUserHeading = heading;
-  if (floorLevel !== undefined && floorLevel !== null) window._lastUserFloorLevel = Number(floorLevel);
-  if (floorName !== undefined) window._lastUserFloorName = floorName;
+  window._lastUserHeading = heading;
+  window._lastUserFloorLevel = fl;
+  window._lastUserElev = effElev;
+  updateBadgePosition();
+}
 
-  var fl = window._lastUserFloorLevel || 0;
-  var h = window._lastUserHeading || 0;
+function startMarkerAnimation() {
+  if (_animatingMarker) return;
+  _animatingMarker = true;
+
+  function step() {
+    var posFactor = 0.24;
+    var headingFactor = 0.28;
+    var elevFactor = 0.22;
+
+    var dLat = _markerTarget.lat - _markerCurrent.lat;
+    var dLng = _markerTarget.lng - _markerCurrent.lng;
+    var dElev = _markerTarget.elev - _markerCurrent.elev;
+    var dHeading = shortestAngleDiff(_markerCurrent.heading, _markerTarget.heading);
+
+    _markerCurrent.lat += dLat * posFactor;
+    _markerCurrent.lng += dLng * posFactor;
+    _markerCurrent.elev += dElev * elevFactor;
+    _markerCurrent.heading = ((_markerCurrent.heading + dHeading * headingFactor) % 360 + 360) % 360;
+    _markerCurrent.floorLevel = _markerTarget.floorLevel;
+
+    renderUserMarker(_markerCurrent.lng, _markerCurrent.lat, _markerCurrent.heading, _markerCurrent.elev, _markerCurrent.floorLevel);
+
+    var isMoving = Math.abs(dLat) > 1e-7 || Math.abs(dLng) > 1e-7 || Math.abs(dElev) > 0.01 || Math.abs(dHeading) > 0.2;
+    if (isMoving) {
+      requestAnimationFrame(step);
+    } else {
+      _markerCurrent.lat = _markerTarget.lat;
+      _markerCurrent.lng = _markerTarget.lng;
+      _markerCurrent.elev = _markerTarget.elev;
+      _markerCurrent.heading = _markerTarget.heading;
+      renderUserMarker(_markerCurrent.lng, _markerCurrent.lat, _markerCurrent.heading, _markerCurrent.elev, _markerCurrent.floorLevel);
+      _animatingMarker = false;
+    }
+  }
+
+  requestAnimationFrame(step);
+}
+
+window.updateUserPos = function(lat, lng, heading, elevation, floorLevel, floorName, hasValidZ) {
+  if (lat === undefined || lng === undefined || isNaN(lat) || isNaN(lng)) return;
+
+  var fl = (floorLevel !== undefined && floorLevel !== null) ? Number(floorLevel) : (window._lastUserFloorLevel || 0);
+  if (floorName !== undefined) window._lastUserFloorName = floorName;
 
   var effElev;
   if (hasValidZ && elevation !== undefined && elevation !== null && !isNaN(elevation)) {
@@ -1603,40 +1676,16 @@ window.updateUserPos = function(lat, lng, heading, elevation, floorLevel, floorN
   } else {
     effElev = 0.54;
   }
-  window._lastUserElev = effElev;
 
-  var baseElev = (currentMapMode === '2D') ? 0.05 : effElev + 0.08;
+  var h = (heading !== undefined && heading !== null && !isNaN(heading)) ? heading : (_markerTarget.heading || 0);
 
-  setupMarkerLayers();
+  _markerTarget.lat = Number(lat);
+  _markerTarget.lng = Number(lng);
+  _markerTarget.heading = Number(h);
+  _markerTarget.elev = Number(effElev);
+  _markerTarget.floorLevel = fl;
 
-  if (map.getSource('user-marker-source')) {
-    var glowCoords = generateCirclePolygon(lng, lat, 2.2);
-    var puckCoords = generateCirclePolygon(lng, lat, 1.2);
-    var arrowCoords = generateArrowPolygon(lng, lat, h, 2.0, 1.3);
-
-    map.getSource('user-marker-source').setData({
-      type: 'FeatureCollection',
-      features: [
-        {
-          type: 'Feature',
-          properties: { part: 'glow', min_height: baseElev + 0.02, height: baseElev + 0.07 },
-          geometry: { type: 'Polygon', coordinates: glowCoords }
-        },
-        {
-          type: 'Feature',
-          properties: { part: 'puck', min_height: baseElev + 0.07, height: baseElev + 0.22 },
-          geometry: { type: 'Polygon', coordinates: puckCoords }
-        },
-        {
-          type: 'Feature',
-          properties: { part: 'arrow', min_height: baseElev + 0.23, height: baseElev + 0.35 },
-          geometry: { type: 'Polygon', coordinates: arrowCoords }
-        }
-      ]
-    });
-  }
-
-  updateBadgePosition();
+  startMarkerAnimation();
 
   // Dynamic Follow Camera: track user with forward look-ahead only during active navigation
   if (window._isNavigationActive && !window._isFreeRoam && !window._userInteracting) {
@@ -1657,55 +1706,24 @@ window.updateUserPos = function(lat, lng, heading, elevation, floorLevel, floorN
       center: camCenter,
       zoom: targetZoom,
       pitch: targetPitch,
-      duration: 400,
+      duration: 350,
       easing: function(t) { return t; }
     });
   }
 };
 
 window.updateUserHeading = function(heading) {
-  if (heading === undefined || heading === null) return;
-  window._lastUserHeading = heading;
-  if (!window._lastUserPos) return;
-
-  var lat = window._lastUserPos.lat;
-  var lng = window._lastUserPos.lng;
-  var fl = window._lastUserFloorLevel || 0;
-  var effElev = window._lastUserElev !== undefined ? window._lastUserElev : (fl > 0 ? fl * 3.5 + 0.54 : 0.54);
-  var baseElev = (currentMapMode === '2D') ? 0.05 : effElev + 0.08;
-
-  if (map.getSource('user-marker-source')) {
-    var glowCoords = generateCirclePolygon(lng, lat, 2.2);
-    var puckCoords = generateCirclePolygon(lng, lat, 1.2);
-    var arrowCoords = generateArrowPolygon(lng, lat, heading, 2.0, 1.3);
-
-    map.getSource('user-marker-source').setData({
-      type: 'FeatureCollection',
-      features: [
-        {
-          type: 'Feature',
-          properties: { part: 'glow', min_height: baseElev + 0.02, height: baseElev + 0.07 },
-          geometry: { type: 'Polygon', coordinates: glowCoords }
-        },
-        {
-          type: 'Feature',
-          properties: { part: 'puck', min_height: baseElev + 0.07, height: baseElev + 0.22 },
-          geometry: { type: 'Polygon', coordinates: puckCoords }
-        },
-        {
-          type: 'Feature',
-          properties: { part: 'arrow', min_height: baseElev + 0.23, height: baseElev + 0.35 },
-          geometry: { type: 'Polygon', coordinates: arrowCoords }
-        }
-      ]
-    });
-  }
+  if (heading === undefined || heading === null || isNaN(heading)) return;
+  _markerTarget.heading = Number(heading);
+  startMarkerAnimation();
 
   // Dynamic Follow Camera: smooth bearing alignment during active navigation
   if (window._isNavigationActive && !window._isFreeRoam && !window._userInteracting && currentMapMode !== '2D') {
     var curBearing = map.getBearing();
     var diff = shortestAngleDiff(curBearing, heading);
-    var newBearing = curBearing + diff * 0.45;
+    var newBearing = curBearing + diff * 0.35;
+    var lat = _markerCurrent.lat;
+    var lng = _markerCurrent.lng;
     var rad = heading * Math.PI / 180;
     var mToLat = 1 / 111139;
     var mToLng = 1 / (111139 * Math.cos(lat * Math.PI / 180));
@@ -1716,7 +1734,7 @@ window.updateUserHeading = function(heading) {
     map.easeTo({
       center: camCenter,
       bearing: newBearing,
-      duration: 300,
+      duration: 250,
       easing: function(t) { return t; }
     });
   }
@@ -2123,26 +2141,54 @@ export default function NavigationScreen({ navigation, route }) {
   // Push user location updates directly into the WebView via JS (with route-snapping and elevation)
   useEffect(() => {
     if (userPos && webViewRef.current) {
-      const snappedPos = snapPositionToRoute(userPos, routeData?.path, currentStep);
-      
       const resolvedFloor = resolveFloorInfo(currentFloor || userPos.floorId || userPos.floor, mapData?.floors);
       const currentLevel = resolvedFloor.level;
       const floorName = resolvedFloor.name;
 
+      let processedX = userPos.x;
+      let processedY = userPos.y;
+      let processedHeading = heading || posEngine.heading || 0;
+
+      // 1. Route Snapping (on active floor)
+      const snappedPos = snapPositionToRoute(userPos, routeData?.path, currentStep, resolvedFloor.floorId);
+      if (snappedPos.isSnapped) {
+        processedX = snappedPos.x;
+        processedY = snappedPos.y;
+        if (isNavigating && snappedPos.snappedHeading !== undefined) {
+          // Align heading smoothly to path direction if moving forward
+          processedHeading = snappedPos.snappedHeading;
+        }
+      } else if (currentLevel > 0 && geoJSONData?.features) {
+        // 2. Indoor Building Boundary Clamping: prevent jumping outside building walls
+        const blockFeatures = geoJSONData.features.filter(f =>
+          f.geometry?.type === 'Polygon' &&
+          (f.properties?.type === 'block' || f.properties?.type === 'building')
+        );
+        for (const feature of blockFeatures) {
+          const coords = feature.geometry?.coordinates?.[0];
+          if (coords && coords.length >= 3) {
+            const clamped = clampPointToPolygon(processedX, processedY, coords);
+            processedX = clamped.lat;
+            processedY = clamped.lng;
+            break;
+          }
+        }
+      }
+
       const isStairTracking = !!(posEngine.verticalTrackingActive || userPos.verticalTrackingActive);
       const hasValidZ = isStairTracking || !!(userPos.hasValidElevation && userPos.elevationSource === 'staircase_connector');
       const elev = isStairTracking
-        ? (userPos.z ?? posEngine.position.z ?? 0)
+        ? (userPos.z ?? posEngine.position.z ?? (currentLevel * 3.5 + 0.54))
         : (ambientAltRef.current && ambientAltRef.current !== 0 ? ambientAltRef.current : (currentLevel * 3.5 + 0.54));
 
       webViewRef.current.injectJavaScript(`
         if (typeof window.updateUserPos === 'function') {
-          window.updateUserPos(${snappedPos.x}, ${snappedPos.y}, ${heading || posEngine.heading || 0}, ${elev}, ${currentLevel}, '${floorName}', ${hasValidZ ? 'true' : 'false'});
+          window.updateUserPos(${processedX}, ${processedY}, ${processedHeading}, ${elev}, ${currentLevel}, '${floorName}', ${hasValidZ ? 'true' : 'false'});
         }
         true;
       `);
     }
-  }, [userPos, routeData, currentStep, ambientFloorIndex, heading, currentFloor, mapData]);
+  }, [userPos, routeData, currentStep, ambientFloorIndex, heading, currentFloor, mapData, isNavigating, geoJSONData]);
 
   // Continuous compass heading listener for dynamic arrow rotation (active during preview and navigation)
   useEffect(() => {
@@ -2565,8 +2611,8 @@ export default function NavigationScreen({ navigation, route }) {
             let activeLng = posEngine.position.y;
 
             if (rData && rData.path && !isArrived) {
-              // Apply aggressive route snapping to internal coordinates to stabilize distances
-              const snapped = snapPositionToRoute({ x: activeLat, y: activeLng }, rData.path, cStep);
+              // Apply route snapping on the active floor to internal coordinates to stabilize distances
+              const snapped = snapPositionToRoute({ x: activeLat, y: activeLng }, rData.path, cStep, currentFloor);
               activeLat = snapped.x;
               activeLng = snapped.y;
 

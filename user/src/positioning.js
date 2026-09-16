@@ -3,6 +3,188 @@
 
 const STEP_LENGTH = 0.7; // Average step length in meters
 const PIXEL_PER_METER = 20; // Scale factor
+const EARTH_RADIUS = 6371000; // Earth radius in meters
+
+/**
+ * Calculates haversine distance in meters between two lat/lng coordinates.
+ */
+export function haversineDistance(lat1, lon1, lat2, lon2) {
+  if (lat1 === undefined || lon1 === undefined || lat2 === undefined || lon2 === undefined) return Infinity;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return EARTH_RADIUS * c;
+}
+
+/**
+ * Calculates initial bearing (forward azimuth) from point 1 to point 2 in degrees [0, 360).
+ */
+export function calculateBearing(lat1, lon1, lat2, lon2) {
+  const phi1 = (lat1 * Math.PI) / 180;
+  const phi2 = (lat2 * Math.PI) / 180;
+  const deltaLambda = ((lon2 - lon1) * Math.PI) / 180;
+
+  const y = Math.sin(deltaLambda) * Math.cos(phi2);
+  const x = Math.cos(phi1) * Math.sin(phi2) - Math.sin(phi1) * Math.cos(phi2) * Math.cos(deltaLambda);
+  const theta = Math.atan2(y, x);
+  return ((theta * 180) / Math.PI + 360) % 360;
+}
+
+/**
+ * Calculates shortest signed angular difference from current to target in degrees [-180, 180].
+ */
+export function shortestAngleDiff(current, target) {
+  return (((target - current + 540) % 360) - 180);
+}
+
+/**
+ * Projects a point (px, py) orthogonally onto segment (x1,y1)-(x2,y2), clamping to [0, 1].
+ */
+export function getClosestPointOnSegment(px, py, x1, y1, x2, y2) {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq === 0) return { x: x1, y: y1, t: 0 };
+
+  let t = ((px - x1) * dx + (py - y1) * dy) / lenSq;
+  t = Math.max(0, Math.min(1, t));
+
+  return {
+    x: x1 + t * dx,
+    y: y1 + t * dy,
+    t: t
+  };
+}
+
+/**
+ * Advanced Snap-to-Route Map Matching Algorithm
+ * - Evaluates multi-segment window along route polyline
+ * - Prioritizes segments matching active floor level or currentStep neighborhood
+ * - Calculates orthogonal projection, distance, along-track progress, and segment heading
+ * - Applies progressive exponential attraction to prevent abrupt coordinate jumps
+ */
+export function snapPositionToRouteAdvanced(pos, path, currentStepIndex = 0, activeFloorId = null, maxSnapDistance = 22) {
+  if (!pos || !path || path.length === 0) return { ...pos, isSnapped: false };
+
+  // Filter or prioritize segments on the active floor if floorId is provided
+  let bestCandidate = null;
+  let minDistance = Infinity;
+
+  // Search window: if path is long, check window around current step, but allow all on same floor
+  const startIndex = Math.max(0, currentStepIndex - 2);
+  const endIndex = Math.min(path.length - 1, currentStepIndex + 6);
+
+  // First pass: try within active neighborhood [startIndex, endIndex]
+  for (let i = 0; i < path.length - 1; i++) {
+    const nodeA = path[i];
+    const nodeB = path[i + 1];
+    if (!nodeA || !nodeB) continue;
+
+    // If floor filter active, prefer segments on same floor
+    if (activeFloorId) {
+      const aFloor = (nodeA.floorId || '').toString();
+      const bFloor = (nodeB.floorId || '').toString();
+      const targetFloor = activeFloorId.toString();
+      if (aFloor && bFloor && aFloor !== targetFloor && bFloor !== targetFloor) {
+        continue; // Skip segments on different floors
+      }
+    }
+
+    const proj = getClosestPointOnSegment(pos.x, pos.y, nodeA.x, nodeA.y, nodeB.x, nodeB.y);
+    const dist = haversineDistance(pos.x, pos.y, proj.x, proj.y);
+
+    // Give slight priority score to segments close to currentStepIndex
+    const stepPenalty = Math.abs(i - currentStepIndex) * 0.4;
+    const effectiveScore = dist + stepPenalty;
+
+    if (effectiveScore < minDistance) {
+      minDistance = effectiveScore;
+      const segBearing = calculateBearing(nodeA.x, nodeA.y, nodeB.x, nodeB.y);
+      bestCandidate = {
+        snappedX: proj.x,
+        snappedY: proj.y,
+        t: proj.t,
+        segmentIndex: i,
+        realDistance: dist,
+        bearing: segBearing,
+        nodeA,
+        nodeB
+      };
+    }
+  }
+
+  if (bestCandidate && bestCandidate.realDistance <= maxSnapDistance) {
+    // Progressive attraction: the closer to the path, the stronger the snap
+    // At dist < 6m, snap 95% to line; at dist = 20m, blend gently (50%)
+    const snapWeight = Math.max(0.65, 1.0 - (bestCandidate.realDistance / (maxSnapDistance * 1.5)));
+    const blendedX = pos.x * (1 - snapWeight) + bestCandidate.snappedX * snapWeight;
+    const blendedY = pos.y * (1 - snapWeight) + bestCandidate.snappedY * snapWeight;
+
+    return {
+      ...pos,
+      x: blendedX,
+      y: blendedY,
+      snappedHeading: bestCandidate.bearing,
+      isSnapped: true,
+      distToPath: bestCandidate.realDistance,
+      segmentIndex: bestCandidate.segmentIndex,
+      segmentProgress: bestCandidate.t
+    };
+  }
+
+  return { ...pos, isSnapped: false, distToPath: minDistance };
+}
+
+/**
+ * Clamps a point (lat, lng) to stay within or on the boundary of a GeoJSON polygon ring.
+ * Useful for keeping indoor positioning strictly inside building walls.
+ */
+export function clampPointToPolygon(lat, lng, coords) {
+  if (!coords || coords.length < 3) return { lat, lng };
+
+  // Check if already inside
+  let inside = false;
+  const n = coords.length;
+  let j = n - 1;
+
+  for (let i = 0; i < n; i++) {
+    const xi = coords[i][0]; // lng
+    const yi = coords[i][1]; // lat
+    const xj = coords[j][0];
+    const yj = coords[j][1];
+
+    const intersect =
+      yi > lat !== yj > lat &&
+      lng < ((xj - xi) * (lat - yi)) / (yj - yi) + xi;
+
+    if (intersect) inside = !inside;
+    j = i;
+  }
+
+  if (inside) return { lat, lng }; // Point is already validly inside
+
+  // Otherwise, find closest point on polygon perimeter
+  let closest = { lat, lng };
+  let minD = Infinity;
+
+  for (let i = 0; i < n; i++) {
+    const p1 = coords[i];
+    const p2 = coords[(i + 1) % n];
+    // coords are [lng, lat]
+    const proj = getClosestPointOnSegment(lat, lng, p1[1], p1[0], p2[1], p2[0]);
+    const d = haversineDistance(lat, lng, proj.x, proj.y);
+    if (d < minD) {
+      minD = d;
+      closest = { lat: proj.x, lng: proj.y };
+    }
+  }
+
+  return closest;
+}
 
 export class PositionEngine {
   constructor() {
@@ -23,6 +205,7 @@ export class PositionEngine {
       elevationSource: 'unknown'
     };
     this.heading = 0; // degrees
+    this.smoothHeadingVal = 0;
     this.isCalibrated = false;
     this.lastQRTime = 0;
     this.stepCount = 0;
@@ -79,22 +262,20 @@ export class PositionEngine {
   processStep(heading) {
     if (!this.isCalibrated) return;
 
-    this.heading = heading;
+    this.updateHeading(heading);
     this.stepCount++;
 
-    const radians = (heading * Math.PI) / 180;
+    const radians = (this.heading * Math.PI) / 180;
 
     // Convert step size (0.7m) to GPS degrees
-    // 1 degree of Latitude ≈ 111,320 meters
     const metersPerLatDegree = 111320;
     const currentLat = this.position.x || 18.4665;
-    // 1 degree of Longitude depends on the latitude
     const metersPerLngDegree = 111320 * Math.cos((currentLat * Math.PI) / 180);
 
     const dLat = (STEP_LENGTH * Math.cos(radians)) / metersPerLatDegree;
     const dLng = (STEP_LENGTH * Math.sin(radians)) / metersPerLngDegree;
 
-    // Apply displacement
+    // Apply displacement with drift correction
     this.position.x += dLat + this.driftCorrection.x;
     this.position.y += dLng + this.driftCorrection.y;
 
@@ -104,7 +285,7 @@ export class PositionEngine {
     this.notify();
   }
 
-  // Fused GPS Update - blends GPS coordinate to correct sensor drift and filter noise
+  // Fused GPS Update - blends GPS coordinate with indoor/outdoor awareness
   processGPSUpdate(lat, lng, accuracy = 15) {
     if (!this.isCalibrated) {
       this.position = { ...this.position, x: lat, y: lng };
@@ -113,15 +294,24 @@ export class PositionEngine {
       return;
     }
 
-    // Dynamic weight based on GPS accuracy radius
-    // Indoors, accuracy > 25m is common and should be ignored to prevent jumping
+    const isIndoors = (this.position.floorLevel > 0) || !!this.position.floorId;
+
+    // When indoors, GPS accuracy is poor and multi-path reflections cause big drift outside walls
     let weight = 0.15;
-    if (accuracy > 25) {
-      weight = 0.0;  // Ignore completely, trust Dead Reckoning / Sensors
-    } else if (accuracy > 15) {
-      weight = 0.05; // Lightly pull towards GPS
-    } else if (accuracy <= 5) {
-      weight = 0.3;  // Strong GPS lock, trust heavily
+    if (isIndoors) {
+      if (accuracy > 12) {
+        weight = 0.0; // Ignore GPS completely indoors if accuracy > 12m
+      } else {
+        weight = 0.04; // Very light anchor only
+      }
+    } else {
+      if (accuracy > 25) {
+        weight = 0.0; // Ignore inaccurate outdoors
+      } else if (accuracy > 12) {
+        weight = 0.08;
+      } else if (accuracy <= 5) {
+        weight = 0.35; // Strong outdoor lock
+      }
     }
 
     if (weight > 0) {
@@ -131,9 +321,12 @@ export class PositionEngine {
     this.notify();
   }
 
-  // Update heading from compass
+  // Update heading from compass with shortest-angle exponential smoothing
   updateHeading(heading) {
-    this.heading = heading;
+    if (heading === undefined || heading === null || isNaN(heading)) return;
+    const diff = shortestAngleDiff(this.smoothHeadingVal, heading);
+    this.smoothHeadingVal = ((this.smoothHeadingVal + diff * 0.35) % 360 + 360) % 360;
+    this.heading = Math.round(this.smoothHeadingVal);
   }
 
   // Update vertical position (elevation) — called by VerticalTracker during staircase progress
