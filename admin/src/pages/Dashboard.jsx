@@ -1,11 +1,12 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useOutletContext } from "react-router-dom";
-import { FiMap, FiGrid, FiLayers, FiNavigation, FiPlus, FiUsers, FiCalendar, FiFileText, FiBox } from "react-icons/fi";
-import { getBlocks, getCampuses, getFloors } from "../api";
+import { FiMap, FiGrid, FiLayers, FiNavigation, FiPlus, FiUsers, FiCalendar, FiFileText, FiBox, FiEye, FiClock, FiArrowRight } from "react-icons/fi";
+import { getBlocks, getCampuses, getFloors, getCampaigns } from "../api";
 import { useAdminPageContext } from '../components/AdminPageContext';
 
 export default function Dashboard({ admin }) {
   const [campuses, setCampuses] = useState([]);
+  const [activeCampaigns, setActiveCampaigns] = useState([]);
   const [networkStats, setNetworkStats] = useState({
     totalFloors: 0,
     navReady: 0,
@@ -14,6 +15,10 @@ export default function Dashboard({ admin }) {
   const navigate = useNavigate();
   const context = useOutletContext() || {};
   const { setPageContext } = useAdminPageContext();
+
+  const BACKEND_URL = import.meta.env.VITE_API_BASE_URL
+    ? import.meta.env.VITE_API_BASE_URL.replace('/api', '')
+    : '';
 
   useEffect(() => {
     let mounted = true;
@@ -78,6 +83,23 @@ export default function Dashboard({ admin }) {
           (item) => item.floorCount > 0,
         ).length;
         setNetworkStats({ totalFloors, navReady });
+
+        // Fetch active campaigns across all campuses
+        try {
+          const allCampaigns = await Promise.all(
+            campusList.map(async (campus) => {
+              try {
+                const res = await getCampaigns(campus._id);
+                return (res.data || []).map(c => ({ ...c, campusName: campus.name }));
+              } catch { return []; }
+            })
+          );
+          const now = new Date();
+          const active = allCampaigns.flat()
+            .filter(c => !c.parentId)
+            .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+          if (mounted) setActiveCampaigns(active);
+        } catch { /* campaigns are non-critical */ }
       } catch {
         if (!mounted) return;
         setCampuses([]);
@@ -185,23 +207,78 @@ export default function Dashboard({ admin }) {
         </div>
       </div>
 
-      {/* Featured Section */}
-      <div className="featured-section">
-        <h2 className="section-title">
-          <span className="title-marker">|</span> Featured
-        </h2>
-        
-        <div className="featured-grid">
-          <div className="featured-card">
-            <img src="/featured_campus_1788892611450.jpg" alt="Campus Challenge" />
-          </div>
-          <div className="featured-card">
-            <img src="/featured_spatial_1788892645375.jpg" alt="Spatial AI Lab" />
-          </div>
-          <div className="featured-card">
-            <img src="/featured_sprint_1788892705382.jpg" alt="Developer Sprint" />
-          </div>
+      {/* Active Campaigns Section */}
+      <div className="active-campaigns-section">
+        <div className="campaigns-section-header">
+          <h2 className="section-title">
+            <span className="title-marker">|</span> Active Campaigns
+          </h2>
+          <button
+            className="campaigns-view-all-btn"
+            onClick={() => navigate(prefix ? prefix + "/campaigns" : "/campaigns")}
+          >
+            View All <FiArrowRight />
+          </button>
         </div>
+
+        {activeCampaigns.length > 0 ? (
+          <div className="campaigns-scroll-row">
+            {activeCampaigns.map((c) => {
+              const imgSrc = c.image
+                ? (c.image.startsWith('http') ? c.image : `${BACKEND_URL}${c.image}`)
+                : null;
+              const startStr = c.startDate ? new Date(c.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : null;
+              const endStr = c.endDate ? new Date(c.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : null;
+              const now = new Date();
+              const isLive = c.isActive && (!c.endDate || new Date(c.endDate) >= now);
+
+              return (
+                <div
+                  key={c._id}
+                  className="campaign-card-dash"
+                  onClick={() => navigate(prefix ? prefix + "/campaigns" : "/campaigns")}
+                >
+                  <div className="campaign-card-img-wrap">
+                    {imgSrc ? (
+                      <img src={imgSrc} alt={c.title} />
+                    ) : (
+                      <div className="campaign-card-placeholder">
+                        <FiLayers />
+                      </div>
+                    )}
+                    <span className={`campaign-live-badge ${isLive ? '' : 'campaign-ended-badge'}`}>
+                      <span className="live-dot" /> {isLive ? 'Live' : 'Ended'}
+                    </span>
+                  </div>
+
+                  <div className="campaign-card-body">
+                    <h4 className="campaign-card-title">{c.title}</h4>
+                    {c.category && (
+                      <span className="campaign-category-tag">{c.category}</span>
+                    )}
+                    {(startStr || endStr) && (
+                      <div className="campaign-date-row">
+                        <FiClock className="campaign-date-icon" />
+                        <span>{startStr}{endStr ? ` – ${endStr}` : ''}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="campaigns-empty-state">
+            <FiLayers className="campaigns-empty-icon" />
+            <p>No active campaigns right now</p>
+            <button
+              className="btn btn-primary btn-sm"
+              onClick={() => navigate(prefix ? prefix + "/campaigns" : "/campaigns")}
+            >
+              <FiPlus /> Create Campaign
+            </button>
+          </div>
+        )}
       </div>
       
       {/* Existing Content -> Your Venues */}

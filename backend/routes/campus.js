@@ -460,20 +460,33 @@ router.get('/geojson/:id', async (req, res, next) => {
       return { distSq, t, proj };
     }
 
-    function generateDoorPortals(ring, floorPaths, doorWidthMeters = 1.2, wallDepthMeters = 0.22) {
+    function generateDoorPortals(ring, floorPaths, doorWidthMeters = 1.2, wallDepthMeters = 0.22, allCampusPaths = []) {
       if (!ring || ring.length < 4) return null;
       const mToLat = 1 / 111139;
       const avgLat = ring[0][1];
       const mToLng = 1 / (111139 * Math.cos(avgLat * Math.PI / 180));
 
+      // Calculate room centroid for outward normal validation
+      let cLng = 0, cLat = 0, ptCount = ring.length - 1;
+      for (let i = 0; i < ptCount; i++) {
+        cLng += ring[i][0];
+        cLat += ring[i][1];
+      }
+      cLng /= Math.max(1, ptCount);
+      cLat /= Math.max(1, ptCount);
+
       let bestEdge = -1;
       let bestT = 0.5;
       let corridorRefPoint = null;
 
-      // 1. Check path intersection
-      if (Array.isArray(floorPaths) && floorPaths.length > 0) {
-        for (let pIdx = 0; pIdx < floorPaths.length; pIdx++) {
-          const p = floorPaths[pIdx];
+      const candidatePaths = (Array.isArray(floorPaths) && floorPaths.length > 0)
+        ? floorPaths
+        : (Array.isArray(allCampusPaths) ? allCampusPaths : []);
+
+      // 1. Check direct path intersection with room edges
+      if (candidatePaths.length > 0) {
+        for (let pIdx = 0; pIdx < candidatePaths.length; pIdx++) {
+          const p = candidatePaths[pIdx];
           for (let i = 0; i < ring.length - 1; i++) {
             const hit = lineSegmentsIntersect(ring[i], ring[i+1], p.pA, p.pB);
             if (hit) {
@@ -486,18 +499,23 @@ router.get('/geojson/:id', async (req, res, next) => {
           if (bestEdge !== -1) break;
         }
 
-        // 2. Check nearest corridor path
+        // 2. Check nearest corridor path across all candidate edges
         if (bestEdge === -1) {
           let minDist = Infinity;
-          for (let pIdx = 0; pIdx < floorPaths.length; pIdx++) {
-            const p = floorPaths[pIdx];
-            const midP = [(p.pA[0] + p.pB[0])/2, (p.pA[1] + p.pB[1])/2];
+          for (let pIdx = 0; pIdx < candidatePaths.length; pIdx++) {
+            const p = candidatePaths[pIdx];
+            const midP = [(p.pA[0] + p.pB[0]) / 2, (p.pA[1] + p.pB[1]) / 2];
             for (let i = 0; i < ring.length - 1; i++) {
+              const dx = (ring[i+1][0] - ring[i][0]) / mToLng;
+              const dy = (ring[i+1][1] - ring[i][1]) / mToLat;
+              const edgeLen = Math.hypot(dx, dy);
+              if (edgeLen < 0.6) continue; // skip micro-segments
+
               const res = distToSegmentSquared(midP, ring[i], ring[i+1]);
               if (res.distSq < minDist) {
                 minDist = res.distSq;
                 bestEdge = i;
-                bestT = res.t;
+                bestT = Math.max(0.12, Math.min(0.88, res.t));
                 corridorRefPoint = midP;
               }
             }
@@ -505,15 +523,17 @@ router.get('/geojson/:id', async (req, res, next) => {
         }
       }
 
-      // 3. Fallback to first edge with len >= 2m
+      // 3. Fallback: select longest edge
       if (bestEdge === -1) {
+        let maxLen = -1;
         for (let i = 0; i < ring.length - 1; i++) {
           const dx = (ring[i+1][0] - ring[i][0]) / mToLng;
           const dy = (ring[i+1][1] - ring[i][1]) / mToLat;
-          if (Math.hypot(dx, dy) >= 2.0) {
+          const len = Math.hypot(dx, dy);
+          if (len > maxLen) {
+            maxLen = len;
             bestEdge = i;
             bestT = 0.5;
-            break;
           }
         }
       }
@@ -529,12 +549,22 @@ router.get('/geojson/:id', async (req, res, next) => {
       let nx = -uy;
       let ny = ux;
 
+      const doorMidLng = p1[0] + (p2[0] - p1[0]) * bestT;
+      const doorMidLat = p1[1] + (p2[1] - p1[1]) * bestT;
+
+      // Ensure normal points outward away from room centroid
+      const dPlusCentroid = Math.hypot((doorMidLng + nx * mToLng) - cLng, (doorMidLat + ny * mToLat) - cLat);
+      const dMinusCentroid = Math.hypot((doorMidLng - nx * mToLng) - cLng, (doorMidLat - ny * mToLat) - cLat);
+      if (dPlusCentroid < dMinusCentroid) {
+        nx = -nx;
+        ny = -ny;
+      }
+
+      // If corridor reference point exists, orient towards corridor
       if (corridorRefPoint) {
-        const doorMidLng = p1[0] + (p2[0] - p1[0]) * bestT;
-        const doorMidLat = p1[1] + (p2[1] - p1[1]) * bestT;
-        const dPlus = Math.hypot((doorMidLng + nx * mToLng) - corridorRefPoint[0], (doorMidLat + ny * mToLat) - corridorRefPoint[1]);
-        const dMinus = Math.hypot((doorMidLng - nx * mToLng) - corridorRefPoint[0], (doorMidLat - ny * mToLat) - corridorRefPoint[1]);
-        if (dMinus < dPlus) {
+        const dPlusCorr = Math.hypot((doorMidLng + nx * mToLng) - corridorRefPoint[0], (doorMidLat + ny * mToLat) - corridorRefPoint[1]);
+        const dMinusCorr = Math.hypot((doorMidLng - nx * mToLng) - corridorRefPoint[0], (doorMidLat - ny * mToLat) - corridorRefPoint[1]);
+        if (dMinusCorr < dPlusCorr) {
           nx = -nx;
           ny = -ny;
         }
@@ -560,9 +590,6 @@ router.get('/geojson/:id', async (req, res, next) => {
 
         return [[c1, c2, c3, c4, c1]];
       }
-
-      const doorMidLng = p1[0] + (p2[0] - p1[0]) * bestT;
-      const doorMidLat = p1[1] + (p2[1] - p1[1]) * bestT;
 
       const plateHalfW = (doorWidthMeters * 0.95 / 2) / len;
       const plateT1 = Math.max(0.02, bestT - plateHalfW);
@@ -590,14 +617,19 @@ router.get('/geojson/:id', async (req, res, next) => {
 
     // Index paths by floorId string for fast corridor-aligned door generation
     const pathsByFloor = {};
+    const allCampusNavPaths = [];
     paths.forEach(p => {
-      if (p.floorId && p.nodeA && p.nodeB) {
-        const fid = (typeof p.floorId === 'object' ? p.floorId._id : p.floorId).toString();
-        if (!pathsByFloor[fid]) pathsByFloor[fid] = [];
-        pathsByFloor[fid].push({
+      if (p.nodeA && p.nodeB) {
+        const seg = {
           pA: [p.nodeA.y, p.nodeA.x],
           pB: [p.nodeB.y, p.nodeB.x]
-        });
+        };
+        allCampusNavPaths.push(seg);
+        if (p.floorId) {
+          const fid = (typeof p.floorId === 'object' ? p.floorId._id : p.floorId).toString();
+          if (!pathsByFloor[fid]) pathsByFloor[fid] = [];
+          pathsByFloor[fid].push(seg);
+        }
       }
     });
 
@@ -892,7 +924,7 @@ router.get('/geojson/:id', async (req, res, next) => {
 
             // 6. Corridor Door Portals (Illuminated Frame, Recessed Leaf, Threshold Strip)
             const rPaths = pathsByFloor[floorIdStr] || [];
-            const doorSet = generateDoorPortals(coords, rPaths, 1.2, 0.22);
+            const doorSet = generateDoorPortals(coords, rPaths, 1.2, 0.22, allCampusNavPaths);
             if (doorSet) {
               // 6a. Outer Illuminated Door Frame / Lintel (Amber Gold #f59e0b)
               features.push({

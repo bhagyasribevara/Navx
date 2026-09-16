@@ -17,7 +17,14 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { findRouteToRoom, findRouteToExit, getGeoJSONMapData, SOCKET_URL, getCachedConfigValue } from "../api";
 import { io } from "socket.io-client";
-import { PositionEngine, StepDetector } from "../positioning";
+import {
+  PositionEngine,
+  StepDetector,
+  snapPositionToRouteAdvanced,
+  clampPointToPolygon,
+  shortestAngleDiff,
+  haversineDistance
+} from "../positioning";
 import BarometerService from "../sensors/BarometerService";
 import SensorFusion from "../sensors/SensorFusion";
 import AmbientFloorDetector from "../sensors/AmbientFloorDetector";
@@ -47,35 +54,8 @@ function haversine(lat1, lon1, lat2, lon2) {
 const AVG_STRIDE = 0.72;   // meters per step
 const WALK_SPEED = 1.2;    // m/s fallback
 
-function getClosestPointOnSegment(px, py, x1, y1, x2, y2) {
-  const dx = x2 - x1;
-  const dy = y2 - y1;
-  if (dx === 0 && dy === 0) return { x: x1, y: y1 };
-
-  let t = ((px - x1) * dx + (py - y1) * dy) / (dx * dx + dy * dy);
-  t = Math.max(0, Math.min(1, t)); // clamp to segment
-
-  return {
-    x: x1 + t * dx,
-    y: y1 + t * dy
-  };
-}
-
-function snapPositionToRoute(pos, path, currentStep) {
-  if (!pos || !path || path.length === 0) return pos;
-
-  const startNode = path[currentStep];
-  const endNode = path[Math.min(currentStep + 1, path.length - 1)];
-  if (!startNode || !endNode) return pos;
-
-  const snapped = getClosestPointOnSegment(pos.x, pos.y, startNode.x, startNode.y, endNode.x, endNode.y);
-
-  // Calculate distance between raw and snapped in meters
-  const dist = haversine(pos.x, pos.y, snapped.x, snapped.y);
-  if (dist < 15) { // within 15 meters
-    return { ...pos, x: snapped.x, y: snapped.y };
-  }
-  return pos;
+function snapPositionToRoute(pos, path, currentStep, activeFloorId) {
+  return snapPositionToRouteAdvanced(pos, path, currentStep, activeFloorId, 22);
 }
 
 export function resolveFloorInfo(floorRef, floorsList = []) {
@@ -334,6 +314,7 @@ function buildNavMapHTML(geoJSONData, pathPoints, initialPos, targetRoom, mapbox
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <link href="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css" rel="stylesheet">
 <script src="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <style>
   body{margin:0;padding:0;background-color:#0a0e17;}
   #map{width:100%;height:100vh;background:#0a0e17;}
@@ -382,38 +363,8 @@ function buildNavMapHTML(geoJSONData, pathPoints, initialPos, targetRoom, mapbox
   .start-marker {
     width: 16px; height: 16px; background-color: #10b981; border: 3px solid white; border-radius: 50%; box-shadow: 0 2px 4px rgba(0,0,0,0.4);
   }
-  .doorplate-sign {
-    position: absolute;
-    top: 0;
-    left: 0;
-    transform-origin: 50% 50%;
-    pointer-events: auto;
-    cursor: pointer;
-    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
-    border: 1px solid #f59e0b;
-    border-top: 1.5px solid #fbbf24;
-    color: #f8fafc;
-    padding: 1px 6px;
-    border-radius: 2.5px;
-    font-size: 9.5px;
-    font-weight: 800;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.2);
-    letter-spacing: 0.5px;
-    text-transform: uppercase;
-    display: none;
-    white-space: nowrap;
-    user-select: none;
-    will-change: transform, opacity;
-  }
-  .doorplate-sign.target-room {
-    background: linear-gradient(135deg, #831843 0%, #9f1239 100%);
-    border: 1.5px solid #f43f5e;
-    border-top: 2px solid #fda4af;
-    color: #ffffff;
-    box-shadow: 0 0 12px rgba(244, 63, 94, 0.7), 0 2px 8px rgba(0, 0, 0, 0.7);
-  }
 </style>
-</head><body><div id="map"></div><div id="user-floor-badge" class="floor-badge"></div><div id="doorplate-labels" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;overflow:hidden;z-index:9;"></div>
+</head><body><div id="map"></div><div id="user-floor-badge" class="floor-badge"></div>
 <script>
 const tokenMatch = '${mapboxUrl}'.match(/access_token=([^&]+)/);
 mapboxgl.accessToken = tokenMatch ? tokenMatch[1] : 'YOUR_TOKEN_HERE';
@@ -454,9 +405,38 @@ if (map.doubleClickZoom) map.doubleClickZoom.enable();
 if (map.touchZoomRotate) map.touchZoomRotate.enable();
 if (map.touchPitch) map.touchPitch.enable();
 
+window._isNavigationActive = false;
 window._isFreeRoam = false;
 window._userInteracting = false;
 window._lastUserCoords = [${center[1]}, ${center[0]}];
+window._lastUserHeading = 0;
+window._initialRouteBearing = null;
+
+${pathCoordinates ? `
+  (function() {
+    try {
+      var rawRoute = [${pathCoordinates}];
+      if (rawRoute && rawRoute.length >= 2) {
+        var p0 = rawRoute[0];
+        var p1 = rawRoute[1];
+        var mToLatInit = 1 / 111139;
+        var mToLngInit = 1 / (111139 * Math.cos(p0[0] * Math.PI / 180));
+        var dLng = (p1[1] - p0[1]) / mToLngInit;
+        var dLat = (p1[0] - p0[0]) / mToLatInit;
+        if (Math.hypot(dLng, dLat) > 0.01) {
+          window._initialRouteBearing = (Math.atan2(dLng, dLat) * 180 / Math.PI);
+        }
+      }
+    } catch(e) {}
+  })();
+` : ''}
+
+function shortestAngleDiff(current, target) {
+  var diff = (target - current) % 360;
+  if (diff > 180) diff -= 360;
+  if (diff < -180) diff += 360;
+  return diff;
+}
 
 function notifyFreeRoam(isFree) {
   if (window.ReactNativeWebView) {
@@ -469,7 +449,7 @@ function notifyFreeRoam(isFree) {
 
 function onInteractionStart() {
   window._userInteracting = true;
-  if (!window._isFreeRoam) {
+  if (window._isNavigationActive && !window._isFreeRoam) {
     window._isFreeRoam = true;
     notifyFreeRoam(true);
   }
@@ -520,6 +500,7 @@ window.setMapMode = function(mode) {
     'campus-rooms-roof',
     'campus-rooms-parapet',
     'campus-rooms-door',
+    'doorplate-3d-text-layer',
     '3d-buildings',
     'route-bg',
     'route-line'
@@ -536,7 +517,6 @@ window.setMapMode = function(mode) {
       map.setLayoutProperty(id, 'visibility', is2D ? 'visible' : 'none');
     }
   });
-  if (typeof updateDoorplateSignage === 'function') updateDoorplateSignage();
 };
 
 function generate3DRouteFeatures(coords, width, thickness) {
@@ -715,15 +695,16 @@ window.renderGeoJSONLayers = function(data, floorId, activeFloorId) {
     map.addSource('campus-data', { type: 'geojson', data: polygonData });
   }
 
-  // ── Extract Doorplate Anchors for Physical In-World Room Signage ──
+  // ── Extract Doorplate Anchors for Physical In-World Room Signage (100% Coverage Pipeline) ──
   var doorplateMap = {};
+
+  // Pass 1: Extract official doorplate features with high-precision anchors
   polyFeatures.forEach(function(f) {
     if (!f.properties) return;
     var props = f.properties;
-    var rid = (props.roomId || props.id || props.name || '').toString();
-    if (!rid) return;
-
     if (props.part === 'doorplate' && props.doorLng && props.doorLat) {
+      var rid = (props.roomId || props.id || props.name || '').toString().replace('_doorplate', '');
+      if (!rid) return;
       doorplateMap[rid] = {
         id: rid,
         name: props.name || 'Room',
@@ -740,18 +721,65 @@ window.renderGeoJSONLayers = function(data, floorId, activeFloorId) {
         level: props.level,
         isTarget: (props.id === '${targetRoom?._id || ''}' || props.roomId === '${targetRoom?._id || ''}')
       };
-    } else if (props.type === 'room' && props.name && props.category !== 'corridor' && !doorplateMap[rid]) {
+    }
+  });
+
+  // Pass 2: Ensure 100% room coverage — for any room missing a doorplate, procedurally compute outward corridor anchor
+  polyFeatures.forEach(function(f) {
+    if (!f.properties) return;
+    var props = f.properties;
+    if (props.type === 'room' && props.name && props.category !== 'corridor' && props.category !== 'stairs') {
+      var rid = (props.roomId || props.id || props.name || '').toString()
+        .replace(/_(base|body|roof|parapet|partition|door|door_frame|door_threshold|part_\d+)$/, '');
+      if (!rid || doorplateMap[rid]) return;
+
       if (f.geometry && f.geometry.coordinates && f.geometry.coordinates[0]) {
         var ring = f.geometry.coordinates[0];
         if (ring.length >= 4) {
-          var p1 = ring[0], p2 = ring[1];
+          var mToLatLoc = 1 / 111139;
+          var mToLngLoc = 1 / (111139 * Math.cos(ring[0][1] * Math.PI / 180));
+
+          // Compute room centroid
+          var cLng = 0, cLat = 0, ptCount = ring.length - 1;
+          for (var pi = 0; pi < ptCount; pi++) {
+            cLng += ring[pi][0];
+            cLat += ring[pi][1];
+          }
+          cLng /= Math.max(1, ptCount);
+          cLat /= Math.max(1, ptCount);
+
+          // Find longest edge
+          var bestEdge = 0, maxLen = -1;
+          for (var ei = 0; ei < ring.length - 1; ei++) {
+            var edx = (ring[ei+1][0] - ring[ei][0]) / mToLngLoc;
+            var edy = (ring[ei+1][1] - ring[ei][1]) / mToLatLoc;
+            var elen = Math.hypot(edx, edy);
+            if (elen > maxLen) {
+              maxLen = elen;
+              bestEdge = ei;
+            }
+          }
+
+          var p1 = ring[bestEdge], p2 = ring[bestEdge+1];
           var midLng = (p1[0] + p2[0]) / 2;
           var midLat = (p1[1] + p2[1]) / 2;
           var lvl = props.level !== undefined ? Number(props.level) : 0;
           var elev = (lvl * 3.5) + 2.36;
-          var dx = p2[0] - p1[0], dy = p2[1] - p1[1];
-          var dlen = Math.hypot(dx, dy) || 1e-6;
-          var uX = dx / dlen, uY = dy / dlen;
+
+          var dx = (p2[0] - p1[0]) / mToLngLoc;
+          var dy = (p2[1] - p1[1]) / mToLatLoc;
+          var len = Math.hypot(dx, dy) || 1e-6;
+          var uX = dx / len, uY = dy / len;
+          var nX = -uY, nY = uX;
+
+          // Enforce outward normal relative to room centroid
+          var dPlus = Math.hypot((midLng + nX * mToLngLoc) - cLng, (midLat + nY * mToLatLoc) - cLat);
+          var dMinus = Math.hypot((midLng - nX * mToLngLoc) - cLng, (midLat - nY * mToLatLoc) - cLat);
+          if (dPlus < dMinus) {
+            nX = -nX;
+            nY = -nY;
+          }
+
           doorplateMap[rid] = {
             id: rid,
             name: props.name,
@@ -760,8 +788,8 @@ window.renderGeoJSONLayers = function(data, floorId, activeFloorId) {
             elevation: elev,
             ux: uX,
             uy: uY,
-            nx: -uY,
-            ny: uX,
+            nx: nX,
+            ny: nY,
             ptA: [midLng - uX * 0.000004, midLat - uY * 0.000004],
             ptB: [midLng + uX * 0.000004, midLat + uY * 0.000004],
             floorId: props.floorId,
@@ -772,8 +800,9 @@ window.renderGeoJSONLayers = function(data, floorId, activeFloorId) {
       }
     }
   });
+
   window._activeDoorplates = Object.values(doorplateMap);
-  if (typeof updateDoorplateSignage === 'function') updateDoorplateSignage();
+  if (typeof updateThreeDoorplates === 'function') updateThreeDoorplates(window._activeDoorplates);
 
   // Draw 2D & 3D Navigation Route line if coordinates exist
   ${pathCoordinates ? `
@@ -1302,131 +1331,222 @@ function updateBadgePosition() {
 }
 
 window._activeDoorplates = [];
+window._doorplateLayerInstance = null;
+window._pendingDoorplates = null;
 
-function updateDoorplateSignage() {
-  var container = document.getElementById('doorplate-labels');
-  if (!container || !map) return;
-  var zoom = map.getZoom();
-  // Distant View: Zoom < 17.8: completely hide room nameplates to eliminate clutter
-  if (zoom < 17.8 || !window._activeDoorplates || window._activeDoorplates.length === 0) {
-    container.style.display = 'none';
+function createDoorplateCanvasTexture(name, isTarget) {
+  var canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 128;
+  var ctx = canvas.getContext('2d');
+
+  // Background: Deep obsidian slate (#0a0f1d, or crimson #881337 for target)
+  ctx.fillStyle = isTarget ? '#881337' : '#0a0f1d';
+  ctx.fillRect(0, 0, 512, 128);
+
+  // Outer illuminated border (Amber gold #f59e0b, or rose #fb7185 for target)
+  ctx.strokeStyle = isTarget ? '#fb7185' : '#f59e0b';
+  ctx.lineWidth = 6;
+  ctx.strokeRect(4, 4, 504, 120);
+
+  // Inner subtle accent frame
+  ctx.strokeStyle = isTarget ? '#fda4af' : '#fbbf24';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(10, 10, 492, 108);
+
+  // High-contrast, clean, sharp typography
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.95)';
+  ctx.shadowBlur = 4;
+  ctx.shadowOffsetX = 1;
+  ctx.shadowOffsetY = 2;
+
+  var text = (name || '').trim();
+  var maxUsableWidth = 470;
+
+  function getWidth(str, sz) {
+    ctx.font = 'bold ' + sz + 'px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    return ctx.measureText(str).width;
+  }
+
+  // Check if single line fits
+  var singleFontSize = 46;
+  while (singleFontSize > 28 && getWidth(text, singleFontSize) > maxUsableWidth) {
+    singleFontSize -= 2;
+  }
+
+  if (getWidth(text, singleFontSize) <= maxUsableWidth && singleFontSize >= 30) {
+    ctx.font = 'bold ' + singleFontSize + 'px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.fillText(text, 256, 64);
+  } else {
+    // Multi-line wrapping: split into two balanced lines
+    var words = text.split(/\s+/);
+    var line1 = '', line2 = '';
+    if (words.length > 1) {
+      var mid = Math.ceil(words.length / 2);
+      line1 = words.slice(0, mid).join(' ');
+      line2 = words.slice(mid).join(' ');
+    } else {
+      var splitIdx = Math.floor(text.length / 2);
+      line1 = text.slice(0, splitIdx) + '-';
+      line2 = text.slice(splitIdx);
+    }
+
+    var multiFontSize = 28;
+    while (multiFontSize > 18 && (getWidth(line1, multiFontSize) > maxUsableWidth || getWidth(line2, multiFontSize) > maxUsableWidth)) {
+      multiFontSize -= 2;
+    }
+
+    ctx.font = 'bold ' + multiFontSize + 'px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.fillText(line1, 256, 44);
+    ctx.fillText(line2, 256, 84);
+  }
+
+  var texture = new THREE.CanvasTexture(canvas);
+  texture.minFilter = THREE.LinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.generateMipmaps = false;
+  return texture;
+}
+
+var campusCenter = [${center[1]}, ${center[0]}]; // [lng, lat]
+var mToLat = 1 / 111139;
+var mToLng = 1 / (111139 * Math.cos(campusCenter[1] * Math.PI / 180));
+
+var doorplate3DLayer = {
+  id: 'doorplate-3d-text-layer',
+  type: 'custom',
+  renderingMode: '3d',
+  onAdd: function(mapInstance, gl) {
+    this.map = mapInstance;
+    this.camera = new THREE.Camera();
+    this.scene = new THREE.Scene();
+    this.renderer = new THREE.WebGLRenderer({
+      canvas: mapInstance.getCanvas(),
+      context: gl,
+      antialias: true,
+      alpha: true
+    });
+    this.renderer.autoClear = false;
+
+    var origin = mapboxgl.MercatorCoordinate.fromLngLat(campusCenter, 0);
+    this.anchor = {
+      x: origin.x,
+      y: origin.y,
+      z: origin.z,
+      scale: origin.meterInMercatorCoordinateUnits()
+    };
+
+    window._doorplateLayerInstance = this;
+    if (window._pendingDoorplates) {
+      window.updateThreeDoorplates(window._pendingDoorplates);
+      window._pendingDoorplates = null;
+    }
+  },
+  render: function(gl, matrix) {
+    if (!this.renderer || !this.scene || !this.anchor) return;
+    var m = new THREE.Matrix4().fromArray(matrix);
+    var l = new THREE.Matrix4()
+      .makeTranslation(this.anchor.x, this.anchor.y, this.anchor.z)
+      .scale(new THREE.Vector3(this.anchor.scale, -this.anchor.scale, this.anchor.scale));
+
+    this.camera.projectionMatrix = m.multiply(l);
+    this.renderer.resetState();
+    this.renderer.render(this.scene, this.camera);
+  }
+};
+
+window.updateThreeDoorplates = function(doorplates) {
+  window._activeDoorplates = doorplates || [];
+  var layer = window._doorplateLayerInstance;
+  if (!layer || !layer.scene || !window.THREE) {
+    window._pendingDoorplates = doorplates;
     return;
   }
-  container.style.display = 'block';
 
-  var is2D = (currentMapMode === '2D');
-  var m = map.transform && map.transform.pixelMatrix;
-  var hasMercator = (typeof mapboxgl.MercatorCoordinate !== 'undefined');
-
-  // Dynamic Visibility & Perspective LOD:
-  // 17.8 to 19.0: Smooth fade-in
-  // >= 19.0: Full opacity and natural distance scaling
-  var baseOpacity = zoom >= 19.0 ? 1.0 : Math.max(0.05, (zoom - 17.8) / 1.2);
-  var scale = Math.min(1.25, Math.max(0.60, Math.pow(1.5, zoom - 19.0)));
-
-  // Directional Culling: calculate camera horizontal vector
-  var bearingRad = (map.getBearing() * Math.PI) / 180;
-  var camX = -Math.sin(bearingRad);
-  var camY = -Math.cos(bearingRad);
-
-  function projectPoint(pt, elev) {
-    if (m && hasMercator && !is2D) {
-      try {
-        var coord = mapboxgl.MercatorCoordinate.fromLngLat([pt[0], pt[1]], elev);
-        var x = coord.x, y = coord.y, z = coord.z;
-        var clipW = m[3] * x + m[7] * y + m[11] * z + m[15];
-        if (clipW > 0) {
-          return [
-            (m[0] * x + m[4] * y + m[8] * z + m[12]) / clipW,
-            (m[1] * x + m[5] * y + m[9] * z + m[13]) / clipW
-          ];
-        }
-      } catch(e) {}
+  var scene = layer.scene;
+  while (scene.children.length > 0) {
+    var obj = scene.children[0];
+    scene.remove(obj);
+    if (obj.geometry) obj.geometry.dispose();
+    if (obj.material) {
+      if (obj.material.map) obj.material.map.dispose();
+      obj.material.dispose();
     }
-    if (map.project) {
-      var p2d = map.project([pt[0], pt[1]]);
-      if (p2d) return [p2d.x, p2d.y];
-    }
-    return null;
   }
 
-  var existingIds = {};
-  for (var i = 0; i < window._activeDoorplates.length; i++) {
-    var r = window._activeDoorplates[i];
-    existingIds[r.id] = true;
-    var el = document.getElementById('dp-lbl-' + r.id);
-    if (!el) {
-      el = document.createElement('div');
-      el.id = 'dp-lbl-' + r.id;
-      el.className = 'doorplate-sign' + (r.isTarget ? ' target-room' : '');
-      el.textContent = r.name;
-      container.appendChild(el);
-    }
+  if (!doorplates || doorplates.length === 0) {
+    if (layer.map) layer.map.triggerRepaint();
+    return;
+  }
 
-    // Directional Backface Culling in 3D:
-    // When normal · cam > 0.15, door faces away from camera (culled)
-    if (!is2D && (r.nx !== undefined && r.ny !== undefined)) {
-      var dot = r.nx * camX + r.ny * camY;
-      if (dot > 0.15) {
-        el.style.display = 'none';
-        continue;
+  var planeGeo = new THREE.PlaneGeometry(1.15, 0.28);
+
+  doorplates.forEach(function(dp) {
+    if (!dp || !dp.name) return;
+    var texture = createDoorplateCanvasTexture(dp.name, dp.isTarget);
+    var mat = new THREE.MeshBasicMaterial({
+      map: texture,
+      side: THREE.FrontSide,
+      depthTest: true,
+      transparent: true
+    });
+
+    var mesh = new THREE.Mesh(planeGeo, mat);
+
+    var posX = (dp.lng - campusCenter[0]) / mToLng;
+    var posY = (dp.lat - campusCenter[1]) / mToLat;
+    var posZ = dp.elevation !== undefined ? dp.elevation : 2.36;
+
+    var nx = dp.nx !== undefined ? dp.nx : 0;
+    var ny = dp.ny !== undefined ? dp.ny : -1;
+
+    // Offset 0.075m outward in normal direction onto the front face of the black slate
+    var offsetX = posX + nx * 0.075;
+    var offsetY = posY + ny * 0.075;
+    var offsetZ = posZ;
+
+    // Proper rotation matrix: Col 1 [-ny, nx, 0], Col 2 [0, 0, 1], Col 3 [nx, ny, 0]
+    var transformMat = new THREE.Matrix4();
+    transformMat.set(
+      -ny, 0, nx, offsetX,
+      nx,  0, ny, offsetY,
+      0,   1, 0,  offsetZ,
+      0,   0, 0,  1
+    );
+
+    mesh.matrixAutoUpdate = false;
+    mesh.matrix.copy(transformMat);
+    scene.add(mesh);
+  });
+
+  if (layer.map) layer.map.triggerRepaint();
+};
+
+function ensureDoorplate3DLayer() {
+  if (!map) return;
+  if (!map.getLayer('doorplate-3d-text-layer')) {
+    if (window.THREE) {
+      map.addLayer(doorplate3DLayer);
+      if (currentMapMode === '2D') {
+        map.setLayoutProperty('doorplate-3d-text-layer', 'visibility', 'none');
       }
-    }
-
-    var elev = is2D ? 0.05 : (r.elevation || 2.36);
-    var pA = r.ptA ? projectPoint(r.ptA, elev) : null;
-    var pB = r.ptB ? projectPoint(r.ptB, elev) : null;
-    var centerPos = projectPoint([r.lng, r.lat], elev);
-
-    var screenX = 0, screenY = 0, alpha = 0;
-    if (pA && pB) {
-      screenX = (pA[0] + pB[0]) / 2;
-      screenY = (pA[1] + pB[1]) / 2;
-      var dX = pB[0] - pA[0];
-      var dY = pB[1] - pA[1];
-      alpha = Math.atan2(dY, dX) * 180 / Math.PI;
-      if (alpha > 90) alpha -= 180;
-      else if (alpha < -90) alpha += 180;
-    } else if (centerPos) {
-      screenX = centerPos[0];
-      screenY = centerPos[1];
-      alpha = 0;
     } else {
-      el.style.display = 'none';
-      continue;
-    }
-
-    // Viewport frustum bounds check
-    if (screenX >= -80 && screenX <= window.innerWidth + 80 &&
-        screenY >= -40 && screenY <= window.innerHeight + 40) {
-      el.style.left = Math.round(screenX) + 'px';
-      el.style.top = Math.round(screenY) + 'px';
-      el.style.transform = 'translate(-50%, -50%) rotate(' + alpha.toFixed(1) + 'deg) scale(' + scale.toFixed(2) + ')';
-      el.style.opacity = baseOpacity.toFixed(2);
-      el.style.display = 'block';
-    } else {
-      el.style.display = 'none';
-    }
-  }
-
-  var children = container.children;
-  for (var c = children.length - 1; c >= 0; c--) {
-    var child = children[c];
-    var cid = child.id.replace('dp-lbl-', '');
-    if (!existingIds[cid]) {
-      container.removeChild(child);
+      setTimeout(ensureDoorplate3DLayer, 100);
     }
   }
 }
 
 map.on('render', function() {
   updateBadgePosition();
-  updateDoorplateSignage();
 });
 
 // Initial user position anchored directly to route start vertex (x, y, z)
 map.on('load', function() {
   setupMarkerLayers();
+  ensureDoorplate3DLayer();
   var hasInitZ = ${initElev !== undefined && initElev !== null && initElev > 0 ? 'true' : 'false'};
   window.updateUserPos(${initLat}, ${initLng}, 0, ${initElev}, ${initLevel}, ${initLevel > 0 ? `'Floor ' + initLevel` : `''`}, hasInitZ);
 });
@@ -1445,15 +1565,108 @@ ${destX && destY ? `
   new mapboxgl.Marker({ element: destEl }).setLngLat([${destY}, ${destX}]).addTo(map);
 ` : ''}
 
-window.updateUserPos = function(lat, lng, heading, elevation, floorLevel, floorName, hasValidZ) {
+function shortestAngleDiff(current, target) {
+  return (((target - current + 540) % 360) - 180);
+}
+
+var _markerCurrent = {
+  lat: ${initLat || 18.4665},
+  lng: ${initLng || 83.6629},
+  heading: 0,
+  elev: ${initElev !== undefined && initElev !== null && !isNaN(initElev) ? initElev : (initLevel * 3.5 + 0.54)},
+  floorLevel: ${initLevel || 0}
+};
+var _markerTarget = {
+  lat: ${initLat || 18.4665},
+  lng: ${initLng || 83.6629},
+  heading: 0,
+  elev: ${initElev !== undefined && initElev !== null && !isNaN(initElev) ? initElev : (initLevel * 3.5 + 0.54)},
+  floorLevel: ${initLevel || 0}
+};
+var _animatingMarker = false;
+
+function renderUserMarker(lng, lat, heading, effElev, fl) {
+  if (!map) return;
+  setupMarkerLayers();
+  if (!map.getSource('user-marker-source')) return;
+
+  var baseElev = (currentMapMode === '2D') ? 0.05 : effElev + 0.08;
+  var glowCoords = generateCirclePolygon(lng, lat, 2.2);
+  var puckCoords = generateCirclePolygon(lng, lat, 1.2);
+  var arrowCoords = generateArrowPolygon(lng, lat, heading, 2.0, 1.3);
+
+  map.getSource('user-marker-source').setData({
+    type: 'FeatureCollection',
+    features: [
+      {
+        type: 'Feature',
+        properties: { part: 'glow', min_height: baseElev + 0.02, height: baseElev + 0.07 },
+        geometry: { type: 'Polygon', coordinates: glowCoords }
+      },
+      {
+        type: 'Feature',
+        properties: { part: 'puck', min_height: baseElev + 0.07, height: baseElev + 0.22 },
+        geometry: { type: 'Polygon', coordinates: puckCoords }
+      },
+      {
+        type: 'Feature',
+        properties: { part: 'arrow', min_height: baseElev + 0.23, height: baseElev + 0.35 },
+        geometry: { type: 'Polygon', coordinates: arrowCoords }
+      }
+    ]
+  });
+
   window._lastUserCoords = [lng, lat];
   window._lastUserPos = { lat: lat, lng: lng };
-  if (heading !== undefined && heading !== null) window._lastUserHeading = heading;
-  if (floorLevel !== undefined && floorLevel !== null) window._lastUserFloorLevel = Number(floorLevel);
-  if (floorName !== undefined) window._lastUserFloorName = floorName;
+  window._lastUserHeading = heading;
+  window._lastUserFloorLevel = fl;
+  window._lastUserElev = effElev;
+  updateBadgePosition();
+}
 
-  var fl = window._lastUserFloorLevel || 0;
-  var h = window._lastUserHeading || 0;
+function startMarkerAnimation() {
+  if (_animatingMarker) return;
+  _animatingMarker = true;
+
+  function step() {
+    var posFactor = 0.24;
+    var headingFactor = 0.28;
+    var elevFactor = 0.22;
+
+    var dLat = _markerTarget.lat - _markerCurrent.lat;
+    var dLng = _markerTarget.lng - _markerCurrent.lng;
+    var dElev = _markerTarget.elev - _markerCurrent.elev;
+    var dHeading = shortestAngleDiff(_markerCurrent.heading, _markerTarget.heading);
+
+    _markerCurrent.lat += dLat * posFactor;
+    _markerCurrent.lng += dLng * posFactor;
+    _markerCurrent.elev += dElev * elevFactor;
+    _markerCurrent.heading = ((_markerCurrent.heading + dHeading * headingFactor) % 360 + 360) % 360;
+    _markerCurrent.floorLevel = _markerTarget.floorLevel;
+
+    renderUserMarker(_markerCurrent.lng, _markerCurrent.lat, _markerCurrent.heading, _markerCurrent.elev, _markerCurrent.floorLevel);
+
+    var isMoving = Math.abs(dLat) > 1e-7 || Math.abs(dLng) > 1e-7 || Math.abs(dElev) > 0.01 || Math.abs(dHeading) > 0.2;
+    if (isMoving) {
+      requestAnimationFrame(step);
+    } else {
+      _markerCurrent.lat = _markerTarget.lat;
+      _markerCurrent.lng = _markerTarget.lng;
+      _markerCurrent.elev = _markerTarget.elev;
+      _markerCurrent.heading = _markerTarget.heading;
+      renderUserMarker(_markerCurrent.lng, _markerCurrent.lat, _markerCurrent.heading, _markerCurrent.elev, _markerCurrent.floorLevel);
+      _animatingMarker = false;
+    }
+  }
+
+  requestAnimationFrame(step);
+}
+
+window.updateUserPos = function(lat, lng, heading, elevation, floorLevel, floorName, hasValidZ) {
+  if (lat === undefined || lng === undefined || isNaN(lat) || isNaN(lng)) return;
+
+  var fl = (floorLevel !== undefined && floorLevel !== null) ? Number(floorLevel) : (window._lastUserFloorLevel || 0);
+  if (floorName !== undefined) window._lastUserFloorName = floorName;
 
   var effElev;
   if (hasValidZ && elevation !== undefined && elevation !== null && !isNaN(elevation)) {
@@ -1463,83 +1676,109 @@ window.updateUserPos = function(lat, lng, heading, elevation, floorLevel, floorN
   } else {
     effElev = 0.54;
   }
-  window._lastUserElev = effElev;
 
-  var baseElev = (currentMapMode === '2D') ? 0.05 : effElev + 0.08;
+  var h = (heading !== undefined && heading !== null && !isNaN(heading)) ? heading : (_markerTarget.heading || 0);
 
-  setupMarkerLayers();
+  _markerTarget.lat = Number(lat);
+  _markerTarget.lng = Number(lng);
+  _markerTarget.heading = Number(h);
+  _markerTarget.elev = Number(effElev);
+  _markerTarget.floorLevel = fl;
 
-  if (map.getSource('user-marker-source')) {
-    var glowCoords = generateCirclePolygon(lng, lat, 2.2);
-    var puckCoords = generateCirclePolygon(lng, lat, 1.2);
-    var arrowCoords = generateArrowPolygon(lng, lat, h, 2.0, 1.3);
+  startMarkerAnimation();
 
-    map.getSource('user-marker-source').setData({
-      type: 'FeatureCollection',
-      features: [
-        {
-          type: 'Feature',
-          properties: { part: 'glow', min_height: baseElev + 0.02, height: baseElev + 0.07 },
-          geometry: { type: 'Polygon', coordinates: glowCoords }
-        },
-        {
-          type: 'Feature',
-          properties: { part: 'puck', min_height: baseElev + 0.07, height: baseElev + 0.22 },
-          geometry: { type: 'Polygon', coordinates: puckCoords }
-        },
-        {
-          type: 'Feature',
-          properties: { part: 'arrow', min_height: baseElev + 0.23, height: baseElev + 0.35 },
-          geometry: { type: 'Polygon', coordinates: arrowCoords }
-        }
-      ]
+  // Dynamic Follow Camera: track user with forward look-ahead only during active navigation
+  if (window._isNavigationActive && !window._isFreeRoam && !window._userInteracting) {
+    var followBearing = (currentMapMode === '2D') ? 0 : (h !== undefined && h !== null ? h : (window._lastUserHeading || map.getBearing()));
+    var targetZoom = (fl > 0) ? 20.0 : 19.5;
+    var targetPitch = (currentMapMode === '2D') ? 0 : 60;
+    var camCenter = [lng, lat];
+    if (currentMapMode !== '2D') {
+      var rad = followBearing * Math.PI / 180;
+      var mToLat = 1 / 111139;
+      var mToLng = 1 / (111139 * Math.cos(lat * Math.PI / 180));
+      camCenter = [
+        lng + Math.sin(rad) * 2.5 * mToLng,
+        lat + Math.cos(rad) * 2.5 * mToLat
+      ];
+    }
+    map.easeTo({
+      center: camCenter,
+      zoom: targetZoom,
+      pitch: targetPitch,
+      duration: 350,
+      easing: function(t) { return t; }
     });
-  }
-
-  updateBadgePosition();
-
-  // Smoothly follow user only when NOT in free-roam mode and user is not actively interacting
-  if (!window._isFreeRoam && !window._userInteracting) {
-    map.easeTo({ center: [lng, lat], duration: 400, easing: function(t) { return t; } });
   }
 };
 
 window.updateUserHeading = function(heading) {
-  if (heading === undefined || heading === null) return;
-  window._lastUserHeading = heading;
-  if (!window._lastUserPos) return;
+  if (heading === undefined || heading === null || isNaN(heading)) return;
+  _markerTarget.heading = Number(heading);
+  startMarkerAnimation();
 
-  var lat = window._lastUserPos.lat;
-  var lng = window._lastUserPos.lng;
-  var fl = window._lastUserFloorLevel || 0;
-  var effElev = window._lastUserElev !== undefined ? window._lastUserElev : (fl > 0 ? fl * 3.5 + 0.54 : 0.54);
-  var baseElev = (currentMapMode === '2D') ? 0.05 : effElev + 0.08;
-
-  if (map.getSource('user-marker-source')) {
-    var glowCoords = generateCirclePolygon(lng, lat, 2.2);
-    var puckCoords = generateCirclePolygon(lng, lat, 1.2);
-    var arrowCoords = generateArrowPolygon(lng, lat, heading, 2.0, 1.3);
-
-    map.getSource('user-marker-source').setData({
-      type: 'FeatureCollection',
-      features: [
-        {
-          type: 'Feature',
-          properties: { part: 'glow', min_height: baseElev + 0.02, height: baseElev + 0.07 },
-          geometry: { type: 'Polygon', coordinates: glowCoords }
-        },
-        {
-          type: 'Feature',
-          properties: { part: 'puck', min_height: baseElev + 0.07, height: baseElev + 0.22 },
-          geometry: { type: 'Polygon', coordinates: puckCoords }
-        },
-        {
-          type: 'Feature',
-          properties: { part: 'arrow', min_height: baseElev + 0.23, height: baseElev + 0.35 },
-          geometry: { type: 'Polygon', coordinates: arrowCoords }
-        }
-      ]
+  // Dynamic Follow Camera: smooth bearing alignment during active navigation
+  if (window._isNavigationActive && !window._isFreeRoam && !window._userInteracting && currentMapMode !== '2D') {
+    var curBearing = map.getBearing();
+    var diff = shortestAngleDiff(curBearing, heading);
+    var newBearing = curBearing + diff * 0.35;
+    var lat = _markerCurrent.lat;
+    var lng = _markerCurrent.lng;
+    var rad = heading * Math.PI / 180;
+    var mToLat = 1 / 111139;
+    var mToLng = 1 / (111139 * Math.cos(lat * Math.PI / 180));
+    var camCenter = [
+      lng + Math.sin(rad) * 2.5 * mToLng,
+      lat + Math.cos(rad) * 2.5 * mToLat
+    ];
+    map.easeTo({
+      center: camCenter,
+      bearing: newBearing,
+      duration: 250,
+      easing: function(t) { return t; }
     });
+  }
+};
+
+window.setNavigationActive = function(isActive) {
+  window._isNavigationActive = !!isActive;
+  if (window._isNavigationActive) {
+    window._isFreeRoam = false;
+    window._userInteracting = false;
+    notifyFreeRoam(false);
+
+    var target = window._lastUserCoords || [${center[1]}, ${center[0]}];
+    var lng = target[0];
+    var lat = target[1];
+    var fl = window._lastUserFloorLevel || 0;
+    var bearing = window._initialRouteBearing !== null ? window._initialRouteBearing : (window._lastUserHeading || -17.6);
+    var pitch = (currentMapMode === '2D') ? 0 : 60;
+    var zoom = (fl > 0) ? 20.0 : 19.5;
+
+    var camCenter = [lng, lat];
+    if (currentMapMode !== '2D') {
+      var rad = bearing * Math.PI / 180;
+      var mToLat = 1 / 111139;
+      var mToLng = 1 / (111139 * Math.cos(lat * Math.PI / 180));
+      camCenter = [
+        lng + Math.sin(rad) * 2.5 * mToLng,
+        lat + Math.cos(rad) * 2.5 * mToLat
+      ];
+    }
+
+    if (map) {
+      map.flyTo({
+        center: camCenter,
+        zoom: zoom,
+        pitch: pitch,
+        bearing: (currentMapMode === '2D') ? 0 : bearing,
+        duration: 1200
+      });
+    }
+  } else {
+    window._isFreeRoam = false;
+    window._userInteracting = false;
+    notifyFreeRoam(false);
   }
 };
 
@@ -1550,12 +1789,45 @@ window.recenterCamera = function(customCoords) {
 
   var target = customCoords || window._lastUserCoords || [${center[1]}, ${center[0]}];
   if (map && target) {
+    var lng = target[0];
+    var lat = target[1];
+    var fl = window._lastUserFloorLevel || 0;
+    var h = window._lastUserHeading !== undefined && window._lastUserHeading !== null ? window._lastUserHeading : -17.6;
+    var bearing = (currentMapMode === '2D') ? 0 : h;
+    var pitch = (currentMapMode === '2D') ? 0 : 60;
+    var zoom = (fl > 0) ? 20.0 : 19.5;
+
+    var camCenter = [lng, lat];
+    if (currentMapMode !== '2D') {
+      var rad = bearing * Math.PI / 180;
+      var mToLat = 1 / 111139;
+      var mToLng = 1 / (111139 * Math.cos(lat * Math.PI / 180));
+      camCenter = [
+        lng + Math.sin(rad) * 2.5 * mToLng,
+        lat + Math.cos(rad) * 2.5 * mToLat
+      ];
+    }
+
     map.flyTo({
-      center: target,
-      zoom: 19,
-      pitch: currentMapMode === '2D' ? 0 : 60,
+      center: camCenter,
+      zoom: zoom,
+      pitch: pitch,
+      bearing: bearing,
+      duration: 800
+    });
+  }
+};
+
+window.focusDestination = function() {
+  var dY = ${destY ? destY : (targetRoom && targetRoom.y ? targetRoom.y : 'null')};
+  var dX = ${destX ? destX : (targetRoom && targetRoom.x ? targetRoom.x : 'null')};
+  if (dY && dX && map) {
+    map.flyTo({
+      center: [dY, dX],
+      zoom: 20.2,
+      pitch: currentMapMode === '2D' ? 0 : 55,
       bearing: currentMapMode === '2D' ? 0 : -17.6,
-      duration: 700
+      duration: 1200
     });
   }
 };
@@ -1722,6 +1994,18 @@ export default function NavigationScreen({ navigation, route }) {
     geoJSONDataRef.current = geoJSONData;
   }, [geoJSONData]);
 
+  // ── Sync Active Navigation Follow Camera state with WebView ──
+  useEffect(() => {
+    if (webViewRef.current) {
+      webViewRef.current.injectJavaScript(`
+        if (typeof window.setNavigationActive === 'function') {
+          window.setNavigationActive(${isNavigating ? 'true' : 'false'});
+        }
+        true;
+      `);
+    }
+  }, [isNavigating]);
+
   // ── ALWAYS-ON: Start AmbientFloorDetector when component mounts ──
   // Works without navigation, admin setup, or WiFi. Just the barometer.
   useEffect(() => {
@@ -1857,26 +2141,54 @@ export default function NavigationScreen({ navigation, route }) {
   // Push user location updates directly into the WebView via JS (with route-snapping and elevation)
   useEffect(() => {
     if (userPos && webViewRef.current) {
-      const snappedPos = snapPositionToRoute(userPos, routeData?.path, currentStep);
-      
       const resolvedFloor = resolveFloorInfo(currentFloor || userPos.floorId || userPos.floor, mapData?.floors);
       const currentLevel = resolvedFloor.level;
       const floorName = resolvedFloor.name;
 
+      let processedX = userPos.x;
+      let processedY = userPos.y;
+      let processedHeading = heading || posEngine.heading || 0;
+
+      // 1. Route Snapping (on active floor)
+      const snappedPos = snapPositionToRoute(userPos, routeData?.path, currentStep, resolvedFloor.floorId);
+      if (snappedPos.isSnapped) {
+        processedX = snappedPos.x;
+        processedY = snappedPos.y;
+        if (isNavigating && snappedPos.snappedHeading !== undefined) {
+          // Align heading smoothly to path direction if moving forward
+          processedHeading = snappedPos.snappedHeading;
+        }
+      } else if (currentLevel > 0 && geoJSONData?.features) {
+        // 2. Indoor Building Boundary Clamping: prevent jumping outside building walls
+        const blockFeatures = geoJSONData.features.filter(f =>
+          f.geometry?.type === 'Polygon' &&
+          (f.properties?.type === 'block' || f.properties?.type === 'building')
+        );
+        for (const feature of blockFeatures) {
+          const coords = feature.geometry?.coordinates?.[0];
+          if (coords && coords.length >= 3) {
+            const clamped = clampPointToPolygon(processedX, processedY, coords);
+            processedX = clamped.lat;
+            processedY = clamped.lng;
+            break;
+          }
+        }
+      }
+
       const isStairTracking = !!(posEngine.verticalTrackingActive || userPos.verticalTrackingActive);
       const hasValidZ = isStairTracking || !!(userPos.hasValidElevation && userPos.elevationSource === 'staircase_connector');
       const elev = isStairTracking
-        ? (userPos.z ?? posEngine.position.z ?? 0)
+        ? (userPos.z ?? posEngine.position.z ?? (currentLevel * 3.5 + 0.54))
         : (ambientAltRef.current && ambientAltRef.current !== 0 ? ambientAltRef.current : (currentLevel * 3.5 + 0.54));
 
       webViewRef.current.injectJavaScript(`
         if (typeof window.updateUserPos === 'function') {
-          window.updateUserPos(${snappedPos.x}, ${snappedPos.y}, ${heading || posEngine.heading || 0}, ${elev}, ${currentLevel}, '${floorName}', ${hasValidZ ? 'true' : 'false'});
+          window.updateUserPos(${processedX}, ${processedY}, ${processedHeading}, ${elev}, ${currentLevel}, '${floorName}', ${hasValidZ ? 'true' : 'false'});
         }
         true;
       `);
     }
-  }, [userPos, routeData, currentStep, ambientFloorIndex, heading, currentFloor, mapData]);
+  }, [userPos, routeData, currentStep, ambientFloorIndex, heading, currentFloor, mapData, isNavigating, geoJSONData]);
 
   // Continuous compass heading listener for dynamic arrow rotation (active during preview and navigation)
   useEffect(() => {
@@ -2299,8 +2611,8 @@ export default function NavigationScreen({ navigation, route }) {
             let activeLng = posEngine.position.y;
 
             if (rData && rData.path && !isArrived) {
-              // Apply aggressive route snapping to internal coordinates to stabilize distances
-              const snapped = snapPositionToRoute({ x: activeLat, y: activeLng }, rData.path, cStep);
+              // Apply route snapping on the active floor to internal coordinates to stabilize distances
+              const snapped = snapPositionToRoute({ x: activeLat, y: activeLng }, rData.path, cStep, currentFloor);
               activeLat = snapped.x;
               activeLng = snapped.y;
 
@@ -2490,6 +2802,15 @@ export default function NavigationScreen({ navigation, route }) {
               Speech.speak(formatSpeech(arrivalText), { language: "en-US" });
             }
             Animated.spring(arrivedAnim, { toValue: 1, friction: 8, tension: 40, useNativeDriver: true }).start();
+
+            if (webViewRef.current) {
+              webViewRef.current.injectJavaScript(`
+                if (typeof window.focusDestination === 'function') {
+                  window.focusDestination();
+                }
+                true;
+              `);
+            }
 
             // Finalize local journey session if normal navigation
             if (!isRetracing) {
