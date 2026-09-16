@@ -21,7 +21,7 @@ function buildCampusMapHTML(geoJSONData, centerCoords, mapboxUrl, mapMode = '3D'
   const center = centerCoords ? [centerCoords.x, centerCoords.y] : [18.4665, 83.6629];
   const initialPitch = mapMode === '2D' ? 0 : 60;
   const initialBearing = mapMode === '2D' ? 0 : -17.6;
-  
+
   return `<!DOCTYPE html>
 <html><head>
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
@@ -1123,7 +1123,7 @@ export default function MapScreen({ navigation, route }) {
   const { activeCampusId: contextCampusId, detectedFloorIndex, setCurrentFloorId } = useGeofence();
   const [mapData, setMapData] = useState(null);
   const [loading, setLoading] = useState(true);
-  
+
   const [campusId, setCampusId] = useState(route.params?.campusId || contextCampusId || null);
   const [selectedBlock, setSelectedBlock] = useState(null);
   const [selectedFloor, setSelectedFloor] = useState(null);
@@ -1596,15 +1596,15 @@ export default function MapScreen({ navigation, route }) {
 
   const renderContent = () => {
     if (showingRestroomsMode) {
-      const restrooms = mapData?.rooms?.filter(r => 
-        r.type === 'restroom' || 
+      const restrooms = mapData?.rooms?.filter(r =>
+        r.type === 'restroom' ||
         (r.name && (
-          r.name.toLowerCase().includes('restroom') || 
+          r.name.toLowerCase().includes('restroom') ||
           r.name.toLowerCase().includes('washroom') ||
           r.name.toLowerCase().includes('toilet')
         ))
       ) || [];
-      
+
       const sortedRestrooms = [...restrooms].map(r => {
         const rx = r.shape?.x || r.x || (r.shape?.points?.[0]?.x);
         const ry = r.shape?.y || r.y || (r.shape?.points?.[0]?.y);
@@ -1623,9 +1623,9 @@ export default function MapScreen({ navigation, route }) {
       return sortedRestrooms.map(room => {
         const floorObj = typeof room.floorId === 'object' ? room.floorId : mapData?.floors?.find(f => f._id === room.floorId);
         const floorName = floorObj?.name || "";
-        
+
         return (
-          <TouchableOpacity key={room._id} style={s.card} activeOpacity={0.7} 
+          <TouchableOpacity key={room._id} style={s.card} activeOpacity={0.7}
             onPress={() => navigation.navigate("Navigation", { room, campusId, mapData })}>
             <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
               <View style={[s.cardIcon, { backgroundColor: (ROOM_COLORS[room.type] || colors.primary) + "20" }]}>
@@ -1634,7 +1634,7 @@ export default function MapScreen({ navigation, route }) {
               <View style={{ flex: 1, paddingRight: 10 }}>
                 <Text style={s.cardTitle}>{room.name}</Text>
                 <Text style={s.cardMeta}>
-                  {room.distance !== null ? `${Math.round(room.distance)}m away` : "Calculating distance..."} 
+                  {room.distance !== null ? `${Math.round(room.distance)}m away` : "Calculating distance..."}
                   {floorName ? ` · ${floorName}` : ""}
                 </Text>
               </View>
@@ -1649,15 +1649,15 @@ export default function MapScreen({ navigation, route }) {
     }
 
     if (selectedFloor) {
-      const rooms = mapData?.rooms?.filter(r => 
+      const rooms = mapData?.rooms?.filter(r =>
         r.floorId === selectedFloor._id &&
         r.type !== 'corridor' &&
         !(r.name && r.name.toLowerCase().endsWith(' door') && (r.type === 'entrance' || r.type === 'other'))
       ) || [];
       if (rooms.length === 0) return <Text style={{ textAlign: "center", color: colors.textSec, marginTop: 40 }}>No rooms found on this floor.</Text>;
-      
+
       return rooms.map(room => (
-        <TouchableOpacity key={room._id} style={s.card} activeOpacity={0.7} 
+        <TouchableOpacity key={room._id} style={s.card} activeOpacity={0.7}
           onPress={() => navigation.navigate("Navigation", { room, campusId, mapData })}>
           <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
             <View style={[s.cardIcon, { backgroundColor: (ROOM_COLORS[room.type] || colors.primary) + "20" }]}>
@@ -1679,7 +1679,7 @@ export default function MapScreen({ navigation, route }) {
     if (selectedBlock) {
       const floors = mapData?.floors?.filter(f => f.blockId === selectedBlock._id) || [];
       if (floors.length === 0) return <Text style={{ textAlign: "center", color: colors.textSec, marginTop: 40 }}>No floors found in this block.</Text>;
-      
+
       return floors.map(floor => (
         <TouchableOpacity key={floor._id} style={s.card} activeOpacity={0.7} onPress={() => setSelectedFloor(floor)}>
           <View style={{ flexDirection: "row", alignItems: "center" }}>
@@ -1698,7 +1698,7 @@ export default function MapScreen({ navigation, route }) {
 
     const blocks = mapData?.blocks || [];
     if (blocks.length === 0) return <Text style={{ textAlign: "center", color: colors.textSec, marginTop: 40 }}>No blocks found.</Text>;
-    
+
     const domains = {};
     blocks.forEach(block => {
       const domain = block.domain || "Academic Blocks";

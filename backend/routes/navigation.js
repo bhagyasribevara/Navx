@@ -92,7 +92,7 @@ router.post('/route-to-exit', async (req, res, next) => {
       if (withDists.length > 0) {
         const virtualStartId = 'user_gps_start';
         graph[virtualStartId] = { id: virtualStartId, x: startX, y: startY, neighbors: [], type: 'user' };
-        
+
         const kNearest = withDists.slice(0, Math.min(3, withDists.length));
         kNearest.forEach(n => {
           graph[virtualStartId].neighbors.push({ nodeId: n.node.id, distance: n.dist, weight: n.dist, pathType: 'street' });
@@ -303,7 +303,7 @@ router.post('/route-to-room', async (req, res, next) => {
 
       const virtualStartId = 'user_gps_start';
       graph[virtualStartId] = { id: virtualStartId, x: startX, y: startY, floorId: null, floorLevel: 0, neighbors: [], type: 'user' };
-      
+
       const kNearest = withDists.slice(0, Math.min(3, withDists.length));
       kNearest.forEach(n => {
         graph[virtualStartId].neighbors.push({ nodeId: n.node.id, distance: n.dist, weight: n.dist, pathType: 'street' });
@@ -407,7 +407,7 @@ router.post('/route-to-room', async (req, res, next) => {
 
       if (walkDist > 1) {
         const walkSteps = Math.max(1, Math.round(walkDist / 0.72));
-        const walkEta   = Math.round(walkDist / 1.2);
+        const walkEta = Math.round(walkDist / 1.2);
 
         directions.push({
           step: directions.length + 1,
@@ -430,8 +430,8 @@ router.post('/route-to-room', async (req, res, next) => {
         });
 
         summary.totalDistance += Math.round(walkDist * 10) / 10;
-        summary.totalEta     += walkEta;
-        summary.totalSteps   += walkSteps;
+        summary.totalEta += walkEta;
+        summary.totalSteps += walkSteps;
       }
     }
 
@@ -444,7 +444,7 @@ router.post('/route-to-room', async (req, res, next) => {
       const currNode = result.path[i];
       const nextNode = result.path[i + 1];
       const isStairsEdge = currNode.segmentType === 'stairs' || nextNode.segmentType === 'stairs' ||
-                           currNode.type === 'stairs' || nextNode.type === 'stairs';
+        currNode.type === 'stairs' || nextNode.type === 'stairs';
       const currLevel = currNode.floorLevel !== undefined ? currNode.floorLevel : (cached.floorMap[(currNode.floorId || '').toString()] ?? null);
       const nextLevel = nextNode.floorLevel !== undefined ? nextNode.floorLevel : (cached.floorMap[(nextNode.floorId || '').toString()] ?? null);
       const isLevelChange = currLevel !== null && nextLevel !== null && currLevel !== nextLevel;

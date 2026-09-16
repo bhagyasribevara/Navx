@@ -156,7 +156,7 @@ export function GeofenceProvider({ children }) {
                   try {
                     await AsyncStorage.removeItem(`navx_offline_${activeCampus.id}`);
                     console.log(`🗑️ Offline map database removed for campus ${activeCampus.id}`);
-                    
+
                     const { Alert } = require("react-native");
                     Alert.alert(
                       "Exited Campus Boundary",

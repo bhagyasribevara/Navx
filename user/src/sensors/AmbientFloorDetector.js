@@ -118,7 +118,7 @@ class AmbientFloorDetector {
       // If no reading yet, save it as pending
       this._pendingKnownFloor = floorIndex;
       console.log(`[AmbientFloorDetector] Saved pending known floor ${floorIndex}`);
-      
+
       // Still update the UI instantly so the marker jumps up
       const knownDeltaAlt = floorIndex * 3.5;
       this.currentFloorIndex = floorIndex;
@@ -141,14 +141,14 @@ class AmbientFloorDetector {
       const ratio = Math.pow(1 - knownDeltaAlt / 44330, 1 / 0.19);
       this.basePressure = latest.pressure / ratio;
     }
-    
+
     this.currentFloorIndex = floorIndex;
     this.currentAltitudeMeters = knownDeltaAlt + 1.5;
     this._lastReportedFloor = floorIndex;
     this._floorCandidate = null;
     this._candidateCount = 0;
     this._ema = knownDeltaAlt; // reset smoother
-    
+
     if (this._onFloorChange) {
       this._onFloorChange({ floorIndex: this.currentFloorIndex, altitudeMeters: this.currentAltitudeMeters });
     }
@@ -158,7 +158,7 @@ class AmbientFloorDetector {
   _updateFromDelta(deltaAlt) {
     // Smooth: use exponential moving average to reduce high-frequency barometric noise
     const smoothedDelta = this._smoothedDelta(deltaAlt);
-    
+
     // Calibrated floor threshold mapping:
     // Floor height constant H = 3.5m.
     // Ground Floor: slab = 0m, phone at chest level ~1.3m -> deltaAlt < 2.2m

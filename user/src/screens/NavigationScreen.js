@@ -13,6 +13,7 @@ import WiFiPositioningService from "../sensors/WiFiPositioningService";
 import * as Speech from "expo-speech";
 import * as Haptics from "expo-haptics";
 import { ThemeContext } from "../context/ThemeContext";
+import { useGeofence } from "../context/GeofenceContext";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { findRouteToRoom, findRouteToExit, getGeoJSONMapData, SOCKET_URL, getCachedConfigValue } from "../api";
@@ -153,7 +154,7 @@ function buildNavMapHTML(geoJSONData, pathPoints, initialPos, targetRoom, mapbox
     const tfId = (targetRoom.floorId?._id || targetRoom.floorId || '').toString();
     if (tfId && floorBlockMap[tfId]) routeBlockIds.add(floorBlockMap[tfId]);
   }
-  
+
   // First pass: extract base heights, floorIds, and levels
   const rawPathData = pathPoints ? pathPoints.map(p => {
     let level = p.floorLevel;
@@ -306,8 +307,12 @@ function buildNavMapHTML(geoJSONData, pathPoints, initialPos, targetRoom, mapbox
   const initialStartNode = pathData && pathData.length > 0 ? pathData[0] : null;
   const initLat = initialStartNode ? initialStartNode.x : (initialPos ? initialPos.x : center[0]);
   const initLng = initialStartNode ? initialStartNode.y : (initialPos ? initialPos.y : center[1]);
-  const initElev = initialStartNode ? (initialStartNode.adjustedH !== undefined ? initialStartNode.adjustedH : initialStartNode.baseH) : (initialPos?.elevation || 0.54);
-  const initLevel = initialStartNode ? (initialStartNode.level !== undefined ? initialStartNode.level : 0) : 0;
+  const initLevel = initialStartNode
+    ? (initialStartNode.floorLevel !== undefined ? initialStartNode.floorLevel : (initialStartNode.level !== undefined ? initialStartNode.level : 0))
+    : (initialPos?.floorLevel || 0);
+  const initElev = initialStartNode
+    ? (initialStartNode.adjustedH !== undefined ? initialStartNode.adjustedH : (initialStartNode.baseH !== undefined ? initialStartNode.baseH : (initLevel * 3.5 + 0.54)))
+    : (initialPos?.elevation || (initLevel * 3.5 + 0.54));
 
   return `<!DOCTYPE html>
 <html><head>
@@ -1323,7 +1328,9 @@ function updateBadgePosition() {
   if (screenPos) {
     badge.style.left = Math.round(screenPos[0]) + 'px';
     badge.style.top = Math.round(screenPos[1] - 14) + 'px';
-    badge.textContent = window._lastUserFloorName || ('Floor ' + fl);
+    var floorNameText = window._lastUserFloorName || ('Floor ' + fl);
+    var elevText = (effElev >= 1.0) ? ' · ↑ ' + effElev.toFixed(1) + 'm' : '';
+    badge.innerHTML = '<span>' + floorNameText + '</span><span style="opacity:0.85;font-size:10px;margin-left:3px;font-weight:600;">' + elevText + '</span>';
     badge.style.display = 'flex';
   } else {
     badge.style.display = 'none';
@@ -1943,8 +1950,14 @@ export default function NavigationScreen({ navigation, route }) {
     }
   }, [route.params?.room]);
 
-  // Floor-change tracking state
-  const [currentFloor, setCurrentFloor] = useState(null);
+  const geofenceCtx = useGeofence ? useGeofence() : null;
+  const geofenceFloorId = geofenceCtx?.currentFloorId;
+  const geofenceFloorLevel = geofenceCtx?.detectedFloorIndex;
+
+  // Floor-change tracking state (initialized with any explicit user floor passed via route params)
+  const [currentFloor, setCurrentFloor] = useState(() => {
+    return route.params?.userFloorId || route.params?.floorId || null;
+  });
   const [completedFloorTransitions, setCompletedFloorTransitions] = useState(0);
   const [totalFloorTransitions, setTotalFloorTransitions] = useState(0);
 
@@ -2009,6 +2022,12 @@ export default function NavigationScreen({ navigation, route }) {
   // ── ALWAYS-ON: Start AmbientFloorDetector when component mounts ──
   // Works without navigation, admin setup, or WiFi. Just the barometer.
   useEffect(() => {
+    const initLvl = route.params?.userFloorLevel !== undefined
+      ? Number(route.params.userFloorLevel)
+      : (route.params?.floorLevel !== undefined
+          ? Number(route.params.floorLevel)
+          : (geofenceFloorLevel && geofenceFloorLevel > 0 ? geofenceFloorLevel : null));
+
     AmbientFloorDetector.isAvailable().then(avail => {
       if (avail) {
         AmbientFloorDetector.start(({ floorIndex, altitudeMeters }) => {
@@ -2018,20 +2037,50 @@ export default function NavigationScreen({ navigation, route }) {
           // use barometer altitude as the ground truth for the 3D marker
           if (!verticalTrackerRef.current.state.isActive) {
             posEngine.position.z = altitudeMeters;
+            posEngine.position.hasValidElevation = true;
+            posEngine.position.elevationSource = 'barometer';
           }
-        });
+          // Match floor in mapData.floors and update currentFloor!
+          if (mapData?.floors && mapData.floors.length > 0) {
+            let matchedFloor = null;
+            if (currentBlock?.blockId) {
+              matchedFloor = mapData.floors.find(f =>
+                (f.blockId?._id || f.blockId)?.toString() === currentBlock.blockId &&
+                f.level === floorIndex
+              );
+            }
+            if (!matchedFloor && targetRoom?.blockId) {
+              const tbId = (targetRoom.blockId?._id || targetRoom.blockId)?.toString();
+              matchedFloor = mapData.floors.find(f =>
+                (f.blockId?._id || f.blockId)?.toString() === tbId &&
+                f.level === floorIndex
+              );
+            }
+            if (!matchedFloor) {
+              matchedFloor = mapData.floors.find(f => f.level === floorIndex);
+            }
+            if (matchedFloor) {
+              const mFid = (matchedFloor._id || matchedFloor).toString();
+              setCurrentFloor(mFid);
+              posEngine.setFloor(mFid, floorIndex, altitudeMeters, 'barometer');
+              console.log(`[NavX Elevation] Ambient detector matched Level ${floorIndex}: ${matchedFloor.name} (${mFid})`);
+            }
+          }
+        }, initLvl);
       }
     }).catch(console.warn);
 
     return () => AmbientFloorDetector.stop();
-  }, []);
+  }, [mapData, currentBlock]);
 
   // ── Sync Barometer baseline when known floor changes (e.g. QR calibration) ──
   useEffect(() => {
     if (currentFloor && mapData?.floors) {
       const resolved = resolveFloorInfo(currentFloor, mapData.floors);
       if (resolved && typeof resolved.level === 'number') {
-        AmbientFloorDetector.setKnownFloor(resolved.level);
+        if (resolved.level > 0 || AmbientFloorDetector.getFloorIndex() === 0) {
+          AmbientFloorDetector.setKnownFloor(resolved.level);
+        }
       }
     }
   }, [currentFloor, mapData]);
@@ -2343,13 +2392,87 @@ export default function NavigationScreen({ navigation, route }) {
         initialUserPosRef.current = { x: uLat, y: uLng };
       }
 
-      // Step 3: Send raw GPS/QR coords to the backend
+      // Step 3: Determine the user's current floor to pass to the backend
+      // Resolves floor using: route params, currentFloor, QR scan, GeofenceContext,
+      // AmbientFloorDetector, and posEngine to prevent defaulting to ground level.
+      let resolvedStartFloorId = null;
+      let userStartFloorLevel = 0;
+
+      // 1. Check if candidate floor ID was explicitly provided
+      const candidateFloorId = route.params?.userFloorId
+        || (typeof currentFloor === 'object' ? currentFloor?._id : currentFloor)
+        || (usedQR ? (route.params?.userPosition?.floorId || targetRoom?.floorId) : null)
+        || geofenceFloorId
+        || posEngine.position.floorId
+        || route.params?.floorId;
+
+      if (candidateFloorId) {
+        resolvedStartFloorId = (typeof candidateFloorId === 'object' ? candidateFloorId._id : candidateFloorId)?.toString();
+      }
+
+      // 2. Check candidate floor level
+      let candidateFloorLevel = null;
+      if (route.params?.userFloorLevel !== undefined && route.params?.userFloorLevel !== null) {
+        candidateFloorLevel = Number(route.params.userFloorLevel);
+      } else if (route.params?.floorLevel !== undefined && route.params?.floorLevel !== null) {
+        candidateFloorLevel = Number(route.params.floorLevel);
+      } else if (ambientFloorIndex > 0) {
+        candidateFloorLevel = ambientFloorIndex;
+      } else if (AmbientFloorDetector.getFloorIndex() > 0) {
+        candidateFloorLevel = AmbientFloorDetector.getFloorIndex();
+      } else if (geofenceFloorLevel && geofenceFloorLevel > 0) {
+        candidateFloorLevel = geofenceFloorLevel;
+      } else if (posEngine.position.floorLevel && posEngine.position.floorLevel > 0) {
+        candidateFloorLevel = posEngine.position.floorLevel;
+      }
+
+      // 3. Match against mapData.floors
+      if (resolvedStartFloorId && mapData?.floors) {
+        const floorObj = mapData.floors.find(f => (f._id || f).toString() === resolvedStartFloorId);
+        if (floorObj && floorObj.level !== undefined) {
+          userStartFloorLevel = floorObj.level;
+        }
+      }
+
+      if (candidateFloorLevel !== null && candidateFloorLevel > 0 && (userStartFloorLevel === 0 || !resolvedStartFloorId)) {
+        userStartFloorLevel = candidateFloorLevel;
+        if (mapData?.floors && mapData.floors.length > 0) {
+          let matched = null;
+          if (currentBlock?.blockId) {
+            matched = mapData.floors.find(f => (f.blockId?._id || f.blockId)?.toString() === currentBlock.blockId && f.level === candidateFloorLevel);
+          }
+          if (!matched && targetRoom?.blockId) {
+            const tbId = (targetRoom.blockId?._id || targetRoom.blockId)?.toString();
+            matched = mapData.floors.find(f => (f.blockId?._id || f.blockId)?.toString() === tbId && f.level === candidateFloorLevel);
+          }
+          if (!matched) {
+            matched = mapData.floors.find(f => f.level === candidateFloorLevel);
+          }
+          if (matched) {
+            resolvedStartFloorId = (matched._id || matched).toString();
+            console.log(`[NavX] Resolved user start floor from detected level ${candidateFloorLevel}: ${matched.name} (${resolvedStartFloorId})`);
+          }
+        }
+      }
+
+      if (resolvedStartFloorId) {
+        setCurrentFloor(resolvedStartFloorId);
+        posEngine.setFloor(resolvedStartFloorId, userStartFloorLevel, userStartFloorLevel * 3.5 + 0.54, 'init');
+        AmbientFloorDetector.setKnownFloor(userStartFloorLevel);
+      }
+
+      const userStartFloorIdStr = resolvedStartFloorId || undefined;
+      const userStartFloorLevelNum = userStartFloorLevel > 0 ? userStartFloorLevel : undefined;
+
+      // Send raw GPS/QR coords to the backend WITH floor context
       let result;
       if (route.params?.emergencyMode) {
         result = await findRouteToExit({
           startX: uLat,
           startY: uLng,
           campusId: String(campusId),
+          startFloorId: userStartFloorIdStr,
+          startFloorLevel: userStartFloorLevelNum,
         });
         if (result.targetExit) {
           // Mock the 'room' object so the UI says "Exit"
@@ -2364,6 +2487,8 @@ export default function NavigationScreen({ navigation, route }) {
           startY: uLng,
           roomId: String(targetRoom?._id),
           campusId: String(campusId),
+          startFloorId: userStartFloorIdStr,
+          startFloorLevel: userStartFloorLevelNum,
         });
       }
 
@@ -2371,17 +2496,18 @@ export default function NavigationScreen({ navigation, route }) {
       if (result.path && result.path.length > 0) {
         const firstNode = result.path[0];
         const distToFirst = haversine(uLat, uLng, firstNode.x, firstNode.y);
+        const userFloorForNode = userStartFloorIdStr || firstNode.floorId || null;
 
         if (distToFirst > 15) {
           // If the user is far away (e.g. off-campus), try to snap to real streets using OSRM
           const streetNodes = await fetchStreetRoute(uLat, uLng, firstNode.x, firstNode.y);
           if (streetNodes && streetNodes.length > 0) {
             // Remove the exact first node if it's very close to the end of the street route to avoid looping
-            streetNodes.forEach(sn => sn.floorId = firstNode.floorId || null);
+            streetNodes.forEach(sn => { sn.floorId = userFloorForNode; sn.floorLevel = userStartFloorLevel; });
             result.path = [...streetNodes, ...result.path];
           } else {
             // Fallback to straight line
-            result.path.unshift({ nodeId: 'user_start', x: uLat, y: uLng, floorId: firstNode.floorId || null, type: 'user' });
+            result.path.unshift({ nodeId: 'user_start', x: uLat, y: uLng, floorId: userFloorForNode, floorLevel: userStartFloorLevel, type: 'user' });
           }
 
           result.distance += distToFirst;
@@ -2403,7 +2529,7 @@ export default function NavigationScreen({ navigation, route }) {
           }
         } else if (distToFirst > 3) {
           // If just a few meters away, straight line is fine
-          result.path.unshift({ nodeId: 'user_start', x: uLat, y: uLng, floorId: firstNode.floorId || null, type: 'user' });
+          result.path.unshift({ nodeId: 'user_start', x: uLat, y: uLng, floorId: userFloorForNode, floorLevel: userStartFloorLevel, type: 'user' });
         }
       }
 
@@ -2423,10 +2549,12 @@ export default function NavigationScreen({ navigation, route }) {
         });
       }
 
-      // Initialize floor tracking from backend response
+      // Initialize floor tracking from user's starting floor
       setTotalFloorTransitions(result.totalFloorTransitions || 0);
       setCompletedFloorTransitions(0);
-      if (result.path?.[0]?.floorId) {
+      if (userStartFloorIdStr) {
+        setCurrentFloor(userStartFloorIdStr);
+      } else if (result.path?.[0]?.floorId) {
         setCurrentFloor(result.path[0].floorId);
       }
 
@@ -2868,9 +2996,47 @@ export default function NavigationScreen({ navigation, route }) {
   const recalculateRouteFromGPS = async (lat, lng) => {
     try {
       setGpsLoading(true);
+
+      // Resolve floor context for reroute
+      let rerouteFloorId = currentFloor
+        ? (typeof currentFloor === 'object' ? currentFloor._id : currentFloor)?.toString()
+        : (geofenceFloorId || posEngine.position.floorId || undefined);
+
+      let rerouteFloorLevel = 0;
+      if (rerouteFloorId && mapData?.floors) {
+        const floorObj = mapData.floors.find(f => (f._id || f).toString() === rerouteFloorId);
+        if (floorObj) rerouteFloorLevel = floorObj.level ?? 0;
+      }
+
+      if (rerouteFloorLevel === 0) {
+        const altLvl = ambientFloorIndex > 0
+          ? ambientFloorIndex
+          : (AmbientFloorDetector.getFloorIndex() > 0
+              ? AmbientFloorDetector.getFloorIndex()
+              : (geofenceFloorLevel || posEngine.position.floorLevel || 0));
+        if (altLvl > 0) {
+          rerouteFloorLevel = altLvl;
+          if (mapData?.floors) {
+            const matched = mapData.floors.find(f =>
+              (currentBlock?.blockId ? (f.blockId?._id || f.blockId)?.toString() === currentBlock.blockId : true) &&
+              f.level === altLvl
+            );
+            if (matched) {
+              rerouteFloorId = (matched._id || matched).toString();
+            }
+          }
+        }
+      }
+
       let result;
       if (route.params?.emergencyMode) {
-        result = await findRouteToExit({ startX: lat, startY: lng, campusId: String(campusId) });
+        result = await findRouteToExit({
+          startX: lat,
+          startY: lng,
+          campusId: String(campusId),
+          startFloorId: rerouteFloorId,
+          startFloorLevel: rerouteFloorLevel > 0 ? rerouteFloorLevel : undefined,
+        });
         if (result.targetExit) {
           const normFloorId = typeof result.targetExit.floorId === 'object' && result.targetExit.floorId !== null
             ? result.targetExit.floorId._id
@@ -2878,22 +3044,30 @@ export default function NavigationScreen({ navigation, route }) {
           setTargetRoom({ name: result.targetExit.label || result.targetExit.name || "Emergency Exit", _id: result.targetExit._id, floorId: normFloorId });
         }
       } else {
-        result = await findRouteToRoom({ startX: lat, startY: lng, roomId: String(targetRoom?._id), campusId: String(campusId) });
+        result = await findRouteToRoom({
+          startX: lat,
+          startY: lng,
+          roomId: String(targetRoom?._id),
+          campusId: String(campusId),
+          startFloorId: rerouteFloorId,
+          startFloorLevel: rerouteFloorLevel > 0 ? rerouteFloorLevel : undefined,
+        });
       }
 
       if (result.path && result.path.length > 0) {
-        // Just directly connect GPS to the new route without OSRM fallback to prevent dual paths
-        result.path.unshift({ nodeId: 'user_start', x: lat, y: lng, floorId: targetRoom?.floorId || null, type: 'user' });
+        const userFloorForNode = rerouteFloorId || currentFloor || null;
+        result.path.unshift({ nodeId: 'user_start', x: lat, y: lng, floorId: userFloorForNode, floorLevel: rerouteFloorLevel, type: 'user' });
 
         setRouteData(result);
         routeDataStableRef.current = result;
         setCurrentStep(0);
 
-        // Reset floor tracking for new route
         setTotalFloorTransitions(result.totalFloorTransitions || 0);
         setCompletedFloorTransitions(0);
-        if (result.path?.[0]?.floorId) {
-          setCurrentFloor(result.path[0].floorId);
+        if (userFloorForNode) {
+          setCurrentFloor(userFloorForNode);
+        } else if (result.path?.[1]?.floorId) {
+          setCurrentFloor(result.path[1].floorId);
         }
 
         if (voiceEnabled) {
@@ -2921,6 +3095,8 @@ export default function NavigationScreen({ navigation, route }) {
               startY: currentLng,
               roomId: String(startDest.roomId),
               campusId: String(campusId || retraceJourney?.campusId),
+              startFloorId: (currentFloor?._id || currentFloor || undefined),
+              startFloorLevel: (ambientFloorIndex > 0 ? ambientFloorIndex : undefined),
             });
           }
         } catch (e) {
@@ -2990,8 +3166,8 @@ export default function NavigationScreen({ navigation, route }) {
           const prefix = isRetracing
             ? `Retracing your route back to ${destinationName}. `
             : (activeRouteData.routeType === 'nearest_reachable'
-                ? `No direct path found. Navigating to the nearest accessible point near ${destinationName}. `
-                : `Starting navigation to ${destinationName}. `);
+              ? `No direct path found. Navigating to the nearest accessible point near ${destinationName}. `
+              : `Starting navigation to ${destinationName}. `);
 
           // Inform user about floor changes ahead
           const floorChangeNote = (activeRouteData.totalFloorTransitions || 0) > 0
@@ -3276,9 +3452,15 @@ export default function NavigationScreen({ navigation, route }) {
           onMessage={handleWebViewMessage}
           onLoadEnd={() => {
             if (userPos && webViewRef.current) {
+              const resFloor = resolveFloorInfo(currentFloor || userPos.floorId || userPos.floor, mapData?.floors);
+              const cLevel = resFloor.level !== undefined && resFloor.level !== 0 ? resFloor.level : (ambientFloorIndex || posEngine.position.floorLevel || 0);
+              const fName = resFloor.name || (cLevel > 0 ? `Floor ${cLevel}` : 'Ground Floor');
+              const effZ = (ambientAltRef.current && ambientAltRef.current > 0.5)
+                ? ambientAltRef.current
+                : (posEngine.position.z && posEngine.position.z > 0.5 ? posEngine.position.z : (cLevel * 3.5 + 0.54));
               webViewRef.current.injectJavaScript(`
                 if (typeof window.updateUserPos === 'function') {
-                  window.updateUserPos(${userPos.x}, ${userPos.y}, ${posEngine.heading});
+                  window.updateUserPos(${userPos.x}, ${userPos.y}, ${posEngine.heading}, ${effZ}, ${cLevel}, '${fName}', true);
                 }
                 true;
               `);
@@ -3308,22 +3490,28 @@ export default function NavigationScreen({ navigation, route }) {
         {(currentBlock || ambientFloorIndex > 0 || currentFloor) && (() => {
           // Resolve floor label: prefer route's floor (exact), fall back to barometer index
           let floorLabel = '';
+          let currentFloorLvl = 0;
           if (currentFloor && mapData?.floors) {
             const floorObj = mapData.floors.find(f =>
               (f._id || f).toString() ===
               (typeof currentFloor === 'object' ? currentFloor._id : currentFloor).toString()
             );
             if (floorObj) {
-              floorLabel = floorObj.level === 0 ? ' · Ground' : ` · Floor ${floorObj.level}`;
+              currentFloorLvl = floorObj.level ?? 0;
+              floorLabel = currentFloorLvl === 0 ? ' · Ground' : ` · Floor ${currentFloorLvl}`;
             }
           } else if (ambientFloorIndex > 0) {
+            currentFloorLvl = ambientFloorIndex;
             floorLabel = ` · Floor ${ambientFloorIndex}`;
           } else {
             floorLabel = ' · Ground';
           }
 
-          const altMeters = Math.round(ambientAltRef.current * 10) / 10;
-          const showAlt = altMeters > 1.8; // only show if meaningfully above ground
+          const rawAlt = (ambientAltRef.current && ambientAltRef.current > 0.5)
+            ? ambientAltRef.current
+            : (posEngine.position.z && posEngine.position.z > 0.5 ? posEngine.position.z : (currentFloorLvl * 3.5));
+          const altMeters = Math.round(rawAlt * 10) / 10;
+          const showAlt = altMeters > 1.8 || currentFloorLvl > 0;
 
           return (
             <View style={s.blockFloorHUD}>
@@ -3438,3 +3626,4 @@ export default function NavigationScreen({ navigation, route }) {
     </View>
   );
 }
+
