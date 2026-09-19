@@ -37,12 +37,12 @@ function buildLiveMeetMapHTML(centerCoords, mapboxUrl) {
 <link href="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css" rel="stylesheet">
 <script src="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js"></script>
 <style>
-  body{margin:0;padding:0;background-color:#0a0e17;}
-  #map{width:100%;height:100vh;background:#0a0e17;}
+  body{margin:0;padding:0;background-color:#e0f2fe;}
+  #map{width:100%;height:100vh;background:#e0f2fe;}
   .mapboxgl-ctrl-logo { display: none !important; }
   .mapboxgl-popup { max-width: 200px; }
-  .mapboxgl-popup-content { background: rgba(10, 14, 23, 0.8); color: white; padding: 4px 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.2); font-size: 11px; font-weight: bold; }
-  .mapboxgl-popup-tip { border-top-color: rgba(10, 14, 23, 0.8); }
+  .mapboxgl-popup-content { background: rgba(15, 23, 42, 0.9); color: white; padding: 4px 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.2); font-size: 11px; font-weight: bold; }
+  .mapboxgl-popup-tip { border-top-color: rgba(15, 23, 42, 0.9); }
   .room-label { color: #1e293b; font-weight: bold; font-size: 10px; text-shadow: 0 1px 2px rgba(255,255,255,0.8); }
   
   @keyframes pulseLocal {
@@ -70,7 +70,7 @@ mapboxgl.accessToken = tokenMatch ? tokenMatch[1] : 'YOUR_TOKEN_HERE';
 
 var map = new mapboxgl.Map({
   container: 'map',
-  style: 'mapbox://styles/mapbox/dark-v11',
+  style: 'mapbox://styles/mapbox/outdoors-v12',
   center: [${center[1]}, ${center[0]}],
   zoom: 18,
   minZoom: 0,
@@ -100,13 +100,19 @@ window.setMapMode = function(mode) {
 
   if (is2D) {
     map.easeTo({ pitch: 0, bearing: 0, duration: 600 });
+    if (map.getSource('mapbox-dem')) {
+      map.setTerrain(null);
+    }
   } else {
     map.easeTo({ pitch: 60, bearing: -17.6, duration: 600 });
+    if (map.getSource('mapbox-dem')) {
+      map.setTerrain({ source: 'mapbox-dem', exaggeration: 1.5 });
+    }
   }
 
   // 3D layers: visible in 3D, hidden in 2D
   var layers3D = [
-    'campus-polygons', '3d-buildings', 'route-bg', 'route-line'
+    'campus-polygons', 'campus-blocks-roof-edge', '3d-buildings', '3d-trees-canopy', 'route-bg', 'route-line'
   ];
   layers3D.forEach(function(id) {
     if (map.getLayer(id)) {
@@ -126,6 +132,31 @@ window.setMapMode = function(mode) {
 };
 
 map.on('load', () => {
+  // Add 3D Terrain Digital Elevation Model (DEM) for hills and relief
+  if (!map.getSource('mapbox-dem')) {
+    map.addSource('mapbox-dem', {
+      'type': 'raster-dem',
+      'url': 'mapbox://mapbox.mapbox-terrain-dem-v1',
+      'tileSize': 512,
+      'maxzoom': 14
+    });
+  }
+
+  if (currentMapMode !== '2D') {
+    map.setTerrain({ source: 'mapbox-dem', exaggeration: 1.5 });
+  }
+
+  // Add realistic daylight atmospheric sky and horizon fog
+  map.setFog({
+    'range': [-1, 12],
+    'color': '#f0fdf4',
+    'horizon-blend': 0.15,
+    'high-color': '#38bdf8',
+    'space-color': '#0284c7',
+    'star-intensity': 0.0
+  });
+
+  // Add 3D buildings layer with architectural daylight tones
   if (!map.getLayer('3d-buildings')) {
     map.addLayer({
       'id': '3d-buildings',
@@ -135,10 +166,49 @@ map.on('load', () => {
       'type': 'fill-extrusion',
       'minzoom': 15,
       'paint': {
-        'fill-extrusion-color': '#1f2937',
+        'fill-extrusion-color': [
+          'interpolate',
+          ['linear'],
+          ['get', 'height'],
+          0, '#f8fafc',
+          15, '#e2e8f0',
+          30, '#cbd5e1',
+          60, '#94a3b8'
+        ],
         'fill-extrusion-height': ['get', 'height'],
         'fill-extrusion-base': ['get', 'min_height'],
-        'fill-extrusion-opacity': 0.6
+        'fill-extrusion-opacity': 0.78
+      }
+    });
+  }
+
+  // Add 3D trees & vegetation canopy for parks, forests, and landscaped campus grounds
+  if (!map.getLayer('3d-trees-canopy')) {
+    map.addLayer({
+      'id': '3d-trees-canopy',
+      'source': 'composite',
+      'source-layer': 'landuse',
+      'filter': ['in', 'class', 'park', 'wood', 'scrub', 'grass', 'pitch', 'garden', 'forest'],
+      'type': 'fill-extrusion',
+      'minzoom': 14,
+      'paint': {
+        'fill-extrusion-color': [
+          'match',
+          ['get', 'class'],
+          'wood', '#15803d',
+          'forest', '#166534',
+          'park', '#22c55e',
+          'garden', '#10b981',
+          '#16a34a'
+        ],
+        'fill-extrusion-height': [
+          'interpolate', ['linear'], ['zoom'],
+          14, 2,
+          16, 5,
+          18, 8
+        ],
+        'fill-extrusion-base': 0,
+        'fill-extrusion-opacity': 0.72
       }
     });
   }
@@ -208,10 +278,27 @@ window.renderGeoJSONLayers = function(data, floorId) {
       'paint': {
         'fill-color': [
           'case',
-          ['==', ['get', 'type'], 'block'], '#cbd5e1',
+          ['==', ['get', 'type'], 'block'], [
+            'coalesce',
+            ['get', 'color'],
+            [
+              'match',
+              ['get', 'category'],
+              'academic', '#93c5fd',
+              'hostel', '#c4b5fd',
+              'boys_hostel', '#a5b4fc',
+              'girls_hostel', '#fbcfe8',
+              'library', '#a5f3fc',
+              'sports', '#a7f3d0',
+              'canteen', '#fde68a',
+              'dining', '#fde68a',
+              'admin', '#c4b5fd',
+              '#93c5fd'
+            ]
+          ],
           ['coalesce', ['get', 'color'], '#94a3b8']
         ],
-        'fill-opacity': 0.35
+        'fill-opacity': 0.55
       }
     });
   }
@@ -244,7 +331,24 @@ window.renderGeoJSONLayers = function(data, floorId) {
       'paint': {
         'fill-extrusion-color': [
           'case',
-          ['==', ['get', 'type'], 'block'], '#1f2937',
+          ['==', ['get', 'type'], 'block'], [
+            'coalesce',
+            ['get', 'color'],
+            [
+              'match',
+              ['get', 'category'],
+              'academic', '#3b82f6',
+              'hostel', '#8b5cf6',
+              'boys_hostel', '#6366f1',
+              'girls_hostel', '#ec4899',
+              'library', '#06b6d4',
+              'sports', '#10b981',
+              'canteen', '#f59e0b',
+              'dining', '#f59e0b',
+              'admin', '#8b5cf6',
+              '#3b82f6'
+            ]
+          ],
           ['coalesce', ['get', 'color'], '#64748b']
         ],
         'fill-extrusion-height': [
@@ -254,7 +358,22 @@ window.renderGeoJSONLayers = function(data, floorId) {
           2
         ],
         'fill-extrusion-base': 0,
-        'fill-extrusion-opacity': 0.6
+        'fill-extrusion-opacity': 0.70
+      }
+    });
+  }
+
+  if (!map.getLayer('campus-blocks-roof-edge')) {
+    map.addLayer({
+      'id': 'campus-blocks-roof-edge',
+      'type': 'line',
+      'source': 'campus-data',
+      'filter': ['==', ['get', 'type'], 'block'],
+      'layout': { 'visibility': is2D ? 'none' : 'visible' },
+      'paint': {
+        'line-color': '#ffffff',
+        'line-width': 2,
+        'line-opacity': 0.8
       }
     });
   }
@@ -273,8 +392,8 @@ window.renderGeoJSONLayers = function(data, floorId) {
         'text-offset': [0, 1]
       },
       'paint': {
-        'text-color': is2D ? '#0f172a' : '#ffffff',
-        'text-halo-color': is2D ? '#ffffff' : 'rgba(10, 14, 23, 0.8)',
+        'text-color': '#0f172a',
+        'text-halo-color': '#ffffff',
         'text-halo-width': 2.5
       }
     });

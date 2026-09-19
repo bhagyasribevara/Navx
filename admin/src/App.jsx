@@ -1,4 +1,5 @@
 import React from 'react';
+import NavXSplashScreen from './components/NavXSplashScreen';
 import { Routes, Route, NavLink, useLocation, useNavigate, useParams, Outlet } from 'react-router-dom';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
@@ -32,6 +33,9 @@ const isCampusAdminRole = (role) =>
 function App() {
   const [admin, setAdmin] = React.useState(null);
   const [faculty, setFaculty] = React.useState(null);
+  const [splashDone, setSplashDone] = React.useState(() => {
+    return sessionStorage.getItem('navx_splash_shown') === 'true';
+  });
   const location = useLocation();
   const navigate = useNavigate();
   const isEditorPage = location.pathname.includes('/editor/');
@@ -102,6 +106,18 @@ function App() {
   };
 
   const isFacultyRoute = location.pathname === '/facultylogin' || location.pathname.startsWith('/faculty');
+
+  // Cinematic splash screen — plays FIRST, before login or any dashboard
+  if (!splashDone) {
+    return (
+      <NavXSplashScreen
+        onComplete={() => {
+          sessionStorage.setItem('navx_splash_shown', 'true');
+          setSplashDone(true);
+        }}
+      />
+    );
+  }
 
   // If not authenticated and NOT accessing a specific campus workspace URL, show generic login
   if (!admin && !isCampusSpecificWorkspace && !isFacultyRoute) {
