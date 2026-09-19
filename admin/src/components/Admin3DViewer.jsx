@@ -127,7 +127,7 @@ export default function Admin3DViewer({ blocks, floors, rooms, nodes, paths, cam
 
     map.current = new mapboxgl.Map({
       container: mapContainer.current,
-      style: 'mapbox://styles/mapbox/dark-v11',
+      style: 'mapbox://styles/mapbox/outdoors-v12',
       center: center,
       zoom: 18,
       minZoom: 0,
@@ -271,7 +271,28 @@ export default function Admin3DViewer({ blocks, floors, rooms, nodes, paths, cam
         }
       }, 100);
 
-      // 3D Buildings from Mapbox Streets
+      // Add 3D Terrain Digital Elevation Model (DEM) for hills and relief
+      if (!map.current.getSource('mapbox-dem')) {
+        map.current.addSource('mapbox-dem', {
+          'type': 'raster-dem',
+          'url': 'mapbox://mapbox.mapbox-terrain-dem-v1',
+          'tileSize': 512,
+          'maxzoom': 14
+        });
+      }
+      map.current.setTerrain({ source: 'mapbox-dem', exaggeration: 1.5 });
+
+      // Add realistic daylight atmospheric sky and horizon fog
+      map.current.setFog({
+        'range': [-1, 12],
+        'color': '#f0fdf4',
+        'horizon-blend': 0.15,
+        'high-color': '#38bdf8',
+        'space-color': '#0284c7',
+        'star-intensity': 0.0
+      });
+
+      // 3D Buildings from Mapbox Streets with daylight architectural colors
       map.current.addLayer({
         'id': '3d-buildings',
         'source': 'composite',
@@ -280,12 +301,51 @@ export default function Admin3DViewer({ blocks, floors, rooms, nodes, paths, cam
         'type': 'fill-extrusion',
         'minzoom': 15,
         'paint': {
-          'fill-extrusion-color': '#1f2937',
+          'fill-extrusion-color': [
+            'interpolate',
+            ['linear'],
+            ['get', 'height'],
+            0, '#f8fafc',
+            15, '#e2e8f0',
+            30, '#cbd5e1',
+            60, '#94a3b8'
+          ],
           'fill-extrusion-height': ['get', 'height'],
           'fill-extrusion-base': ['get', 'min_height'],
-          'fill-extrusion-opacity': 0.6
+          'fill-extrusion-opacity': 0.78
         }
       });
+
+      // Add 3D trees & vegetation canopy for parks, forests, and landscaped campus grounds
+      if (!map.current.getLayer('3d-trees-canopy')) {
+        map.current.addLayer({
+          'id': '3d-trees-canopy',
+          'source': 'composite',
+          'source-layer': 'landuse',
+          'filter': ['in', 'class', 'park', 'wood', 'scrub', 'grass', 'pitch', 'garden', 'forest'],
+          'type': 'fill-extrusion',
+          'minzoom': 14,
+          'paint': {
+            'fill-extrusion-color': [
+              'match',
+              ['get', 'class'],
+              'wood', '#15803d',
+              'forest', '#166534',
+              'park', '#22c55e',
+              'garden', '#10b981',
+              '#16a34a'
+            ],
+            'fill-extrusion-height': [
+              'interpolate', ['linear'], ['zoom'],
+              14, 2,
+              16, 5,
+              18, 8
+            ],
+            'fill-extrusion-base': 0,
+            'fill-extrusion-opacity': 0.72
+          }
+        });
+      }
 
       renderCampusData();
     });

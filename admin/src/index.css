@@ -2233,6 +2233,25 @@ body,
   color: #000000 !important;
 }
 
+/* Exclude Login and Faculty Login containers from light theme black-text overrides */
+[data-theme="light"] .login-container,
+[data-theme="light"] .login-container h1,
+[data-theme="light"] .login-container h2,
+[data-theme="light"] .login-container h3,
+[data-theme="light"] .login-container h4,
+[data-theme="light"] .login-container label,
+[data-theme="light"] .login-container p,
+[data-theme="light"] .login-container span,
+[data-theme="light"] .login-container a,
+[data-theme="light"] .login-container button,
+[data-theme="light"] .login-container button svg,
+[data-theme="light"] .login-container input,
+[data-theme="light"] .login-btn,
+[data-theme="light"] .login-btn svg {
+  color: #ffffff !important;
+}
+
+
 [data-theme="light"] button:not(.theme-btn):not(.sidebar-toggle):not(.btn-logout):not(.sidebar-logout-btn):hover,
 [data-theme="light"] .btn:not(.theme-btn):not(.sidebar-toggle):not(.btn-logout):not(.sidebar-logout-btn):hover {
   box-shadow: 0 8px 24px rgba(124, 58, 237, 0.32) !important;

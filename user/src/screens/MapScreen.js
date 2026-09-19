@@ -29,12 +29,12 @@ function buildCampusMapHTML(geoJSONData, centerCoords, mapboxUrl, mapMode = '3D'
 <script src="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <style>
-  body{margin:0;padding:0;background-color:#0a0e17;}
-  #map{width:100%;height:100vh;background:#0a0e17;}
+  body{margin:0;padding:0;background-color:#e0f2fe;}
+  #map{width:100%;height:100vh;background:#e0f2fe;}
   .mapboxgl-ctrl-logo { display: none !important; }
   .mapboxgl-popup { max-width: 200px; }
-  .mapboxgl-popup-content { background: rgba(10, 14, 23, 0.8); color: white; padding: 4px 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.2); font-size: 11px; font-weight: bold; }
-  .mapboxgl-popup-tip { border-top-color: rgba(10, 14, 23, 0.8); }
+  .mapboxgl-popup-content { background: rgba(15, 23, 42, 0.9); color: white; padding: 4px 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.2); font-size: 11px; font-weight: bold; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+  .mapboxgl-popup-tip { border-top-color: rgba(15, 23, 42, 0.9); }
   .user-marker {
     position: relative; width: 60px; height: 60px; display: flex; align-items: center; justify-content: center; pointer-events: none;
   }
@@ -89,7 +89,7 @@ function buildCampusMapHTML(geoJSONData, centerCoords, mapboxUrl, mapMode = '3D'
 const tokenMatch = '${mapboxUrl}'.match(/access_token=([^&]+)/);
 mapboxgl.accessToken = tokenMatch ? tokenMatch[1] : 'YOUR_TOKEN_HERE';
 
-var initialStyle = '${mapMode}' === '2D' ? 'mapbox://styles/mapbox/outdoors-v12' : 'mapbox://styles/mapbox/dark-v11';
+var initialStyle = 'mapbox://styles/mapbox/outdoors-v12';
 
 var map = new mapboxgl.Map({
   container: 'map',
@@ -123,13 +123,20 @@ window.setMapMode = function(mode) {
 
   if (is2D) {
     map.easeTo({ pitch: 0, bearing: 0, duration: 600 });
+    if (map.getSource('mapbox-dem')) {
+      map.setTerrain(null);
+    }
   } else {
     map.easeTo({ pitch: 60, bearing: -17.6, duration: 600 });
+    if (map.getSource('mapbox-dem')) {
+      map.setTerrain({ source: 'mapbox-dem', exaggeration: 1.5 });
+    }
   }
 
   // 3D layers: visible in 3D, hidden in 2D
   var layers3D = [
     'campus-blocks',
+    'campus-blocks-roof-edge',
     'campus-rooms',
     'campus-rooms-corridor',
     'campus-rooms-base',
@@ -139,7 +146,8 @@ window.setMapMode = function(mode) {
     'campus-rooms-parapet',
     'campus-rooms-door',
     'doorplate-3d-text-layer',
-    '3d-buildings'
+    '3d-buildings',
+    '3d-trees-canopy'
   ];
   layers3D.forEach(function(id) {
     if (map.getLayer(id)) {
@@ -161,7 +169,31 @@ window.setMapMode = function(mode) {
 map.on('load', () => {
   setupMarkerLayers();
 
-  // Add 3D buildings layer from Mapbox Streets
+  // Add 3D Terrain Digital Elevation Model (DEM) for hills and relief
+  if (!map.getSource('mapbox-dem')) {
+    map.addSource('mapbox-dem', {
+      'type': 'raster-dem',
+      'url': 'mapbox://mapbox.mapbox-terrain-dem-v1',
+      'tileSize': 512,
+      'maxzoom': 14
+    });
+  }
+
+  if (currentMapMode !== '2D') {
+    map.setTerrain({ source: 'mapbox-dem', exaggeration: 1.5 });
+  }
+
+  // Add realistic daylight atmospheric sky and horizon fog
+  map.setFog({
+    'range': [-1, 12],
+    'color': '#f0fdf4',
+    'horizon-blend': 0.15,
+    'high-color': '#38bdf8',
+    'space-color': '#0284c7',
+    'star-intensity': 0.0
+  });
+
+  // Add 3D buildings layer with architectural daylight tones
   if (!map.getLayer('3d-buildings')) {
     map.addLayer({
       'id': '3d-buildings',
@@ -171,10 +203,49 @@ map.on('load', () => {
       'type': 'fill-extrusion',
       'minzoom': 15,
       'paint': {
-        'fill-extrusion-color': '#1f2937',
+        'fill-extrusion-color': [
+          'interpolate',
+          ['linear'],
+          ['get', 'height'],
+          0, '#f8fafc',
+          15, '#e2e8f0',
+          30, '#cbd5e1',
+          60, '#94a3b8'
+        ],
         'fill-extrusion-height': ['get', 'height'],
         'fill-extrusion-base': ['get', 'min_height'],
-        'fill-extrusion-opacity': 0.6
+        'fill-extrusion-opacity': 0.78
+      }
+    });
+  }
+
+  // Add 3D trees & vegetation canopy for parks, forests, and landscaped campus grounds
+  if (!map.getLayer('3d-trees-canopy')) {
+    map.addLayer({
+      'id': '3d-trees-canopy',
+      'source': 'composite',
+      'source-layer': 'landuse',
+      'filter': ['in', 'class', 'park', 'wood', 'scrub', 'grass', 'pitch', 'garden', 'forest'],
+      'type': 'fill-extrusion',
+      'minzoom': 14,
+      'paint': {
+        'fill-extrusion-color': [
+          'match',
+          ['get', 'class'],
+          'wood', '#15803d',
+          'forest', '#166534',
+          'park', '#22c55e',
+          'garden', '#10b981',
+          '#16a34a'
+        ],
+        'fill-extrusion-height': [
+          'interpolate', ['linear'], ['zoom'],
+          14, 2,
+          16, 5,
+          18, 8
+        ],
+        'fill-extrusion-base': 0,
+        'fill-extrusion-opacity': 0.72
       }
     });
   }
@@ -334,10 +405,27 @@ window.renderGeoJSONLayers = function(data, floorId) {
       'paint': {
         'fill-color': [
           'case',
-          ['==', ['get', 'type'], 'block'], '#cbd5e1',
+          ['==', ['get', 'type'], 'block'], [
+            'coalesce',
+            ['get', 'color'],
+            [
+              'match',
+              ['get', 'category'],
+              'academic', '#93c5fd',
+              'hostel', '#c4b5fd',
+              'boys_hostel', '#a5b4fc',
+              'girls_hostel', '#fbcfe8',
+              'library', '#a5f3fc',
+              'sports', '#a7f3d0',
+              'canteen', '#fde68a',
+              'dining', '#fde68a',
+              'admin', '#c4b5fd',
+              '#93c5fd'
+            ]
+          ],
           ['coalesce', ['get', 'color'], '#94a3b8']
         ],
-        'fill-opacity': 0.35
+        'fill-opacity': 0.55
       }
     });
   }
@@ -507,7 +595,7 @@ window.renderGeoJSONLayers = function(data, floorId) {
     }, '3d-buildings');
   }
 
-  // ── 5A. 3D EXTRUSION LAYER FOR BLOCKS (TRANSLUCENT OUTER GLASS ENVELOPE) ──
+  // ── 5A. 3D EXTRUSION LAYER FOR BLOCKS (COLORFUL VIBRANT FACILITY ENVELOPE) ──
   if (!map.getLayer('campus-blocks')) {
     map.addLayer({
       'id': 'campus-blocks',
@@ -516,12 +604,44 @@ window.renderGeoJSONLayers = function(data, floorId) {
       'filter': ['==', ['get', 'type'], 'block'],
       'layout': { 'visibility': is2D ? 'none' : 'visible' },
       'paint': {
-        'fill-extrusion-color': '#1e293b',
+        'fill-extrusion-color': [
+          'coalesce',
+          ['get', 'color'],
+          [
+            'match',
+            ['get', 'category'],
+            'academic', '#3b82f6',
+            'hostel', '#8b5cf6',
+            'boys_hostel', '#6366f1',
+            'girls_hostel', '#ec4899',
+            'library', '#06b6d4',
+            'sports', '#10b981',
+            'canteen', '#f59e0b',
+            'dining', '#f59e0b',
+            'admin', '#8b5cf6',
+            '#3b82f6'
+          ]
+        ],
         'fill-extrusion-height': ['coalesce', ['get', 'height'], 6],
         'fill-extrusion-base': ['coalesce', ['get', 'min_height'], 0],
-        'fill-extrusion-opacity': 0.22
+        'fill-extrusion-opacity': 0.70
       }
     }, '3d-buildings');
+  }
+
+  if (!map.getLayer('campus-blocks-roof-edge')) {
+    map.addLayer({
+      'id': 'campus-blocks-roof-edge',
+      'type': 'line',
+      'source': 'campus-data',
+      'filter': ['==', ['get', 'type'], 'block'],
+      'layout': { 'visibility': is2D ? 'none' : 'visible' },
+      'paint': {
+        'line-color': '#ffffff',
+        'line-width': 2,
+        'line-opacity': 0.8
+      }
+    });
   }
 
   // ── 6. LABELS FOR BLOCKS ──
@@ -538,8 +658,8 @@ window.renderGeoJSONLayers = function(data, floorId) {
         'text-offset': [0, 1]
       },
       'paint': {
-        'text-color': is2D ? '#0f172a' : '#ffffff',
-        'text-halo-color': is2D ? '#ffffff' : 'rgba(10, 14, 23, 0.8)',
+        'text-color': '#0f172a',
+        'text-halo-color': '#ffffff',
         'text-halo-width': 2.5
       }
     });
@@ -1118,6 +1238,44 @@ function getHaversineDistance(lat1, lon1, lat2, lon2) {
   return R * c;
 }
 
+const DOMAIN_CONFIG = {
+  'academic blocks': { icon: 'school-outline', color: '#3b82f6', label: 'Academic Blocks' },
+  'academic': { icon: 'school-outline', color: '#3b82f6', label: 'Academic' },
+  'boys hostels': { icon: 'bed-outline', color: '#8b5cf6', label: 'Boys Hostels' },
+  'girls hostels': { icon: 'bed-outline', color: '#ec4899', label: 'Girls Hostels' },
+  'hostels': { icon: 'bed-outline', color: '#a855f7', label: 'Hostels' },
+  'libraries': { icon: 'library-outline', color: '#06b6d4', label: 'Libraries' },
+  'library': { icon: 'library-outline', color: '#06b6d4', label: 'Library' },
+  'cafeteria & dining': { icon: 'restaurant-outline', color: '#f59e0b', label: 'Cafeteria & Dining' },
+  'cafeteria': { icon: 'restaurant-outline', color: '#f59e0b', label: 'Cafeteria' },
+  'dining': { icon: 'restaurant-outline', color: '#f59e0b', label: 'Dining' },
+  'canteen': { icon: 'restaurant-outline', color: '#f59e0b', label: 'Canteen' },
+  'food': { icon: 'fast-food-outline', color: '#f59e0b', label: 'Food & Dining' },
+  'sports & recreation': { icon: 'fitness-outline', color: '#10b981', label: 'Sports & Recreation' },
+  'sports': { icon: 'football-outline', color: '#10b981', label: 'Sports' },
+  'gym': { icon: 'fitness-outline', color: '#10b981', label: 'Gym & Fitness' },
+  'main gates': { icon: 'enter-outline', color: '#14b8a6', label: 'Main Gates' },
+  'gates': { icon: 'log-in-outline', color: '#14b8a6', label: 'Gates' },
+  'admin': { icon: 'business-outline', color: '#6366f1', label: 'Administration' },
+  'administration': { icon: 'business-outline', color: '#6366f1', label: 'Administration' },
+  'departments': { icon: 'layers-outline', color: '#6366f1', label: 'Departments' },
+  'labs': { icon: 'flask-outline', color: '#0284c7', label: 'Labs' },
+  'auditorium': { icon: 'mic-outline', color: '#f43f5e', label: 'Auditorium' },
+  'hospital': { icon: 'medkit-outline', color: '#ef4444', label: 'Health Center' },
+  'medical': { icon: 'medkit-outline', color: '#ef4444', label: 'Medical' },
+  'parking': { icon: 'car-outline', color: '#64748b', label: 'Parking' },
+};
+
+function getDomainConfig(domainName) {
+  if (!domainName) return { icon: 'business-outline', color: '#6366f1' };
+  const lower = String(domainName).toLowerCase().trim();
+  if (DOMAIN_CONFIG[lower]) return DOMAIN_CONFIG[lower];
+  for (const [key, val] of Object.entries(DOMAIN_CONFIG)) {
+    if (lower.includes(key)) return val;
+  }
+  return { icon: 'business-outline', color: '#6366f1' };
+}
+
 export default function MapScreen({ navigation, route }) {
   const { colors } = useContext(ThemeContext);
   const { activeCampusId: contextCampusId, detectedFloorIndex, setCurrentFloorId } = useGeofence();
@@ -1127,6 +1285,7 @@ export default function MapScreen({ navigation, route }) {
   const [campusId, setCampusId] = useState(route.params?.campusId || contextCampusId || null);
   const [selectedBlock, setSelectedBlock] = useState(null);
   const [selectedFloor, setSelectedFloor] = useState(null);
+  const [selectedCategory, setSelectedCategory] = useState(null);
   const [showingRestroomsMode, setShowingRestroomsMode] = useState(route.params?.showRestrooms || false);
   const [geoJSONData, setGeoJSONData] = useState(null);
   const [userPos, setUserPos] = useState(null);
@@ -1188,6 +1347,7 @@ export default function MapScreen({ navigation, route }) {
       setCampusId(route.params.campusId);
       setSelectedBlock(null);
       setSelectedFloor(null);
+      setSelectedCategory(null);
     } else if (contextCampusId) {
       setCampusId(contextCampusId);
     } else {
@@ -1201,6 +1361,7 @@ export default function MapScreen({ navigation, route }) {
       setShowingRestroomsMode(true);
       setSelectedBlock(null);
       setSelectedFloor(null);
+      setSelectedCategory(null);
       navigation.setParams({ showRestrooms: undefined });
     }
   }, [route.params?.showRestrooms]);
@@ -1304,6 +1465,7 @@ export default function MapScreen({ navigation, route }) {
       // Reset selections so directory reflects fresh data
       setSelectedBlock(null);
       setSelectedFloor(null);
+      setSelectedCategory(null);
     } catch (e) {
       console.log("Map refresh failed:", e);
     } finally {
@@ -1466,6 +1628,8 @@ export default function MapScreen({ navigation, route }) {
       setSelectedFloor(null);
     } else if (selectedBlock) {
       setSelectedBlock(null);
+    } else if (selectedCategory) {
+      setSelectedCategory(null);
     }
   };
 
@@ -1533,7 +1697,7 @@ export default function MapScreen({ navigation, route }) {
       backgroundColor: colors.border,
       alignSelf: 'center', position: 'absolute', top: 8
     },
-    title: { fontSize: 20, fontWeight: "800", color: colors.text, marginLeft: 12 },
+    title: { fontSize: 19, fontWeight: "800", color: colors.text, marginLeft: 12, flex: 1 },
     backBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.surface, alignItems: "center", justifyContent: "center" },
     list: { padding: 20, paddingBottom: 100 },
     card: {
@@ -1545,7 +1709,83 @@ export default function MapScreen({ navigation, route }) {
     cardTitle: { fontSize: 16, fontWeight: "700", color: colors.text },
     cardMeta: { fontSize: 13, color: colors.textSec, marginTop: 4 },
     navBadge: { flexDirection: "row", alignItems: "center", backgroundColor: colors.primary, paddingHorizontal: 12, paddingVertical: 8, borderRadius: RADIUS.sm },
-    navBadgeText: { color: "#fff", fontSize: 13, fontWeight: "700", marginLeft: 6 }
+    navBadgeText: { color: "#fff", fontSize: 13, fontWeight: "700", marginLeft: 6 },
+    categoryGrid: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      justifyContent: 'space-between',
+      rowGap: 14,
+    },
+    categoryBox: {
+      width: '48%',
+      backgroundColor: colors.surface,
+      borderRadius: RADIUS.md,
+      padding: 16,
+      borderWidth: 1,
+      borderColor: colors.border,
+      minHeight: 124,
+      justifyContent: 'space-between',
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.06,
+      shadowRadius: 6,
+      elevation: 2,
+    },
+    categoryIconBox: {
+      width: 44,
+      height: 44,
+      borderRadius: RADIUS.sm,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: 10,
+    },
+    categoryName: {
+      fontSize: 15,
+      fontWeight: '700',
+      color: colors.text,
+      marginBottom: 6,
+      lineHeight: 20,
+    },
+    categoryFooter: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginTop: 'auto',
+    },
+    categoryCount: {
+      fontSize: 12,
+      fontWeight: '600',
+      color: colors.textSec,
+    },
+    categorySectionLabel: {
+      fontSize: 12,
+      fontWeight: '800',
+      color: colors.textSec,
+      marginBottom: 14,
+      marginLeft: 2,
+      textTransform: 'uppercase',
+      letterSpacing: 1,
+    },
+    categoryHeaderInfo: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: 16,
+      paddingHorizontal: 2,
+    },
+    categoryPill: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 16,
+      borderWidth: 1,
+      gap: 6,
+    },
+    categoryPillText: {
+      fontSize: 12,
+      fontWeight: '700',
+    },
   });
 
   if (loading) {
@@ -1706,27 +1946,77 @@ export default function MapScreen({ navigation, route }) {
       domains[domain].push(block);
     });
 
-    return Object.keys(domains).map(domain => (
-      <View key={domain} style={{ marginBottom: 24 }}>
-        <Text style={{ fontSize: 14, fontWeight: "800", color: colors.textSec, marginBottom: 12, marginLeft: 4, textTransform: "uppercase", letterSpacing: 1 }}>
-          {domain}
-        </Text>
-        {domains[domain].map(block => (
-          <TouchableOpacity key={block._id} style={s.card} activeOpacity={0.7} onPress={() => handleBlockSelect(block)}>
-            <View style={{ flexDirection: "row", alignItems: "center" }}>
-              <View style={s.cardIcon}>
-                <Ionicons name="business" size={20} color={colors.primary} />
-              </View>
-              <View>
-                <Text style={s.cardTitle}>{block.name}</Text>
-                <Text style={s.cardMeta}>Tap to zoom & browse floors</Text>
-              </View>
+    // ── Drill-down: If a category box is selected, show its facilities ──
+    if (selectedCategory && domains[selectedCategory]) {
+      const catConfig = getDomainConfig(selectedCategory);
+      return (
+        <View>
+          <View style={s.categoryHeaderInfo}>
+            <View style={[s.categoryPill, { backgroundColor: catConfig.color + '15', borderColor: catConfig.color + '35' }]}>
+              <Ionicons name={catConfig.icon} size={15} color={catConfig.color} />
+              <Text style={[s.categoryPillText, { color: catConfig.color }]}>
+                {domains[selectedCategory].length} {domains[selectedCategory].length === 1 ? 'facility' : 'facilities'}
+              </Text>
             </View>
-            <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
-          </TouchableOpacity>
-        ))}
+            <TouchableOpacity 
+              onPress={() => setSelectedCategory(null)}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Text style={{ fontSize: 13, fontWeight: "600", color: colors.primary }}>All Categories</Text>
+            </TouchableOpacity>
+          </View>
+
+          {domains[selectedCategory].map(block => (
+            <TouchableOpacity key={block._id} style={s.card} activeOpacity={0.7} onPress={() => handleBlockSelect(block)}>
+              <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
+                <View style={[s.cardIcon, { backgroundColor: catConfig.color + '18' }]}>
+                  <Ionicons name={catConfig.icon} size={20} color={catConfig.color} />
+                </View>
+                <View style={{ flex: 1, paddingRight: 10 }}>
+                  <Text style={s.cardTitle}>{block.name}</Text>
+                  <Text style={s.cardMeta}>Tap to zoom & browse floors</Text>
+                </View>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+            </TouchableOpacity>
+          ))}
+        </View>
+      );
+    }
+
+    // ── Main Category Overview: Small Boxes Grid ──
+    const domainKeys = Object.keys(domains);
+
+    return (
+      <View>
+        <Text style={s.categorySectionLabel}>
+          Explore by Category ({domainKeys.length})
+        </Text>
+        <View style={s.categoryGrid}>
+          {domainKeys.map(domain => {
+            const config = getDomainConfig(domain);
+            const count = domains[domain].length;
+            return (
+              <TouchableOpacity
+                key={domain}
+                style={s.categoryBox}
+                activeOpacity={0.75}
+                onPress={() => setSelectedCategory(domain)}
+              >
+                <View style={[s.categoryIconBox, { backgroundColor: config.color + '18' }]}>
+                  <Ionicons name={config.icon} size={22} color={config.color} />
+                </View>
+                <Text style={s.categoryName} numberOfLines={2}>{domain}</Text>
+                <View style={s.categoryFooter}>
+                  <Text style={s.categoryCount}>{count} {count === 1 ? 'place' : 'places'}</Text>
+                  <Ionicons name="chevron-forward" size={14} color={colors.textMuted} />
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
       </View>
-    ));
+    );
   };
 
   return (
@@ -1738,7 +2028,7 @@ export default function MapScreen({ navigation, route }) {
             <WebView
               ref={webViewRef}
               source={{ html: mapHtml, baseUrl: '' }}
-              style={{ flex: 1, backgroundColor: '#0a0e17' }}
+              style={{ flex: 1, backgroundColor: '#e0f2fe' }}
               scrollEnabled={false}
               bounces={false}
               showsHorizontalScrollIndicator={false}
@@ -1784,13 +2074,21 @@ export default function MapScreen({ navigation, route }) {
       <Animated.View style={[s.bottomSheet, { height: panelHeightAnim }]}>
         <View style={s.dragHandle} />
         <View style={s.sheetHeader}>
-          {(selectedBlock || selectedFloor || showingRestroomsMode) ? (
+          {(selectedBlock || selectedFloor || showingRestroomsMode || selectedCategory) ? (
             <TouchableOpacity style={s.backBtn} onPress={handleBack}>
               <Ionicons name="arrow-back" size={20} color={colors.text} />
             </TouchableOpacity>
           ) : null}
-          <Text style={s.title}>
-            {showingRestroomsMode ? "Nearest Restrooms" : selectedFloor ? selectedFloor.name : selectedBlock ? selectedBlock.name : "Campus Directory"}
+          <Text style={s.title} numberOfLines={1}>
+            {showingRestroomsMode
+              ? "Nearest Restrooms"
+              : selectedFloor
+              ? selectedFloor.name
+              : selectedBlock
+              ? selectedBlock.name
+              : selectedCategory
+              ? selectedCategory
+              : "Campus Directory"}
           </Text>
         </View>
         <ScrollView
