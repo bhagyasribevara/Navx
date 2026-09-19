@@ -120,7 +120,7 @@ function buildNavigation2DMapHTML(pathPoints, initialPos, targetRoom, geoJSONDat
   // Exact 2D Mapbox Map from NavigationScreen 2D mode (outdoors-v12, pitch 0, bearing 0)
   var map = new mapboxgl.Map({
     container: 'map',
-    style: 'mapbox://styles/mapbox/outdoors-v12',
+    style: 'mapbox://styles/mapbox/dark-v11',
     center: [${center[1]}, ${center[0]}],
     zoom: ${zoomLevel},
     pitch: 0,

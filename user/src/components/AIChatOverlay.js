@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useContext } from 'react';
 import { 
   View, Text, TouchableOpacity, StyleSheet, Dimensions, 
   Modal, TextInput, FlatList, KeyboardAvoidingView, Platform,
-  Animated, Keyboard, ActivityIndicator
+  Animated, Keyboard, ActivityIndicator, Image, Easing, PanResponder
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -68,7 +68,56 @@ export default function AIChatOverlay() {
   }, []);
   
   const slideAnim = useRef(new Animated.Value(height)).current;
+  const spinAnim = useRef(new Animated.Value(0)).current;
+  const manualRot = useRef(new Animated.Value(0)).current;
   const flatListRef = useRef(null);
+
+  // Continuous slow 3D rotation for the NavX AI icon
+  useEffect(() => {
+    const spin = Animated.loop(
+      Animated.timing(spinAnim, {
+        toValue: 1,
+        duration: 5000,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      })
+    );
+    spin.start();
+    return () => spin.stop();
+  }, []);
+
+  // PanResponder to allow the user to play with and rotate the 3D NavX AI icon
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_, gestureState) => Math.abs(gestureState.dx) > 3,
+      onPanResponderMove: (_, gestureState) => {
+        manualRot.setValue(gestureState.dx * 1.8);
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        if (Math.abs(gestureState.dx) < 6 && Math.abs(gestureState.dy) < 6) {
+          openChat();
+        }
+        Animated.spring(manualRot, {
+          toValue: 0,
+          useNativeDriver: true,
+          friction: 6,
+          tension: 40
+        }).start();
+      }
+    })
+  ).current;
+
+  const combinedRotation = Animated.add(
+    spinAnim.interpolate({
+      inputRange: [0, 1],
+      outputRange: [0, 360]
+    }),
+    manualRot
+  ).interpolate({
+    inputRange: [-720, 720],
+    outputRange: ['-720deg', '720deg']
+  });
 
   // Initialize session
   useEffect(() => {
@@ -314,8 +363,8 @@ export default function AIChatOverlay() {
     return (
       <View style={[styles.messageRow, isUser ? styles.messageRowUser : styles.messageRowAI]}>
         {!isUser && (
-          <View style={[styles.avatar, { backgroundColor: colors.primary }]}>
-            <Text style={styles.avatarText}>N</Text>
+          <View style={[styles.avatar, { backgroundColor: 'transparent' }]}>
+            <Image source={require('../../assets/navx_ai_logo.png')} style={{ width: 32, height: 32 }} resizeMode="contain" />
           </View>
         )}
         <View style={[
@@ -384,17 +433,24 @@ export default function AIChatOverlay() {
   return (
     <>
       {!isOpen && (
-        <TouchableOpacity 
+        <View 
           style={[styles.fab, { 
-            backgroundColor: colors.primary, 
-            shadowColor: colors.primary,
             bottom: 80 + insets.bottom
           }]} 
-          onPress={openChat}
-          activeOpacity={0.8}
+          {...panResponder.panHandlers}
         >
-          <Ionicons name="compass" size={28} color="#fff" />
-        </TouchableOpacity>
+          <Animated.Image 
+            source={require('../../assets/navx_ai_logo.png')} 
+            style={{ 
+              width: 68, 
+              height: 68,
+              transform: [{ 
+                rotateY: combinedRotation
+              }]
+            }} 
+            resizeMode="contain" 
+          />
+        </View>
       )}
 
       <Modal visible={isOpen} transparent animationType="none" onRequestClose={closeChat}>
@@ -409,8 +465,8 @@ export default function AIChatOverlay() {
             >
               {/* Header */}
               <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
-                <View style={[styles.avatar, { backgroundColor: colors.primary }]}>
-                  <Text style={styles.avatarText}>N</Text>
+                <View style={[styles.avatar, { backgroundColor: 'transparent' }]}>
+                  <Image source={require('../../assets/navx_ai_logo.png')} style={{ width: 32, height: 32 }} resizeMode="contain" />
                 </View>
                 <View style={styles.headerInfo}>
                   <Text style={[styles.headerTitle, { color: colors.text }]}>NavX AI</Text>
@@ -503,17 +559,13 @@ export default function AIChatOverlay() {
 const styles = StyleSheet.create({
   fab: {
     position: 'absolute',
-    bottom: 90, // Above tab bar
-    right: 20,
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+    bottom: 90,
+    right: 16,
+    width: 68,
+    height: 68,
     alignItems: 'center',
     justifyContent: 'center',
-    elevation: 8,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
+    backgroundColor: 'transparent',
     zIndex: 999,
   },
   modalOverlay: {

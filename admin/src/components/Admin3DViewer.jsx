@@ -127,7 +127,7 @@ export default function Admin3DViewer({ blocks, floors, rooms, nodes, paths, cam
 
     map.current = new mapboxgl.Map({
       container: mapContainer.current,
-      style: 'mapbox://styles/mapbox/outdoors-v12',
+      style: 'mapbox://styles/mapbox/dark-v11',
       center: center,
       zoom: 18,
       minZoom: 0,
@@ -282,17 +282,17 @@ export default function Admin3DViewer({ blocks, floors, rooms, nodes, paths, cam
       }
       map.current.setTerrain({ source: 'mapbox-dem', exaggeration: 1.5 });
 
-      // Add realistic daylight atmospheric sky and horizon fog
+      // Add realistic dark atmospheric sky and horizon fog matching reference 3D map
       map.current.setFog({
-        'range': [-1, 12],
-        'color': '#f0fdf4',
-        'horizon-blend': 0.15,
-        'high-color': '#38bdf8',
-        'space-color': '#0284c7',
-        'star-intensity': 0.0
+        'range': [0.5, 10],
+        'color': 'rgba(10, 15, 30, 0.85)',
+        'horizon-blend': 0.03,
+        'high-color': '#1a2744',
+        'space-color': '#050a18',
+        'star-intensity': 0.25
       });
 
-      // 3D Buildings from Mapbox Streets with daylight architectural colors
+      // 3D Buildings from Mapbox with solid architectural colors
       map.current.addLayer({
         'id': '3d-buildings',
         'source': 'composite',
@@ -305,44 +305,43 @@ export default function Admin3DViewer({ blocks, floors, rooms, nodes, paths, cam
             'interpolate',
             ['linear'],
             ['get', 'height'],
-            0, '#f8fafc',
-            15, '#e2e8f0',
-            30, '#cbd5e1',
-            60, '#94a3b8'
+            0, '#1a2332',
+            10, '#1e2d3d',
+            25, '#243647',
+            50, '#2a3f52'
           ],
           'fill-extrusion-height': ['get', 'height'],
           'fill-extrusion-base': ['get', 'min_height'],
-          'fill-extrusion-opacity': 0.78
+          'fill-extrusion-opacity': 0.92
         }
       });
 
-      // Add 3D trees & vegetation canopy for parks, forests, and landscaped campus grounds
+      // Add 3D trees & vegetation canopy ONLY for woods and forests
+      // (Playgrounds, basketball courts, and pitches are excluded so they remain flat ground and do not look like buildings)
       if (!map.current.getLayer('3d-trees-canopy')) {
         map.current.addLayer({
           'id': '3d-trees-canopy',
           'source': 'composite',
           'source-layer': 'landuse',
-          'filter': ['in', 'class', 'park', 'wood', 'scrub', 'grass', 'pitch', 'garden', 'forest'],
+          'filter': ['in', 'class', 'wood', 'forest'],
           'type': 'fill-extrusion',
           'minzoom': 14,
           'paint': {
             'fill-extrusion-color': [
               'match',
               ['get', 'class'],
-              'wood', '#15803d',
-              'forest', '#166534',
-              'park', '#22c55e',
-              'garden', '#10b981',
-              '#16a34a'
+              'wood', '#0d2818',
+              'forest', '#0d2818',
+              '#0c2316'
             ],
             'fill-extrusion-height': [
               'interpolate', ['linear'], ['zoom'],
-              14, 2,
-              16, 5,
-              18, 8
+              14, 3,
+              16, 7,
+              18, 12
             ],
             'fill-extrusion-base': 0,
-            'fill-extrusion-opacity': 0.72
+            'fill-extrusion-opacity': 0.8
           }
         });
       }
@@ -488,19 +487,39 @@ export default function Admin3DViewer({ blocks, floors, rooms, nodes, paths, cam
     const blockFeatures = [];
     const roomFeatures = [];
     
+    // Helper to check if a block is a playground, sports court, or field
+    const isSportsOrGround = (b) => {
+      const name = (b.name || '').toLowerCase();
+      const domain = (b.domain || '').toLowerCase();
+      return domain.includes('sports') || 
+             name.includes('ground') || 
+             name.includes('play') || 
+             name.includes('pitch') || 
+             name.includes('court') || 
+             name.includes('field') || 
+             name.includes('basketball') || 
+             name.includes('cricket') || 
+             name.includes('football') || 
+             name.includes('tennis') || 
+             name.includes('stadium') ||
+             name.includes('track');
+    };
+
     // Prepare blocks
     blocks.forEach(b => {
       if (b.shape && b.shape.points && b.shape.points.length > 0) {
         const coords = b.shape.points.map(p => [p.y, p.x]);
         coords.push([b.shape.points[0].y, b.shape.points[0].x]); // close polygon
+        const isGround = isSportsOrGround(b);
         blockFeatures.push({
           type: 'Feature',
           properties: { 
             isBlock: true, 
+            isGround: isGround,
             blockId: b._id, 
-            color: selectedBlockId === b._id ? '#4f46e5' : (b.color || '#475569'), 
+            color: selectedBlockId === b._id ? '#4f46e5' : (isGround ? 'rgba(59, 130, 246, 0.2)' : (b.color || '#334155')), 
             min_height: 0, 
-            height: 2 
+            height: isGround ? 0.05 : 2 // Playgrounds remain flat so they do not look like buildings
           },
           geometry: { type: 'Polygon', coordinates: [coords] }
         });

@@ -330,8 +330,8 @@ function buildNavMapHTML(geoJSONData, pathPoints, initialPos, targetRoom, mapbox
 <script src="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <style>
-  body{margin:0;padding:0;background-color:#e0f2fe;}
-  #map{width:100%;height:100vh;background:#e0f2fe;}
+  body{margin:0;padding:0;background-color:#0a1628;}
+  #map{width:100%;height:100vh;background:#0a1628;}
   .mapboxgl-ctrl-logo { display: none !important; }
   .mapboxgl-popup { max-width: 200px; }
   .mapboxgl-popup-content { background: rgba(15, 23, 42, 0.9); color: white; padding: 4px 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.2); font-size: 11px; font-weight: bold; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
@@ -383,7 +383,7 @@ function buildNavMapHTML(geoJSONData, pathPoints, initialPos, targetRoom, mapbox
 const tokenMatch = '${mapboxUrl}'.match(/access_token=([^&]+)/);
 mapboxgl.accessToken = tokenMatch ? tokenMatch[1] : 'YOUR_TOKEN_HERE';
 
-var initialStyle = 'mapbox://styles/mapbox/outdoors-v12';
+var initialStyle = 'mapbox://styles/mapbox/dark-v11';
 
 var map = new mapboxgl.Map({
   container: 'map',
@@ -617,12 +617,12 @@ map.on('load', () => {
 
   // Add realistic daylight atmospheric sky and horizon fog
   map.setFog({
-    'range': [-1, 12],
-    'color': '#f0fdf4',
-    'horizon-blend': 0.15,
-    'high-color': '#38bdf8',
-    'space-color': '#0284c7',
-    'star-intensity': 0.0
+    'range': [0.5, 10],
+    'color': 'rgba(10, 15, 30, 0.85)',
+    'horizon-blend': 0.03,
+    'high-color': '#1a2744',
+    'space-color': '#050a18',
+    'star-intensity': 0.25
   });
 
   // Add 3D buildings layer with architectural daylight tones
@@ -639,48 +639,47 @@ map.on('load', () => {
           'interpolate',
           ['linear'],
           ['get', 'height'],
-          0, '#f8fafc',
-          15, '#e2e8f0',
-          30, '#cbd5e1',
-          60, '#94a3b8'
+          0, '#1a2332',
+          10, '#1e2d3d',
+          25, '#243647',
+          50, '#2a3f52'
         ],
         'fill-extrusion-height': ['get', 'height'],
         'fill-extrusion-base': ['get', 'min_height'],
-        'fill-extrusion-opacity': 0.78
+        'fill-extrusion-opacity': 0.92
       }
     });
   }
 
-  // Add 3D trees & vegetation canopy for parks, forests, and landscaped campus grounds
-  if (!map.getLayer('3d-trees-canopy')) {
-    map.addLayer({
-      'id': '3d-trees-canopy',
-      'source': 'composite',
-      'source-layer': 'landuse',
-      'filter': ['in', 'class', 'park', 'wood', 'scrub', 'grass', 'pitch', 'garden', 'forest'],
-      'type': 'fill-extrusion',
-      'minzoom': 14,
-      'paint': {
-        'fill-extrusion-color': [
-          'match',
-          ['get', 'class'],
-          'wood', '#15803d',
-          'forest', '#166534',
-          'park', '#22c55e',
-          'garden', '#10b981',
-          '#16a34a'
-        ],
-        'fill-extrusion-height': [
-          'interpolate', ['linear'], ['zoom'],
-          14, 2,
-          16, 5,
-          18, 8
-        ],
-        'fill-extrusion-base': 0,
-        'fill-extrusion-opacity': 0.72
+      // Add 3D trees & vegetation canopy ONLY for woods and forests
+      // (Playgrounds, basketball courts, and pitches are excluded so they remain flat ground and do not look like buildings)
+      if (!map.getLayer('3d-trees-canopy')) {
+        map.addLayer({
+          'id': '3d-trees-canopy',
+          'source': 'composite',
+          'source-layer': 'landuse',
+          'filter': ['in', 'class', 'wood', 'forest'],
+          'type': 'fill-extrusion',
+          'minzoom': 14,
+          'paint': {
+            'fill-extrusion-color': [
+              'match',
+              ['get', 'class'],
+              'wood', '#0d2818',
+              'forest', '#0d2818',
+              '#0c2316'
+            ],
+            'fill-extrusion-height': [
+              'interpolate', ['linear'], ['zoom'],
+              14, 3,
+              16, 7,
+              18, 12
+            ],
+            'fill-extrusion-base': 0,
+            'fill-extrusion-opacity': 0.8
+          }
+        });
       }
-    });
-  }
 
   if (currentGeoData) {
     window.renderGeoJSONLayers(currentGeoData, currentFloorId);
@@ -1160,6 +1159,17 @@ window.renderGeoJSONLayers = function(data, floorId, activeFloorId) {
       'paint': {
         'fill-extrusion-color': [
           'case',
+          ['any',
+            ['==', ['get', 'category'], 'sports'],
+            ['==', ['get', 'category'], 'Sports & Recreation'],
+            ['in', 'ground', ['downcase', ['get', 'name']]],
+            ['in', 'play', ['downcase', ['get', 'name']]],
+            ['in', 'pitch', ['downcase', ['get', 'name']]],
+            ['in', 'court', ['downcase', ['get', 'name']]],
+            ['in', 'basketball', ['downcase', ['get', 'name']]],
+            ['in', 'cricket', ['downcase', ['get', 'name']]],
+            ['in', 'football', ['downcase', ['get', 'name']]]
+          ], 'rgba(59, 130, 246, 0.12)',
           ['boolean', ['get', 'isRouteBlock'], false], '#cbd5e1',
           [
             'coalesce',
@@ -1172,7 +1182,7 @@ window.renderGeoJSONLayers = function(data, floorId, activeFloorId) {
               'boys_hostel', '#6366f1',
               'girls_hostel', '#ec4899',
               'library', '#06b6d4',
-              'sports', '#10b981',
+              'sports', 'rgba(59, 130, 246, 0.12)',
               'canteen', '#f59e0b',
               'dining', '#f59e0b',
               'admin', '#8b5cf6',
@@ -1180,7 +1190,21 @@ window.renderGeoJSONLayers = function(data, floorId, activeFloorId) {
             ]
           ]
         ],
-        'fill-extrusion-height': ['coalesce', ['get', 'height'], 6],
+        'fill-extrusion-height': [
+          'case',
+          ['any',
+            ['==', ['get', 'category'], 'sports'],
+            ['==', ['get', 'category'], 'Sports & Recreation'],
+            ['in', 'ground', ['downcase', ['get', 'name']]],
+            ['in', 'play', ['downcase', ['get', 'name']]],
+            ['in', 'pitch', ['downcase', ['get', 'name']]],
+            ['in', 'court', ['downcase', ['get', 'name']]],
+            ['in', 'basketball', ['downcase', ['get', 'name']]],
+            ['in', 'cricket', ['downcase', ['get', 'name']]],
+            ['in', 'football', ['downcase', ['get', 'name']]]
+          ], 0.05,
+          ['coalesce', ['get', 'height'], 6]
+        ],
         'fill-extrusion-base': ['coalesce', ['get', 'min_height'], 0],
         'fill-extrusion-opacity': [
           'case',
@@ -1196,7 +1220,12 @@ window.renderGeoJSONLayers = function(data, floorId, activeFloorId) {
       'id': 'campus-blocks-roof-edge',
       'type': 'line',
       'source': 'campus-data',
-      'filter': ['==', ['get', 'type'], 'block'],
+      'filter': [
+        'all',
+        ['==', ['get', 'type'], 'block'],
+        ['!=', ['get', 'category'], 'sports'],
+        ['!=', ['get', 'category'], 'Sports & Recreation']
+      ],
       'layout': { 'visibility': is2D ? 'none' : 'visible' },
       'paint': {
         'line-color': '#ffffff',
@@ -3774,8 +3803,8 @@ export default function NavigationScreen({ navigation, route }) {
           accessibilityLabel="Re-center map on user position"
         >
           <Ionicons
-            name={isFreeRoam ? "locate" : "navigate"}
-            size={18}
+            name={isFreeRoam ? "compass" : "navigate-circle"}
+            size={22}
             color={isFreeRoam ? "#ffffff" : colors.primary}
           />
           {isFreeRoam && (

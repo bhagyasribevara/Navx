@@ -37,8 +37,8 @@ function buildLiveMeetMapHTML(centerCoords, mapboxUrl) {
 <link href="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css" rel="stylesheet">
 <script src="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js"></script>
 <style>
-  body{margin:0;padding:0;background-color:#e0f2fe;}
-  #map{width:100%;height:100vh;background:#e0f2fe;}
+  body{margin:0;padding:0;background-color:#0a1628;}
+  #map{width:100%;height:100vh;background:#0a1628;}
   .mapboxgl-ctrl-logo { display: none !important; }
   .mapboxgl-popup { max-width: 200px; }
   .mapboxgl-popup-content { background: rgba(15, 23, 42, 0.9); color: white; padding: 4px 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.2); font-size: 11px; font-weight: bold; }
@@ -70,7 +70,7 @@ mapboxgl.accessToken = tokenMatch ? tokenMatch[1] : 'YOUR_TOKEN_HERE';
 
 var map = new mapboxgl.Map({
   container: 'map',
-  style: 'mapbox://styles/mapbox/outdoors-v12',
+  style: 'mapbox://styles/mapbox/dark-v11',
   center: [${center[1]}, ${center[0]}],
   zoom: 18,
   minZoom: 0,
@@ -148,12 +148,12 @@ map.on('load', () => {
 
   // Add realistic daylight atmospheric sky and horizon fog
   map.setFog({
-    'range': [-1, 12],
-    'color': '#f0fdf4',
-    'horizon-blend': 0.15,
-    'high-color': '#38bdf8',
-    'space-color': '#0284c7',
-    'star-intensity': 0.0
+    'range': [0.5, 10],
+    'color': 'rgba(10, 15, 30, 0.85)',
+    'horizon-blend': 0.03,
+    'high-color': '#1a2744',
+    'space-color': '#050a18',
+    'star-intensity': 0.25
   });
 
   // Add 3D buildings layer with architectural daylight tones
@@ -170,48 +170,47 @@ map.on('load', () => {
           'interpolate',
           ['linear'],
           ['get', 'height'],
-          0, '#f8fafc',
-          15, '#e2e8f0',
-          30, '#cbd5e1',
-          60, '#94a3b8'
+          0, '#1a2332',
+          10, '#1e2d3d',
+          25, '#243647',
+          50, '#2a3f52'
         ],
         'fill-extrusion-height': ['get', 'height'],
         'fill-extrusion-base': ['get', 'min_height'],
-        'fill-extrusion-opacity': 0.78
+        'fill-extrusion-opacity': 0.92
       }
     });
   }
 
-  // Add 3D trees & vegetation canopy for parks, forests, and landscaped campus grounds
-  if (!map.getLayer('3d-trees-canopy')) {
-    map.addLayer({
-      'id': '3d-trees-canopy',
-      'source': 'composite',
-      'source-layer': 'landuse',
-      'filter': ['in', 'class', 'park', 'wood', 'scrub', 'grass', 'pitch', 'garden', 'forest'],
-      'type': 'fill-extrusion',
-      'minzoom': 14,
-      'paint': {
-        'fill-extrusion-color': [
-          'match',
-          ['get', 'class'],
-          'wood', '#15803d',
-          'forest', '#166534',
-          'park', '#22c55e',
-          'garden', '#10b981',
-          '#16a34a'
-        ],
-        'fill-extrusion-height': [
-          'interpolate', ['linear'], ['zoom'],
-          14, 2,
-          16, 5,
-          18, 8
-        ],
-        'fill-extrusion-base': 0,
-        'fill-extrusion-opacity': 0.72
+      // Add 3D trees & vegetation canopy ONLY for woods and forests
+      // (Playgrounds, basketball courts, and pitches are excluded so they remain flat ground and do not look like buildings)
+      if (!map.getLayer('3d-trees-canopy')) {
+        map.addLayer({
+          'id': '3d-trees-canopy',
+          'source': 'composite',
+          'source-layer': 'landuse',
+          'filter': ['in', 'class', 'wood', 'forest'],
+          'type': 'fill-extrusion',
+          'minzoom': 14,
+          'paint': {
+            'fill-extrusion-color': [
+              'match',
+              ['get', 'class'],
+              'wood', '#0d2818',
+              'forest', '#0d2818',
+              '#0c2316'
+            ],
+            'fill-extrusion-height': [
+              'interpolate', ['linear'], ['zoom'],
+              14, 3,
+              16, 7,
+              18, 12
+            ],
+            'fill-extrusion-base': 0,
+            'fill-extrusion-opacity': 0.8
+          }
+        });
       }
-    });
-  }
 
   // Add source for dynamic route path
   map.addSource('meet-route', {
