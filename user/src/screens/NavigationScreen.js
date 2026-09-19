@@ -18,11 +18,13 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { findRouteToRoom, findRouteToExit, getGeoJSONMapData, SOCKET_URL, getCachedConfigValue } from "../api";
 import { io } from "socket.io-client";
+import { usePosition } from "../context/PositionContext";
 import {
   PositionEngine,
   StepDetector,
   snapPositionToRouteAdvanced,
   clampPointToPolygon,
+  isPointInPolygon,
   shortestAngleDiff,
   haversineDistance
 } from "../positioning";
@@ -123,7 +125,7 @@ async function fetchStreetRoute(lat1, lon1, lat2, lon2) {
   return null;
 }
 
-function buildNavMapHTML(geoJSONData, pathPoints, initialPos, targetRoom, mapboxUrl, floors, mapMode = '3D') {
+function buildNavMapHTML(geoJSONData, pathPoints, initialPos, targetRoom, mapboxUrl, floors, mapMode = '3D', initialHeading = 0) {
   const center = initialPos ? [initialPos.x, initialPos.y] : (pathPoints?.length ? [pathPoints[0].x, pathPoints[0].y] : [18.4665, 83.6629]);
   const initialPitch = mapMode === '2D' ? 0 : 60;
   const initialBearing = mapMode === '2D' ? 0 : -17.6;
@@ -305,14 +307,21 @@ function buildNavMapHTML(geoJSONData, pathPoints, initialPos, targetRoom, mapbox
     : '';
 
   const initialStartNode = pathData && pathData.length > 0 ? pathData[0] : null;
-  const initLat = initialStartNode ? initialStartNode.x : (initialPos ? initialPos.x : center[0]);
-  const initLng = initialStartNode ? initialStartNode.y : (initialPos ? initialPos.y : center[1]);
-  const initLevel = initialStartNode
-    ? (initialStartNode.floorLevel !== undefined ? initialStartNode.floorLevel : (initialStartNode.level !== undefined ? initialStartNode.level : 0))
-    : (initialPos?.floorLevel || 0);
-  const initElev = initialStartNode
-    ? (initialStartNode.adjustedH !== undefined ? initialStartNode.adjustedH : (initialStartNode.baseH !== undefined ? initialStartNode.baseH : (initLevel * 3.5 + 0.54)))
-    : (initialPos?.elevation || (initLevel * 3.5 + 0.54));
+  const initLat = initialPos ? initialPos.x : (initialStartNode ? initialStartNode.x : center[0]);
+  const initLng = initialPos ? initialPos.y : (initialStartNode ? initialStartNode.y : center[1]);
+  const initLevel = (initialPos?.floorLevel !== undefined && initialPos?.floorLevel !== null)
+    ? initialPos.floorLevel
+    : (initialStartNode
+        ? (initialStartNode.floorLevel !== undefined ? initialStartNode.floorLevel : (initialStartNode.level !== undefined ? initialStartNode.level : 0))
+        : 0);
+  const hasValidInitZ = !!(initialPos?.hasValidElevation || (initialStartNode && initialStartNode.hasValidElevation));
+  const initElev = (initialPos?.elevation !== undefined && initialPos?.elevation !== null)
+    ? initialPos.elevation
+    : ((initialPos?.hasValidElevation && initialPos?.z !== undefined && initialPos?.z !== null)
+        ? initialPos.z
+        : (initialStartNode
+            ? (initialStartNode.adjustedH !== undefined ? initialStartNode.adjustedH : (initialStartNode.baseH !== undefined ? initialStartNode.baseH : (initLevel * 3.5 + 0.54)))
+            : (initLevel * 3.5 + 0.54)));
 
   return `<!DOCTYPE html>
 <html><head>
@@ -1106,6 +1115,7 @@ window.renderGeoJSONLayers = function(data, floorId, activeFloorId) {
         }
       });
     }
+    bringMarkerLayersToFront();
   ` : ''}
 
   // ── 9. LABELS (2D / BLOCKS ONLY) ──
@@ -1287,6 +1297,16 @@ function setupMarkerLayers() {
       }
     });
   }
+  bringMarkerLayersToFront();
+}
+
+function bringMarkerLayersToFront() {
+  if (!map) return;
+  try {
+    if (map.getLayer('user-marker-glow')) map.moveLayer('user-marker-glow');
+    if (map.getLayer('user-marker-puck')) map.moveLayer('user-marker-puck');
+    if (map.getLayer('user-marker-arrow')) map.moveLayer('user-marker-arrow');
+  } catch(e) {}
 }
 
 function updateBadgePosition() {
@@ -1554,16 +1574,10 @@ map.on('render', function() {
 map.on('load', function() {
   setupMarkerLayers();
   ensureDoorplate3DLayer();
-  var hasInitZ = ${initElev !== undefined && initElev !== null && initElev > 0 ? 'true' : 'false'};
-  window.updateUserPos(${initLat}, ${initLng}, 0, ${initElev}, ${initLevel}, ${initLevel > 0 ? `'Floor ' + initLevel` : `''`}, hasInitZ);
+  bringMarkerLayersToFront();
+  var hasInitZ = ${hasValidInitZ ? 'true' : 'false'};
+  window.updateUserPos(${initLat}, ${initLng}, ${initialHeading || 0}, ${initElev}, ${initLevel}, ${initLevel > 0 ? `'Floor ' + initLevel` : `''`}, hasInitZ);
 });
-
-// Start marker
-${initLat && initLng ? `
-  const startEl = document.createElement('div');
-  startEl.className = 'start-marker';
-  new mapboxgl.Marker({ element: startEl }).setLngLat([${initLng}, ${initLat}]).addTo(map);
-` : ''}
 
 // Destination marker
 ${destX && destY ? `
@@ -1579,14 +1593,14 @@ function shortestAngleDiff(current, target) {
 var _markerCurrent = {
   lat: ${initLat || 18.4665},
   lng: ${initLng || 83.6629},
-  heading: 0,
+  heading: ${initialHeading || 0},
   elev: ${initElev !== undefined && initElev !== null && !isNaN(initElev) ? initElev : (initLevel * 3.5 + 0.54)},
   floorLevel: ${initLevel || 0}
 };
 var _markerTarget = {
   lat: ${initLat || 18.4665},
   lng: ${initLng || 83.6629},
-  heading: 0,
+  heading: ${initialHeading || 0},
   elev: ${initElev !== undefined && initElev !== null && !isNaN(initElev) ? initElev : (initLevel * 3.5 + 0.54)},
   floorLevel: ${initLevel || 0}
 };
@@ -1622,6 +1636,7 @@ function renderUserMarker(lng, lat, heading, effElev, fl) {
       }
     ]
   });
+  bringMarkerLayersToFront();
 
   window._lastUserCoords = [lng, lat];
   window._lastUserPos = { lat: lat, lng: lng };
@@ -1876,8 +1891,8 @@ export default function NavigationScreen({ navigation, route }) {
   const [campusId, setCampusId] = useState(initialCampusId || initialRoom?.campusId || retraceJourney?.campusId);
   const [routeData, setRouteData] = useState(null);
   const [currentStep, setCurrentStep] = useState(0);
-  const [userPos, setUserPos] = useState(null);
-  const [heading, setHeading] = useState(0);
+  const [userPos, setUserPos] = useState(() => route.params?.userPosition || null);
+  const [heading, setHeading] = useState(() => route.params?.userHeading || 0);
   const [isNavigating, setIsNavigating] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [arrived, setArrived] = useState(false);
@@ -1965,15 +1980,41 @@ export default function NavigationScreen({ navigation, route }) {
   const socketRef = useRef(null);
 
   const webViewRef = useRef(null);
-  const posEngine = useRef(new PositionEngine()).current;
+  const {
+    posEngine,
+    position: canonicalPos,
+    heading: canonicalHeading,
+    setPositionFromQR,
+    updateVerticalPosition,
+    setFloor: setCanonicalFloor,
+    processGPSUpdate,
+    processStep,
+    updateHeading,
+    updatePosition,
+    resetPosition,
+  } = usePosition();
   const stepDetector = useRef(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const progressAnim = useRef(new Animated.Value(0)).current;
   const dirCardAnim = useRef(new Animated.Value(0)).current;
   const arrivedAnim = useRef(new Animated.Value(0)).current;
 
+  // Keep local userPos & heading synced with canonical PositionEngine from context
+  useEffect(() => {
+    if (canonicalPos && canonicalPos.x != null && canonicalPos.y != null) {
+      setUserPos(canonicalPos);
+    }
+  }, [canonicalPos]);
+
+  useEffect(() => {
+    if (canonicalHeading !== undefined && canonicalHeading !== null) {
+      setHeading(canonicalHeading);
+    }
+  }, [canonicalHeading]);
+
   // Memoize the HTML so it DOES NOT regenerate on every GPS tick
-  const initialUserPosRef = useRef(null);
+  const initialUserPosRef = useRef(route.params?.userPosition || null);
+  const initialHeadingRef = useRef(route.params?.userHeading || 0);
   // Keep routeData in a stable ref for startNavigation to avoid stale state
   const routeDataStableRef = useRef(routeData);
   const mapboxUrl = getCachedConfigValue("EXPO_PUBLIC_MAPBOX_URL", "https://api.mapbox.com/styles/v1/mapbox/streets-v11/tiles/256/{z}/{x}/{y}@2x?access_token=pk.eyJ1IjoidmVua2F0YS1rcmlzaG5hIiwiYSI6ImNtZnYycHN0bTAzY28yanFxeG4wOXVsenAifQ.w1yd6XuvWvarYj33rP1LkA");
@@ -1990,13 +2031,14 @@ export default function NavigationScreen({ navigation, route }) {
   const [ambientFloorIndex, setAmbientFloorIndex] = useState(0);
   const geoJSONDataRef = useRef(null);
 
-  // Extract staircase connectors whenever route or map floors change
+  // Extract staircase connectors whenever route or map floors change (backend-provided primary, client extraction fallback)
   useEffect(() => {
     if (routeData && routeData.path && mapData?.floors) {
+      const backendConnectors = routeData.staircaseConnectors || routeData.staircaseMetadata || [];
       const connectors = StaircaseExtractor.extract(
         routeData.path,
         mapData.floors,
-        routeData.staircaseMetadata || []
+        backendConnectors
       );
       staircaseConnectorsRef.current = connectors;
     }
@@ -2034,11 +2076,9 @@ export default function NavigationScreen({ navigation, route }) {
           ambientAltRef.current = altitudeMeters;
           setAmbientFloorIndex(floorIndex);
           // If VerticalTracker is NOT active (not navigating stairs),
-          // use barometer altitude as the ground truth for the 3D marker
+          // update altitude through canonical PositionEngine
           if (!verticalTrackerRef.current.state.isActive) {
-            posEngine.position.z = altitudeMeters;
-            posEngine.position.hasValidElevation = true;
-            posEngine.position.elevationSource = 'barometer';
+            updateVerticalPosition(altitudeMeters, null, null, 0.0, 'barometer');
           }
           // Match floor in mapData.floors and update currentFloor!
           if (mapData?.floors && mapData.floors.length > 0) {
@@ -2062,7 +2102,7 @@ export default function NavigationScreen({ navigation, route }) {
             if (matchedFloor) {
               const mFid = (matchedFloor._id || matchedFloor).toString();
               setCurrentFloor(mFid);
-              posEngine.setFloor(mFid, floorIndex, altitudeMeters, 'barometer');
+              setCanonicalFloor(mFid, floorIndex, altitudeMeters, 'barometer');
               console.log(`[NavX Elevation] Ambient detector matched Level ${floorIndex}: ${matchedFloor.name} (${mFid})`);
             }
           }
@@ -2095,7 +2135,7 @@ export default function NavigationScreen({ navigation, route }) {
 
   const mapHtml = React.useMemo(() => {
     const geoDataToUse = geoJSONData || { type: 'FeatureCollection', features: [] };
-    return buildNavMapHTML(geoDataToUse, routeData?.path, initialUserPosRef.current, targetRoom, mapboxUrl, mapData?.floors, mapMode);
+    return buildNavMapHTML(geoDataToUse, routeData?.path, initialUserPosRef.current, targetRoom, mapboxUrl, mapData?.floors, mapMode, initialHeadingRef.current);
   }, [geoJSONData, routeData, targetRoom, mapboxUrl, mapData?.floors, mapMode]);
 
   // Inject updated GeoJSON when it changes without reloading WebView
@@ -2213,22 +2253,44 @@ export default function NavigationScreen({ navigation, route }) {
           f.geometry?.type === 'Polygon' &&
           (f.properties?.type === 'block' || f.properties?.type === 'building')
         );
-        for (const feature of blockFeatures) {
-          const coords = feature.geometry?.coordinates?.[0];
-          if (coords && coords.length >= 3) {
+        const isInsideAny = blockFeatures.some(f => {
+          const coords = f.geometry?.coordinates?.[0];
+          return coords && coords.length >= 3 && isPointInPolygon(processedX, processedY, coords);
+        });
+
+        // Only clamp if not inside any block AND user is associated with a specific block and within 15m drift
+        if (!isInsideAny && currentBlock?.blockId) {
+          const targetFeature = blockFeatures.find(f =>
+            (f.properties?.id || f.properties?._id || '').toString() === currentBlock.blockId.toString()
+          );
+          if (targetFeature?.geometry?.coordinates?.[0]) {
+            const coords = targetFeature.geometry.coordinates[0];
             const clamped = clampPointToPolygon(processedX, processedY, coords);
-            processedX = clamped.lat;
-            processedY = clamped.lng;
-            break;
+            const driftDist = haversineDistance(processedX, processedY, clamped.lat, clamped.lng);
+            if (driftDist <= 15) {
+              processedX = clamped.lat;
+              processedY = clamped.lng;
+            }
           }
         }
       }
 
       const isStairTracking = !!(posEngine.verticalTrackingActive || userPos.verticalTrackingActive);
-      const hasValidZ = isStairTracking || !!(userPos.hasValidElevation && userPos.elevationSource === 'staircase_connector');
-      const elev = isStairTracking
-        ? (userPos.z ?? posEngine.position.z ?? (currentLevel * 3.5 + 0.54))
-        : (ambientAltRef.current && ambientAltRef.current !== 0 ? ambientAltRef.current : (currentLevel * 3.5 + 0.54));
+      const hasValidZ = isStairTracking || !!userPos.hasValidElevation;
+      let elev;
+      if (isStairTracking && (userPos.z != null || posEngine.position.z != null)) {
+        elev = userPos.z ?? posEngine.position.z;
+      } else if (userPos.hasValidElevation && userPos.z !== undefined && userPos.z !== null) {
+        elev = Number(userPos.z);
+      } else if (resolvedFloor.elevation !== undefined && resolvedFloor.elevation !== null) {
+        elev = Number(resolvedFloor.elevation);
+      } else if (ambientAltRef.current && ambientAltRef.current !== 0) {
+        elev = ambientAltRef.current;
+      } else if (currentLevel > 0) {
+        elev = currentLevel * 3.5 + 0.54;
+      } else {
+        elev = 0.54;
+      }
 
       webViewRef.current.injectJavaScript(`
         if (typeof window.updateUserPos === 'function') {
@@ -2384,9 +2446,34 @@ export default function NavigationScreen({ navigation, route }) {
       }
 
       if (usedQR) {
-        posEngine.setPositionFromQR(uLat, uLng, targetRoom?.floorId);
+        setPositionFromQR(uLat, uLng, targetRoom?.floorId);
       }
-      setUserPos({ x: uLat, y: uLng, floor: targetRoom?.floorId });
+      const userStartFloor = route.params?.userFloorId || route.params?.userPosition?.floorId || targetRoom?.floorId;
+      const userStartLvl = route.params?.userFloorLevel !== undefined ? route.params.userFloorLevel : route.params?.userPosition?.floorLevel;
+      const initialZ = route.params?.userPosition?.z ?? null;
+      const initialHasElev = !!route.params?.userPosition?.hasValidElevation;
+      const initialElevSource = route.params?.userPosition?.elevationSource || (initialHasElev ? 'init' : 'unknown');
+
+      updatePosition({
+        x: uLat,
+        y: uLng,
+        floorId: userStartFloor,
+        floorLevel: userStartLvl,
+        hasValidFloor: !!userStartFloor,
+        z: initialZ,
+        hasValidElevation: initialHasElev,
+        elevationSource: initialElevSource
+      });
+      setUserPos({
+        x: uLat,
+        y: uLng,
+        floor: userStartFloor,
+        floorId: userStartFloor,
+        floorLevel: userStartLvl,
+        z: initialZ,
+        hasValidElevation: initialHasElev,
+        elevationSource: initialElevSource
+      });
       // Capture the first user position for the initial map render
       if (!initialUserPosRef.current) {
         initialUserPosRef.current = { x: uLat, y: uLng };
@@ -2457,7 +2544,16 @@ export default function NavigationScreen({ navigation, route }) {
 
       if (resolvedStartFloorId) {
         setCurrentFloor(resolvedStartFloorId);
-        posEngine.setFloor(resolvedStartFloorId, userStartFloorLevel, userStartFloorLevel * 3.5 + 0.54, 'init');
+        const floorObj = mapData?.floors?.find(f => (f._id || f).toString() === resolvedStartFloorId);
+        const floorElev = (floorObj && floorObj.elevation !== undefined && floorObj.elevation !== null)
+          ? Number(floorObj.elevation)
+          : (userStartFloorLevel > 0 ? (userStartFloorLevel * 3.5 + 0.54) : null);
+        setCanonicalFloor(
+          resolvedStartFloorId,
+          userStartFloorLevel,
+          floorElev,
+          floorObj?.elevation !== undefined ? 'floor_geometry' : (userStartFloorLevel > 0 ? 'floor_config' : 'unknown')
+        );
         AmbientFloorDetector.setKnownFloor(userStartFloorLevel);
       }
 
@@ -2612,7 +2708,7 @@ export default function NavigationScreen({ navigation, route }) {
 
       // ── 2. Step detection: try native Pedometer first, fall back to manual ──
       const handleStep = () => {
-        posEngine.processStep(posEngine.heading);
+        processStep(posEngine.heading);
         if (!isRetracing) {
           journeyRecorder.recordPosition(posEngine.position);
         }
@@ -2621,16 +2717,20 @@ export default function NavigationScreen({ navigation, route }) {
         setVerticalMovementState(fusion.state);
 
         if (verticalTrackerRef.current.state.isActive) {
-          verticalTrackerRef.current.onStep(fusion);
+          verticalTrackerRef.current.onStep(fusion, Date.now());
           const vertPos = verticalTrackerRef.current.getPosition();
           if (vertPos) {
-            posEngine.position.x = vertPos.x;
-            posEngine.position.y = vertPos.y;
-            posEngine.updateVerticalPosition(vertPos.z, vertPos.floorId, {
-              verticalProgress: verticalTrackerRef.current.state.smoothProgress,
+            updatePosition({
+              x: vertPos.x,
+              y: vertPos.y,
+              z: vertPos.z,
+              hasValidElevation: true,
+              elevationSource: 'staircase_tracker',
+              floorId: vertPos.floorId,
+              floorLevel: vertPos.floorLevel,
               verticalTrackingActive: true,
-              movementState: fusion.state,
-              elevationSource: 'staircase_tracker'
+              verticalProgress: verticalTrackerRef.current.state.smoothProgress,
+              movementState: fusion.state
             });
             setUserPos({ ...posEngine.position });
           }
@@ -2672,9 +2772,12 @@ export default function NavigationScreen({ navigation, route }) {
         Accelerometer.setUpdateInterval(100);
       }
 
-      // ── 3. Gyroscope + Magnetometer complementary filter heading ──
+      // ── 3. Gyroscope + Magnetometer complementary filter heading & vertical rate ──
+      GyroHeadingService.setOnGyroRate((zRate) => {
+        sensorFusionRef.current?.setGyroVertical(zRate);
+      });
       GyroHeadingService.start((fusedHeading) => {
-        posEngine.updateHeading(fusedHeading);
+        updateHeading(fusedHeading);
         if (webViewRef.current) {
           webViewRef.current.injectJavaScript(`
             if (typeof window.updateUserHeading === 'function') {
@@ -2728,7 +2831,7 @@ export default function NavigationScreen({ navigation, route }) {
             const accuracy = loc.coords.accuracy || 15;
 
             // Feed raw GPS coordinate into our sensor fusion engine
-            posEngine.processGPSUpdate(lat, lng, accuracy);
+            processGPSUpdate(lat, lng, accuracy);
 
             const rData = routeDataRef.current;
             const cStep = currentStepRef.current;
@@ -2966,12 +3069,13 @@ export default function NavigationScreen({ navigation, route }) {
         verticalTrackerRef.current.activate(activeConnector);
         sensorFusionRef.current.setStaircaseContext(true, activeConnector.direction);
 
-        verticalTrackerRef.current.onFloorReached = (newFloorId, reachedElevation) => {
-          console.log("[NavX] Floor reached via vertical tracking:", newFloorId, reachedElevation);
+        verticalTrackerRef.current.onFloorReached = (newFloorId, reachedElevation, reachedLevel) => {
+          console.log("[NavX] Floor reached via vertical tracking:", newFloorId, reachedElevation, reachedLevel);
           if (newFloorId) {
             const resolved = resolveFloorInfo(newFloorId, mapData?.floors);
+            const flLvl = reachedLevel !== undefined ? reachedLevel : resolved.level;
             setCurrentFloor(newFloorId);
-            posEngine.setFloor(newFloorId, resolved.level, reachedElevation);
+            setCanonicalFloor(newFloorId, flLvl, reachedElevation, 'staircase_connector');
             setCompletedFloorTransitions(prev => prev + 1);
           }
         };
@@ -3455,12 +3559,22 @@ export default function NavigationScreen({ navigation, route }) {
               const resFloor = resolveFloorInfo(currentFloor || userPos.floorId || userPos.floor, mapData?.floors);
               const cLevel = resFloor.level !== undefined && resFloor.level !== 0 ? resFloor.level : (ambientFloorIndex || posEngine.position.floorLevel || 0);
               const fName = resFloor.name || (cLevel > 0 ? `Floor ${cLevel}` : 'Ground Floor');
-              const effZ = (ambientAltRef.current && ambientAltRef.current > 0.5)
-                ? ambientAltRef.current
-                : (posEngine.position.z && posEngine.position.z > 0.5 ? posEngine.position.z : (cLevel * 3.5 + 0.54));
+              const hasValidZ = !!(posEngine.position.hasValidElevation || userPos.hasValidElevation);
+              let effZ;
+              if (hasValidZ && (posEngine.position.z != null || userPos.z != null)) {
+                effZ = posEngine.position.z ?? userPos.z;
+              } else if (resFloor.elevation !== undefined && resFloor.elevation !== null) {
+                effZ = Number(resFloor.elevation);
+              } else if (ambientAltRef.current && ambientAltRef.current !== 0) {
+                effZ = ambientAltRef.current;
+              } else if (cLevel > 0) {
+                effZ = cLevel * 3.5 + 0.54;
+              } else {
+                effZ = 0.54;
+              }
               webViewRef.current.injectJavaScript(`
                 if (typeof window.updateUserPos === 'function') {
-                  window.updateUserPos(${userPos.x}, ${userPos.y}, ${posEngine.heading}, ${effZ}, ${cLevel}, '${fName}', true);
+                  window.updateUserPos(${userPos.x}, ${userPos.y}, ${heading || posEngine.heading || 0}, ${effZ}, ${cLevel}, '${fName}', ${hasValidZ ? 'true' : 'false'});
                 }
                 true;
               `);

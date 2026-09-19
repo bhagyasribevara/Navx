@@ -8,7 +8,8 @@ import { WebView } from "react-native-webview";
 import { ThemeContext } from "../context/ThemeContext";
 import { useGeofence } from "../context/GeofenceContext";
 import AmbientFloorDetector from "../sensors/AmbientFloorDetector";
-import { PositionEngine, clampPointToPolygon } from "../positioning";
+import { clampPointToPolygon, isPointInPolygon, haversineDistance } from "../positioning";
+import { usePosition } from "../context/PositionContext";
 import { getMapData, getCampuses, getGeoJSONMapData, SOCKET_URL, getCachedConfigValue } from "../api";
 import { io } from "socket.io-client";
 import { SHADOWS, RADIUS, ROOM_COLORS } from "../theme/designSystem";
@@ -1125,18 +1126,17 @@ export default function MapScreen({ navigation, route }) {
   const [loading, setLoading] = useState(true);
 
   const [campusId, setCampusId] = useState(route.params?.campusId || contextCampusId || null);
+  const { posEngine, position: userPos, heading, updateHeading, processGPSUpdate } = usePosition();
+  const setHeading = updateHeading;
   const [selectedBlock, setSelectedBlock] = useState(null);
   const [selectedFloor, setSelectedFloor] = useState(null);
   const [showingRestroomsMode, setShowingRestroomsMode] = useState(route.params?.showRestrooms || false);
   const [geoJSONData, setGeoJSONData] = useState(null);
-  const [userPos, setUserPos] = useState(null);
-  const [heading, setHeading] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [mapMode, setMapMode] = useState('3D');
 
   const webViewRef = useRef(null);
   const socketRef = useRef(null);
-  const posEngine = useRef(new PositionEngine()).current;
   const panelHeightAnim = useRef(new Animated.Value(SH * 0.45)).current; // Bottom sheet height
 
   const ambientAltRef = useRef(0);
@@ -1162,7 +1162,22 @@ export default function MapScreen({ navigation, route }) {
       if (data.type === 'ROOM_CLICK') {
         const found = mapData?.rooms?.find(r => (r._id || r.id) === data.roomId);
         if (found) {
-          navigation.navigate("Navigation", { room: found, campusId, mapData });
+          const resolvedUserFloorId = userPos?.hasValidFloor && userPos?.floorId
+            ? userPos.floorId
+            : (selectedFloor?._id || null);
+          const resolvedUserFloorLevel = userPos?.hasValidFloor && userPos?.floorLevel !== null && userPos?.floorLevel !== undefined
+            ? userPos.floorLevel
+            : (selectedFloor?.level != null ? selectedFloor.level : (ambientFloorIndex || detectedFloorIndex || 0));
+
+          navigation.navigate("Navigation", {
+            room: found,
+            campusId,
+            mapData,
+            userPosition: userPos,
+            userHeading: heading,
+            userFloorId: resolvedUserFloorId,
+            userFloorLevel: resolvedUserFloorLevel
+          });
         }
       }
     } catch (e) {
@@ -1324,16 +1339,7 @@ export default function MapScreen({ navigation, route }) {
     }
   }, [geoJSONData, selectedFloor]);
 
-  // Subscribe to canonical PositionEngine position updates
-  useEffect(() => {
-    const unsub = posEngine.onPositionUpdate(pos => {
-      setUserPos(prev => ({ ...(prev || {}), ...pos }));
-      if (pos.heading) setHeading(pos.heading);
-    });
-    return unsub;
-  }, []);
-
-  // Request location permissions and track user location
+  // Request location permissions and track user location into canonical PositionEngine
   useEffect(() => {
     let locationSubscription = null;
     (async () => {
@@ -1343,21 +1349,17 @@ export default function MapScreen({ navigation, route }) {
       locationSubscription = await Location.watchPositionAsync(
         { accuracy: Location.Accuracy.High, timeInterval: 2000, distanceInterval: 1 },
         (loc) => {
-          posEngine.processGPSUpdate(loc.coords.latitude, loc.coords.longitude, loc.coords.accuracy || 15);
-          setUserPos(prev => ({
-            ...(prev || {}),
-            ...posEngine.position,
-            x: loc.coords.latitude,
-            y: loc.coords.longitude
-          }));
-          setHeading(loc.coords.heading || 0);
+          processGPSUpdate(loc.coords.latitude, loc.coords.longitude, loc.coords.accuracy || 15);
+          if (loc.coords.heading !== undefined && loc.coords.heading !== null) {
+            updateHeading(loc.coords.heading);
+          }
         }
       );
     })();
     return () => {
       if (locationSubscription) locationSubscription.remove();
     };
-  }, []);
+  }, [processGPSUpdate, updateHeading]);
 
   // ── Compass heading listener for dynamic arrow rotation ──
   useEffect(() => {
@@ -1374,7 +1376,7 @@ export default function MapScreen({ navigation, route }) {
       if (Math.abs(diff) > 1.0) {
         smoothH.current = (smoothH.current + diff * 0.3 + 360) % 360;
         const h = Math.round(smoothH.current);
-        setHeading(h);
+        updateHeading(h);
 
         webViewRef.current?.injectJavaScript(`
           if (typeof window.updateUserHeading === 'function') {
@@ -1388,51 +1390,68 @@ export default function MapScreen({ navigation, route }) {
     return () => {
       magSub?.remove();
     };
-  }, []);
+  }, [updateHeading]);
 
   // Push user location updates directly into the WebView via JS
   useEffect(() => {
     if (userPos && webViewRef.current) {
-      const currentLevel = (userPos.floorLevel != null)
+      // Differentiate current user floor from selected floor in directory
+      const currentUserLevel = (userPos.hasValidFloor && userPos.floorLevel !== null)
         ? userPos.floorLevel
-        : (ambientFloorIndex || detectedFloorIndex || 0);
-      const floorName = userPos.floorLevel != null && userPos.floor
-        ? (userPos.floorLevel > 0 ? `Floor ${userPos.floorLevel}` : 'Ground Floor')
-        : (currentLevel > 0 ? `Floor ${currentLevel}` : '');
+        : (ambientFloorIndex > 0 ? ambientFloorIndex : (detectedFloorIndex > 0 ? detectedFloorIndex : 0));
+
+      const floorName = currentUserLevel > 0 ? `Floor ${currentUserLevel}` : 'Ground Floor';
 
       let processedX = userPos.x;
       let processedY = userPos.y;
 
       // Indoor building footprint clamping: prevent marker from drifting outside block
-      if (currentLevel > 0 && geoJSONData?.features) {
+      if (currentUserLevel > 0 && geoJSONData?.features) {
         const blockFeatures = geoJSONData.features.filter(f =>
           f.geometry?.type === 'Polygon' &&
           (f.properties?.type === 'block' || f.properties?.type === 'building')
         );
-        for (const feature of blockFeatures) {
-          const coords = feature.geometry?.coordinates?.[0];
-          if (coords && coords.length >= 3) {
+        const isInsideAny = blockFeatures.some(f => {
+          const coords = f.geometry?.coordinates?.[0];
+          return coords && coords.length >= 3 && isPointInPolygon(processedX, processedY, coords);
+        });
+
+        if (!isInsideAny && selectedBlock?._id) {
+          const targetFeature = blockFeatures.find(f =>
+            (f.properties?.id || f.properties?._id || '').toString() === selectedBlock._id.toString()
+          );
+          if (targetFeature?.geometry?.coordinates?.[0]) {
+            const coords = targetFeature.geometry.coordinates[0];
             const clamped = clampPointToPolygon(processedX, processedY, coords);
-            processedX = clamped.lat;
-            processedY = clamped.lng;
-            break;
+            const driftDist = haversineDistance(processedX, processedY, clamped.lat, clamped.lng);
+            if (driftDist <= 15) {
+              processedX = clamped.lat;
+              processedY = clamped.lng;
+            }
           }
         }
       }
 
-      const hasValidZ = !!(userPos.hasValidElevation && userPos.z !== undefined && userPos.z !== null);
-      const elev = hasValidZ
-        ? userPos.z
-        : (ambientAltRef.current && ambientAltRef.current !== 0 ? ambientAltRef.current : (currentLevel * 3.5 + 0.54));
+      const hasValidZ = !!userPos.hasValidElevation;
+      let elev;
+      if (hasValidZ && userPos.z !== undefined && userPos.z !== null) {
+        elev = Number(userPos.z);
+      } else if (ambientAltRef.current && ambientAltRef.current !== 0) {
+        elev = ambientAltRef.current;
+      } else if (currentUserLevel > 0) {
+        elev = currentUserLevel * 3.5 + 0.54;
+      } else {
+        elev = 0.54;
+      }
 
       webViewRef.current.injectJavaScript(`
         if (typeof window.updateUserPos === 'function') {
-          window.updateUserPos(${processedX}, ${processedY}, ${heading}, ${elev}, ${currentLevel}, '${floorName}', ${hasValidZ ? 'true' : 'false'});
+          window.updateUserPos(${processedX}, ${processedY}, ${heading || 0}, ${elev}, ${currentUserLevel}, '${floorName}', ${hasValidZ ? 'true' : 'false'});
         }
         true;
       `);
     }
-  }, [userPos, heading, ambientFloorIndex, detectedFloorIndex, geoJSONData]);
+  }, [userPos, heading, ambientFloorIndex, detectedFloorIndex, geoJSONData, selectedBlock]);
 
 
   // Animate panel height based on state
@@ -1624,9 +1643,24 @@ export default function MapScreen({ navigation, route }) {
         const floorObj = typeof room.floorId === 'object' ? room.floorId : mapData?.floors?.find(f => f._id === room.floorId);
         const floorName = floorObj?.name || "";
 
+        const resolvedUserFloorId = userPos?.hasValidFloor && userPos?.floorId
+          ? userPos.floorId
+          : (selectedFloor?._id || null);
+        const resolvedUserFloorLevel = userPos?.hasValidFloor && userPos?.floorLevel !== null && userPos?.floorLevel !== undefined
+          ? userPos.floorLevel
+          : (selectedFloor?.level != null ? selectedFloor.level : (ambientFloorIndex || detectedFloorIndex || 0));
+
         return (
           <TouchableOpacity key={room._id} style={s.card} activeOpacity={0.7}
-            onPress={() => navigation.navigate("Navigation", { room, campusId, mapData })}>
+            onPress={() => navigation.navigate("Navigation", {
+              room,
+              campusId,
+              mapData,
+              userPosition: userPos,
+              userHeading: heading,
+              userFloorId: resolvedUserFloorId,
+              userFloorLevel: resolvedUserFloorLevel
+            })}>
             <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
               <View style={[s.cardIcon, { backgroundColor: (ROOM_COLORS[room.type] || colors.primary) + "20" }]}>
                 <Ionicons name="water" size={20} color={ROOM_COLORS[room.type] || colors.primary} />
@@ -1656,9 +1690,24 @@ export default function MapScreen({ navigation, route }) {
       ) || [];
       if (rooms.length === 0) return <Text style={{ textAlign: "center", color: colors.textSec, marginTop: 40 }}>No rooms found on this floor.</Text>;
 
+      const resolvedUserFloorId = userPos?.hasValidFloor && userPos?.floorId
+        ? userPos.floorId
+        : (selectedFloor?._id || null);
+      const resolvedUserFloorLevel = userPos?.hasValidFloor && userPos?.floorLevel !== null && userPos?.floorLevel !== undefined
+        ? userPos.floorLevel
+        : (selectedFloor?.level != null ? selectedFloor.level : (ambientFloorIndex || detectedFloorIndex || 0));
+
       return rooms.map(room => (
         <TouchableOpacity key={room._id} style={s.card} activeOpacity={0.7}
-          onPress={() => navigation.navigate("Navigation", { room, campusId, mapData })}>
+          onPress={() => navigation.navigate("Navigation", {
+            room,
+            campusId,
+            mapData,
+            userPosition: userPos,
+            userHeading: heading,
+            userFloorId: resolvedUserFloorId,
+            userFloorLevel: resolvedUserFloorLevel
+          })}>
           <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
             <View style={[s.cardIcon, { backgroundColor: (ROOM_COLORS[room.type] || colors.primary) + "20" }]}>
               <Ionicons name="location" size={20} color={ROOM_COLORS[room.type] || colors.primary} />

@@ -117,6 +117,36 @@ export function snapPositionToRouteAdvanced(pos, path, currentStepIndex = 0, act
     }
   }
 
+  // Fallback pass: if activeFloorId was too restrictive and found no candidate within maxSnapDistance,
+  // evaluate all segments along the route so user position is snapped properly (e.g. at route start)
+  if (!bestCandidate || bestCandidate.realDistance > maxSnapDistance) {
+    for (let i = 0; i < path.length - 1; i++) {
+      const nodeA = path[i];
+      const nodeB = path[i + 1];
+      if (!nodeA || !nodeB) continue;
+
+      const proj = getClosestPointOnSegment(pos.x, pos.y, nodeA.x, nodeA.y, nodeB.x, nodeB.y);
+      const dist = haversineDistance(pos.x, pos.y, proj.x, proj.y);
+      const stepPenalty = Math.abs(i - currentStepIndex) * 0.4;
+      const effectiveScore = dist + stepPenalty;
+
+      if (effectiveScore < minDistance) {
+        minDistance = effectiveScore;
+        const segBearing = calculateBearing(nodeA.x, nodeA.y, nodeB.x, nodeB.y);
+        bestCandidate = {
+          snappedX: proj.x,
+          snappedY: proj.y,
+          t: proj.t,
+          segmentIndex: i,
+          realDistance: dist,
+          bearing: segBearing,
+          nodeA,
+          nodeB
+        };
+      }
+    }
+  }
+
   if (bestCandidate && bestCandidate.realDistance <= maxSnapDistance) {
     // Progressive attraction: the closer to the path, the stronger the snap
     // At dist < 6m, snap 95% to line; at dist = 20m, blend gently (50%)
@@ -140,13 +170,10 @@ export function snapPositionToRouteAdvanced(pos, path, currentStepIndex = 0, act
 }
 
 /**
- * Clamps a point (lat, lng) to stay within or on the boundary of a GeoJSON polygon ring.
- * Useful for keeping indoor positioning strictly inside building walls.
+ * Checks whether a point (lat, lng) is inside a GeoJSON polygon ring coords [[lng, lat], ...]
  */
-export function clampPointToPolygon(lat, lng, coords) {
-  if (!coords || coords.length < 3) return { lat, lng };
-
-  // Check if already inside
+export function isPointInPolygon(lat, lng, coords) {
+  if (!coords || coords.length < 3) return false;
   let inside = false;
   const n = coords.length;
   let j = n - 1;
@@ -164,12 +191,23 @@ export function clampPointToPolygon(lat, lng, coords) {
     if (intersect) inside = !inside;
     j = i;
   }
+  return inside;
+}
 
-  if (inside) return { lat, lng }; // Point is already validly inside
+/**
+ * Clamps a point (lat, lng) to stay within or on the boundary of a GeoJSON polygon ring.
+ * Useful for keeping indoor positioning strictly inside building walls.
+ */
+export function clampPointToPolygon(lat, lng, coords) {
+  if (!coords || coords.length < 3) return { lat, lng };
+
+  // Check if already inside
+  if (isPointInPolygon(lat, lng, coords)) return { lat, lng };
 
   // Otherwise, find closest point on polygon perimeter
   let closest = { lat, lng };
   let minD = Infinity;
+  const n = coords.length;
 
   for (let i = 0; i < n; i++) {
     const p1 = coords[i];
@@ -191,10 +229,13 @@ export class PositionEngine {
     this.position = {
       x: 0,
       y: 0,
-      z: 0,
+      z: null,
       floorId: null,
       floor: null, // backward compatibility with code expecting pos.floor
       floorLevel: 0,
+      hasValidFloor: false,
+      floorSource: 'unknown', // 'qr' | 'staircase' | 'ambient' | 'calibrated' | 'unknown'
+      floorCalibrated: false,
       nodeId: null,
       movementState: 'STATIONARY',
       verticalProgress: 0.0,
@@ -202,7 +243,7 @@ export class PositionEngine {
       verticalDirection: null,
       activeConnectorId: null,
       hasValidElevation: false,
-      elevationSource: 'unknown'
+      elevationSource: 'unknown' // 'staircase_connector' | 'node' | 'floor' | 'barometer' | 'unknown'
     };
     this.heading = 0; // degrees
     this.smoothHeadingVal = 0;
@@ -230,22 +271,97 @@ export class PositionEngine {
     }));
   }
 
+  // Safe non-destructive update adhering to Invariant 6:
+  // An unknown, default, or uncalibrated value must never overwrite an already-valid X/Y/Z/floor state.
+  updatePosition(patch = {}) {
+    if (!patch || typeof patch !== 'object') return;
+
+    if (patch.x !== undefined && patch.x !== null && !isNaN(patch.x)) this.position.x = Number(patch.x);
+    if (patch.y !== undefined && patch.y !== null && !isNaN(patch.y)) this.position.y = Number(patch.y);
+
+    // Elevation update guard
+    if (patch.hasValidElevation && patch.z !== undefined && patch.z !== null && !isNaN(patch.z)) {
+      this.position.z = Number(patch.z);
+      this.position.hasValidElevation = true;
+      this.position.elevationSource = patch.elevationSource || 'calibrated';
+    } else if (patch.z !== undefined && patch.z !== null && !isNaN(patch.z) && !this.position.hasValidElevation) {
+      this.position.z = Number(patch.z);
+      this.position.hasValidElevation = !!patch.hasValidElevation;
+      this.position.elevationSource = patch.elevationSource || 'unknown';
+    }
+
+    // Floor update guard
+    if (patch.hasValidFloor) {
+      if (patch.floorId) {
+        this.position.floorId = patch.floorId.toString();
+        this.position.floor = patch.floorId.toString();
+      }
+      if (patch.floorLevel !== undefined && patch.floorLevel !== null) {
+        this.position.floorLevel = Number(patch.floorLevel);
+      }
+      this.position.hasValidFloor = true;
+      this.position.floorSource = patch.floorSource || 'calibrated';
+      this.position.floorCalibrated = true;
+    } else if (!this.position.hasValidFloor && patch.floorId) {
+      this.position.floorId = patch.floorId.toString();
+      this.position.floor = patch.floorId.toString();
+      if (patch.floorLevel !== undefined && patch.floorLevel !== null) {
+        this.position.floorLevel = Number(patch.floorLevel);
+      }
+    }
+
+    if (patch.heading !== undefined && patch.heading !== null) {
+      this.updateHeading(patch.heading);
+    }
+    if (patch.movementState !== undefined) {
+      this.position.movementState = patch.movementState;
+    }
+    if (patch.verticalProgress !== undefined) {
+      this.position.verticalProgress = patch.verticalProgress;
+    }
+    if (patch.verticalTrackingActive !== undefined) {
+      this.position.verticalTrackingActive = patch.verticalTrackingActive;
+      this.verticalTrackingActive = patch.verticalTrackingActive;
+    }
+    if (patch.verticalDirection !== undefined) {
+      this.position.verticalDirection = patch.verticalDirection;
+    }
+
+    this.notify();
+  }
+
   // QR Code positioning - highest accuracy, acts as anchor
   setPositionFromQR(x, y, floorId, floorLevel = 0, z = null) {
-    const validZ = (z !== undefined && z !== null && !isNaN(z))
-      ? z
-      : (floorLevel != null ? Number(floorLevel) * 3.5 + 0.54 : 0.54);
+    let validZ = null;
+    let hasValidElev = false;
+    let source = 'unknown';
+
+    if (z !== undefined && z !== null && !isNaN(z)) {
+      validZ = Number(z);
+      hasValidElev = true;
+      source = 'node';
+    } else if (floorLevel !== null && floorLevel !== undefined) {
+      validZ = Number(floorLevel) * 3.5 + 0.54;
+      hasValidElev = true;
+      source = 'floor';
+    }
+
+    const fid = floorId ? floorId.toString() : null;
+    const fLvl = floorLevel !== null && floorLevel !== undefined ? Number(floorLevel) : 0;
 
     this.position = {
       ...this.position,
       x,
       y,
       z: validZ,
-      floorId: floorId ? floorId.toString() : null,
-      floor: floorId ? floorId.toString() : null,
-      floorLevel: floorLevel !== null && floorLevel !== undefined ? Number(floorLevel) : 0,
-      hasValidElevation: true,
-      elevationSource: (z !== undefined && z !== null) ? 'node' : 'floor',
+      floorId: fid,
+      floor: fid,
+      floorLevel: fLvl,
+      hasValidFloor: true,
+      floorSource: 'qr',
+      floorCalibrated: true,
+      hasValidElevation: hasValidElev,
+      elevationSource: source,
       verticalTrackingActive: false,
       verticalProgress: 0.0
     };
@@ -286,15 +402,17 @@ export class PositionEngine {
   }
 
   // Fused GPS Update - blends GPS coordinate with indoor/outdoor awareness
+  // GUARANTEE: Never overwrites floorLevel, floorId, z, or vertical tracking state!
   processGPSUpdate(lat, lng, accuracy = 15) {
     if (!this.isCalibrated) {
-      this.position = { ...this.position, x: lat, y: lng };
+      this.position.x = lat;
+      this.position.y = lng;
       this.isCalibrated = true;
       this.notify();
       return;
     }
 
-    const isIndoors = (this.position.floorLevel > 0) || !!this.position.floorId;
+    const isIndoors = (this.position.hasValidFloor && this.position.floorLevel > 0) || !!this.position.floorId;
 
     // When indoors, GPS accuracy is poor and multi-path reflections cause big drift outside walls
     let weight = 0.15;
@@ -355,9 +473,12 @@ export class PositionEngine {
     if (floorId !== undefined && floorId !== null) {
       this.position.floorId = floorId.toString();
       this.position.floor = floorId.toString();
+      this.position.hasValidFloor = true;
+      this.position.floorSource = 'staircase';
     }
     if (floorLevel !== undefined && floorLevel !== null) {
       this.position.floorLevel = Number(floorLevel);
+      this.position.hasValidFloor = true;
     }
     if (movementState !== null) {
       this.position.movementState = movementState;
@@ -373,18 +494,25 @@ export class PositionEngine {
     if (floorId !== undefined && floorId !== null) {
       this.position.floorId = floorId.toString();
       this.position.floor = floorId.toString();
+      this.position.hasValidFloor = true;
+      this.position.floorSource = elevationSource || 'floor';
     }
     if (floorLevel !== undefined && floorLevel !== null) {
       this.position.floorLevel = Number(floorLevel);
+      this.position.hasValidFloor = true;
     }
     if (elevation !== undefined && elevation !== null && !isNaN(elevation)) {
-      this.position.z = elevation;
+      this.position.z = Number(elevation);
       this.position.hasValidElevation = true;
       this.position.elevationSource = elevationSource;
-    } else if (floorLevel !== undefined && floorLevel !== null) {
+    } else if (floorLevel !== undefined && floorLevel !== null && Number(floorLevel) > 0) {
       this.position.z = Number(floorLevel) * 3.5 + 0.54;
       this.position.hasValidElevation = true;
-      this.position.elevationSource = 'floor';
+      this.position.elevationSource = 'floor_fallback';
+    } else {
+      this.position.z = null;
+      this.position.hasValidElevation = false;
+      this.position.elevationSource = 'unknown';
     }
     this.position.verticalTrackingActive = false;
     this.position.verticalProgress = 0.0;
@@ -565,10 +693,13 @@ export class PositionEngine {
     this.position = {
       x: 0,
       y: 0,
-      z: 0,
+      z: null,
       floorId: null,
       floor: null,
       floorLevel: 0,
+      hasValidFloor: false,
+      floorSource: 'unknown',
+      floorCalibrated: false,
       nodeId: null,
       movementState: 'STATIONARY',
       verticalProgress: 0.0,

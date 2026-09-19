@@ -131,22 +131,49 @@ function angleDiff(fromDeg, toDeg) {
 //  Build adjacency list from nodes and paths
 // ──────────────────────────────────────────────
 
-function buildGraph(nodes, paths, floorMap = {}, rooms = [], floorBlockMap = {}) {
+function buildGraph(nodes, paths, floorMap = {}, rooms = [], floorBlockMap = {}, floorElevationMap = {}) {
   const graph = {};
+
+  // Support floorMap as either an array of floor objects or a floorId -> level map
+  const isFloorArray = Array.isArray(floorMap);
+  const floorLevelMap = isFloorArray ? new Map(floorMap.map(f => [(f._id || f).toString(), f.level])) : null;
+  const floorElevMap = isFloorArray ? new Map(floorMap.filter(f => f.elevation !== undefined && f.elevation !== null).map(f => [(f._id || f).toString(), Number(f.elevation)])) : null;
 
   // Initialize all nodes
   nodes.forEach(node => {
     const id = node._id.toString();
     const floorId = node.floorId ? node.floorId.toString() : null;
     const blockId = node.blockId ? node.blockId.toString() : (floorId && floorBlockMap[floorId] ? floorBlockMap[floorId].toString() : null);
+
+    const resolvedFloorLevel = floorLevelMap
+      ? (floorLevelMap.get(floorId) ?? (node.floorLevel ?? null))
+      : (floorId && floorMap[floorId] != null ? floorMap[floorId] : (node.floorLevel ?? null));
+
+    const resolvedFloorElev = floorElevMap
+      ? (floorElevMap.has(floorId) ? floorElevMap.get(floorId) : null)
+      : (floorId && floorElevationMap[floorId] !== undefined ? floorElevationMap[floorId] : null);
+
+    // Authoritative elevation validity:
+    // Only trust node.z if node.hasValidElevation is explicitly true, or if node.elevationSource is explicitly set,
+    // or if node.z is non-zero (legacy explicit input).
+    // An unverified node.z === 0 is the schema default placeholder, NOT verified ground elevation.
+    const isExplicitlyValid = node.hasValidElevation === true || (node.elevationSource && node.elevationSource !== 'unknown');
+    const isLegacyNonZero = (node.z !== undefined && node.z !== null && typeof node.z === 'number' && Math.abs(node.z) > 0.001);
+    const hasValidElevation = isExplicitlyValid || isLegacyNonZero;
+    const z = hasValidElevation ? node.z : null;
+    const elevationSource = hasValidElevation ? (node.elevationSource || 'node') : 'unknown';
+
     graph[id] = {
       id,
       x: node.x,
       y: node.y,
-      z: node.z !== undefined && node.z !== null ? node.z : null,
+      z,
+      hasValidElevation,
+      elevationSource,
       floorId,
       blockId,
-      floorLevel: floorId && floorMap[floorId] != null ? floorMap[floorId] : (node.floorLevel ?? 0),
+      floorLevel: resolvedFloorLevel,
+      floorElevation: resolvedFloorElev,
       type: node.type,
       roomId: node.roomId ? node.roomId.toString() : null,
       neighbors: []
@@ -429,11 +456,42 @@ function reconstructPath(graph, previous, startId, endId, distances) {
     const nid = nodeIdList[i];
     const gNode = graph[nid];
 
+    // Authoritative elevation priority:
+    // 1. Explicitly valid node elevation (hasValidElevation === true && z !== null)
+    // 2. Authoritative floor geometry / elevation (if floor has elevation property)
+    // 3. Configured floor-height fallback (only if floorLevel > 0)
+    // 4. Unknown/null: z = null, hasValidElevation = false, elevationSource = 'unknown'
+    let nodeZ = null;
+    let nodeHasValidElevation = false;
+    let nodeElevationSource = 'unknown';
+
+    if (gNode.hasValidElevation && gNode.z !== null) {
+      nodeZ = gNode.z;
+      nodeHasValidElevation = true;
+      nodeElevationSource = gNode.elevationSource || 'node';
+    } else if (gNode.floorElevation !== undefined && gNode.floorElevation !== null) {
+      nodeZ = Number(gNode.floorElevation);
+      nodeHasValidElevation = true;
+      nodeElevationSource = 'floor_geometry';
+    } else if (gNode.floorLevel !== null && gNode.floorLevel !== undefined && gNode.floorLevel > 0) {
+      nodeZ = gNode.floorLevel * 3.5 + 0.54;
+      nodeHasValidElevation = true;
+      nodeElevationSource = 'floor_fallback';
+    } else {
+      // Ground floor without explicit elevation or outdoor node: unknown!
+      // Invariant 1 & 2: Never silently convert unknown ground floor into 0.54m or true.
+      nodeZ = null;
+      nodeHasValidElevation = false;
+      nodeElevationSource = 'unknown';
+    }
+
     const entry = {
       nodeId: nid,
       x: gNode.x,
       y: gNode.y,
-      z: gNode.z !== undefined && gNode.z !== null ? gNode.z : (gNode.floorLevel != null ? gNode.floorLevel * 3.5 + 0.54 : null),
+      z: nodeZ,
+      hasValidElevation: nodeHasValidElevation,
+      elevationSource: nodeElevationSource,
       floorId: gNode.floorId,
       floorLevel: gNode.floorLevel != null ? gNode.floorLevel : null,
       type: gNode.type,
@@ -813,15 +871,169 @@ function computeRouteSummary(directions) {
   };
 }
 
+// ──────────────────────────────────────────────
+//  Extract Authoritative Staircase Connectors
+// ──────────────────────────────────────────────
+
+function extractStaircaseConnectors(detailedPath, floorMap = {}, rooms = [], floors = []) {
+  if (!detailedPath || detailedPath.length < 2) return [];
+
+  const connectors = [];
+  let inStaircase = false;
+  let startIndex = -1;
+
+  const getFloorLevel = (node) => {
+    if (node.floorLevel !== null && node.floorLevel !== undefined) return Number(node.floorLevel);
+    if (node.floorId && floorMap[node.floorId.toString()] !== undefined) return Number(floorMap[node.floorId.toString()]);
+    return null;
+  };
+
+  for (let i = 0; i < detailedPath.length - 1; i++) {
+    const curr = detailedPath[i];
+    const next = detailedPath[i + 1];
+
+    const isStairsEdge = curr.segmentType === 'stairs' || next.segmentType === 'stairs' ||
+                         curr.type === 'stairs' || next.type === 'stairs';
+    const currLvl = getFloorLevel(curr);
+    const nextLvl = getFloorLevel(next);
+    const isLevelChange = currLvl !== null && nextLvl !== null && currLvl !== nextLvl;
+
+    if (isStairsEdge || isLevelChange) {
+      if (!inStaircase) {
+        inStaircase = true;
+        startIndex = i;
+      }
+    } else {
+      if (inStaircase) {
+        const endIndex = i;
+        const connector = buildConnector(detailedPath, startIndex, endIndex, floorMap, rooms, floors);
+        if (connector) connectors.push(connector);
+        inStaircase = false;
+        startIndex = -1;
+      }
+    }
+  }
+
+  if (inStaircase) {
+    const endIndex = detailedPath.length - 1;
+    const connector = buildConnector(detailedPath, startIndex, endIndex, floorMap, rooms, floors);
+    if (connector) connectors.push(connector);
+  }
+
+  return connectors;
+}
+
+function buildConnector(path, startIndex, endIndex, floorMap, rooms, floors) {
+  const startNode = path[startIndex];
+  const endNode = path[endIndex];
+  if (!startNode || !endNode) return null;
+
+  const startLevel = startNode.floorLevel !== null && startNode.floorLevel !== undefined
+    ? Number(startNode.floorLevel)
+    : (floorMap[(startNode.floorId || '').toString()] ?? 0);
+  const endLevel = endNode.floorLevel !== null && endNode.floorLevel !== undefined
+    ? Number(endNode.floorLevel)
+    : (floorMap[(endNode.floorId || '').toString()] ?? 0);
+
+  // Authoritative elevation priority:
+  // 1. Explicit valid node elevation
+  // 2. Floor elevation from floor metadata
+  // 3. Fallback level * 3.5 + 0.54
+  const resolveElev = (node, level) => {
+    if (node.hasValidElevation && node.z !== null && typeof node.z === 'number') {
+      return node.z;
+    }
+    if (node.floorId && floors && floors.length > 0) {
+      const fObj = floors.find(f => (f._id || f).toString() === (node.floorId || '').toString());
+      if (fObj && fObj.elevation !== undefined && fObj.elevation !== null) {
+        return Number(fObj.elevation);
+      }
+    }
+    return (level != null ? Number(level) * 3.5 + 0.54 : 0.54);
+  };
+
+  let startElev = resolveElev(startNode, startLevel);
+  let endElev = resolveElev(endNode, endLevel);
+
+  if (Math.abs(endElev - startElev) < 0.1 && startLevel !== endLevel) {
+    startElev = startLevel * 3.5 + 0.54;
+    endElev = endLevel * 3.5 + 0.54;
+  }
+
+  // Determine physical geometry: lower vs upper
+  const isAscending = endElev > startElev || (Math.abs(endElev - startElev) < 0.01 && endLevel >= startLevel);
+  const lowerFloorId = isAscending ? startNode.floorId : endNode.floorId;
+  const upperFloorId = isAscending ? endNode.floorId : startNode.floorId;
+  const lowerFloorLevel = isAscending ? startLevel : endLevel;
+  const upperFloorLevel = isAscending ? endLevel : startLevel;
+  const lowerElevation = Math.min(startElev, endElev);
+  const upperElevation = Math.max(startElev, endElev);
+
+  // Step count determination
+  let totalSteps = 16;
+  if (rooms && rooms.length > 0) {
+    const stairRoom = rooms.find(r => {
+      if (r.type !== 'stairs') return false;
+      const pts = r.shape?.points || [];
+      if (pts.length === 0) return false;
+      const d = haversineDistMeters(pts[0].x, pts[0].y, startNode.x, startNode.y);
+      return d < 30;
+    });
+    if (stairRoom?.stairsConfig?.stepCount && stairRoom.stairsConfig.stepCount > 0) {
+      totalSteps = stairRoom.stairsConfig.stepCount;
+    } else {
+      const elevDiff = Math.abs(upperElevation - lowerElevation);
+      totalSteps = Math.max(8, Math.round(elevDiff / 0.175));
+    }
+  } else {
+    const elevDiff = Math.abs(upperElevation - lowerElevation);
+    totalSteps = Math.max(8, Math.round(elevDiff / 0.175));
+  }
+
+  const direction = isAscending ? 'UP' : 'DOWN';
+
+  return {
+    connectorId: `stair_${startNode.nodeId}_${endNode.nodeId}_${startIndex}`,
+    startNodeIndex: startIndex,
+    endNodeIndex: endIndex,
+    startNodeId: startNode.nodeId,
+    endNodeId: endNode.nodeId,
+    startNode,
+    endNode,
+    intermediateNodes: path.slice(startIndex, endIndex + 1),
+
+    // Physical geometry
+    lowerFloorId: lowerFloorId ? lowerFloorId.toString() : null,
+    upperFloorId: upperFloorId ? upperFloorId.toString() : null,
+    lowerFloorLevel,
+    upperFloorLevel,
+    lowerElevation,
+    upperElevation,
+    totalSteps,
+
+    // Route-relative travel direction
+    direction,
+    isAscending,
+    startElevation: startElev,
+    endElevation: endElev,
+    startFloorId: startNode.floorId ? startNode.floorId.toString() : null,
+    endFloorId: endNode.floorId ? endNode.floorId.toString() : null,
+    startFloorLevel: startLevel,
+    endFloorLevel: endLevel
+  };
+}
+
 module.exports = {
   buildGraph,
   autoConnectGraph,
   astar,
+  reconstructPath,
   findNearestNode,
   findNearestReachableNode,
   findReachableNodes,
   generateDirections,
   computeRouteSummary,
+  extractStaircaseConnectors,
   geoDistMeters,
   haversineDistMeters,
   bearing,

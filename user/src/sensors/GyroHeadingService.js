@@ -24,12 +24,21 @@ class GyroHeadingService {
     this.lastGyroTime = null;
     this.isRunning = false;
     this._onHeading = null;
+    this._onGyroRate = null;
 
     // Complementary filter alpha: 0.98 = trust gyro 98%, mag 2%
     this.ALPHA = 0.98;
 
     // Raw sensor values for tilt compensation
     this.accelY = 0;
+  }
+
+  /**
+   * Set callback for raw vertical angular rate (rad/s) from Gyroscope z-axis.
+   * @param {function} callback
+   */
+  setOnGyroRate(callback) {
+    this._onGyroRate = callback;
   }
 
   /**
@@ -54,6 +63,10 @@ class GyroHeadingService {
     // ── Gyroscope: 50ms interval for smooth integration
     Gyroscope.setUpdateInterval(50);
     this.gyroSub = Gyroscope.addListener(({ x, y, z }) => {
+      if (this._onGyroRate) {
+        this._onGyroRate(z);
+      }
+
       const now = Date.now();
       if (this.lastGyroTime === null) {
         this.lastGyroTime = now;

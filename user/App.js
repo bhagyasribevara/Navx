@@ -10,6 +10,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { ThemeContext } from "./src/context/ThemeContext";
 import { GeofenceProvider } from "./src/context/GeofenceContext";
+import { PositionProvider } from "./src/context/PositionContext";
 import { fetchAppConfig } from "./src/api";
 import { navigationRef } from "./src/utils/navigation";
 
@@ -314,11 +315,13 @@ export default function App() {
       <AuthProvider>
         <ThemeContext.Provider value={{ colors, isDark, language, setLanguage }}>
           <GeofenceProvider>
-            <LiveMeetProvider>
-              <RootSiblingParent>
-                <AppNavigator />
-              </RootSiblingParent>
-            </LiveMeetProvider>
+            <PositionProvider>
+              <LiveMeetProvider>
+                <RootSiblingParent>
+                  <AppNavigator />
+                </RootSiblingParent>
+              </LiveMeetProvider>
+            </PositionProvider>
           </GeofenceProvider>
         </ThemeContext.Provider>
       </AuthProvider>

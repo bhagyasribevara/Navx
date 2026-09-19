@@ -33,6 +33,15 @@ class AmbientFloorDetector {
     this._pendingKnownFloor = null;
     this._floorCandidate = null;
     this._candidateCount = 0;
+    this._onAltitudeChange = null;
+  }
+
+  /**
+   * Set continuous filtered altitude callback (meters above ground).
+   * @param {function} callback - called with altitudeMeters
+   */
+  setOnAltitudeChange(callback) {
+    this._onAltitudeChange = callback;
   }
 
   /**
@@ -193,6 +202,11 @@ class AmbientFloorDetector {
     const altitudeMeters = Math.max(0, smoothedDelta + 1.5);
     this.currentAltitudeMeters = altitudeMeters;
 
+    // Continuous filtered altitude callback for diagnostics and confirmation
+    if (this._onAltitudeChange) {
+      this._onAltitudeChange(altitudeMeters);
+    }
+
     // Fire callback when floor index changes
     if (this._lastReportedFloor !== this.currentFloorIndex) {
       this._lastReportedFloor = this.currentFloorIndex;
@@ -239,6 +253,7 @@ class AmbientFloorDetector {
     this._ema = null;
     this._floorCandidate = null;
     this._candidateCount = 0;
+    this._onAltitudeChange = null;
     console.log('[AmbientFloorDetector] Stopped');
   }
 }

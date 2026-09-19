@@ -19,6 +19,8 @@ const navNodeSchema = new mongoose.Schema({
   connectedFloorId: { type: mongoose.Schema.Types.ObjectId, ref: 'Floor', default: null },
   // Spatial Studio properties
   z: { type: Number, default: 0 },
+  hasValidElevation: { type: Boolean, default: false },
+  elevationSource: { type: String, default: 'unknown' },
   localCoordinates: { 
     x: Number,
     y: Number,

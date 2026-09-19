@@ -201,11 +201,27 @@ export default class SensorFusion {
       }
     }
 
+    // ── Signal 6: Gyroscope vertical angular rate
+    if (this.gyroVerticalRate > 0.15) {
+      totalSignals += 1;
+      if (this.isOnStaircase) {
+        if (this.staircaseDirection === 'UP') {
+          climbingScore += 1.0;
+        } else if (this.staircaseDirection === 'DOWN') {
+          descendingScore += 1.0;
+        } else {
+          climbingScore += 0.5;
+          descendingScore += 0.5;
+        }
+      }
+    }
+
     // ── Confidence: based on how many real sensors contributed
     let confidence = 0.65; // base (steps only)
     if (this.hasBarometer) confidence += 0.10;
     if (this.hasDeviceMotion) confidence += 0.10;
     if (this.hasNativePedometer) confidence += 0.10;
+    if (this.gyroVerticalRate > 0.15) confidence += 0.05;
     if (this.isOnStaircase) confidence += 0.05; // map context is very reliable
     confidence = Math.min(0.98, confidence);
 
