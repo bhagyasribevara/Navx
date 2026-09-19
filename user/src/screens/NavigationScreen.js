@@ -3803,7 +3803,7 @@ export default function NavigationScreen({ navigation, route }) {
           accessibilityLabel="Re-center map on user position"
         >
           <Ionicons
-            name={isFreeRoam ? "compass" : "navigate-circle"}
+            name={isFreeRoam ? "locate-outline" : "locate"}
             size={22}
             color={isFreeRoam ? "#ffffff" : colors.primary}
           />

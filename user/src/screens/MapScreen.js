@@ -30,8 +30,8 @@ function buildCampusMapHTML(geoJSONData, centerCoords, mapboxUrl, mapMode = '3D'
 <script src="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <style>
-  body{margin:0;padding:0;background-color:#0a1628;}
-  #map{width:100%;height:100vh;background:#0a1628;}
+  body{margin:0;padding:0;background-color:${(mapMode === '2D') ? '#f8fafc' : '#0a1628'};}
+  #map{width:100%;height:100vh;background:${(mapMode === '2D') ? '#f8fafc' : '#0a1628'};}
   .mapboxgl-ctrl-logo { display: none !important; }
   .mapboxgl-popup { max-width: 200px; }
   .mapboxgl-popup-content { background: rgba(15, 23, 42, 0.9); color: white; padding: 4px 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.2); font-size: 11px; font-weight: bold; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
@@ -90,7 +90,7 @@ function buildCampusMapHTML(geoJSONData, centerCoords, mapboxUrl, mapMode = '3D'
 const tokenMatch = '${mapboxUrl}'.match(/access_token=([^&]+)/);
 mapboxgl.accessToken = tokenMatch ? tokenMatch[1] : 'YOUR_TOKEN_HERE';
 
-var initialStyle = 'mapbox://styles/mapbox/dark-v11';
+var initialStyle = ('${mapMode}' === '2D') ? 'mapbox://styles/mapbox/outdoors-v12' : 'mapbox://styles/mapbox/dark-v11';
 
 var map = new mapboxgl.Map({
   container: 'map',
@@ -158,13 +158,19 @@ window.setMapMode = function(mode) {
 
   // 2D layers: visible in 2D, hidden in 3D
   var layers2D = [
-    'campus-2d-fill', 'campus-2d-line', 'campus-labels'
+    'campus-2d-fill', 'campus-2d-line'
   ];
   layers2D.forEach(function(id) {
     if (map.getLayer(id)) {
       map.setLayoutProperty(id, 'visibility', is2D ? 'visible' : 'none');
     }
   });
+
+  if (map.getLayer('campus-labels')) {
+    map.setLayoutProperty('campus-labels', 'visibility', 'visible');
+    map.setPaintProperty('campus-labels', 'text-color', is2D ? '#0f172a' : '#ffffff');
+    map.setPaintProperty('campus-labels', 'text-halo-color', is2D ? '#ffffff' : 'rgba(10, 14, 23, 0.8)');
+  }
 };
 
 map.on('load', () => {
@@ -677,6 +683,42 @@ window.renderGeoJSONLayers = function(data, floorId) {
     });
   }
 
+  // ── 5J. 2D FLAT FILL & CRISP OUTLINE (Exact match to AR FloatingMiniMap) ──
+  if (!map.getLayer('campus-2d-fill')) {
+    map.addLayer({
+      'id': 'campus-2d-fill',
+      'type': 'fill',
+      'source': 'campus-data',
+      'layout': { 'visibility': is2D ? 'visible' : 'none' },
+      'paint': {
+        'fill-color': [
+          'case',
+          ['==', ['get', 'type'], 'block'], '#cbd5e1',
+          ['coalesce', ['get', 'color'], '#94a3b8']
+        ],
+        'fill-opacity': 0.35
+      }
+    });
+  }
+
+  if (!map.getLayer('campus-2d-line')) {
+    map.addLayer({
+      'id': 'campus-2d-line',
+      'type': 'line',
+      'source': 'campus-data',
+      'layout': { 'visibility': is2D ? 'visible' : 'none' },
+      'paint': {
+        'line-color': [
+          'case',
+          ['==', ['get', 'type'], 'block'], '#94a3b8',
+          ['coalesce', ['get', 'color'], '#64748b']
+        ],
+        'line-width': 1.5,
+        'line-opacity': 0.7
+      }
+    });
+  }
+
   // ── 6. LABELS FOR BLOCKS ──
   if (!map.getLayer('campus-labels')) {
     map.addLayer({
@@ -691,8 +733,8 @@ window.renderGeoJSONLayers = function(data, floorId) {
         'text-offset': [0, 1]
       },
       'paint': {
-        'text-color': '#0f172a',
-        'text-halo-color': '#ffffff',
+        'text-color': is2D ? '#0f172a' : '#ffffff',
+        'text-halo-color': is2D ? '#ffffff' : 'rgba(10, 14, 23, 0.8)',
         'text-halo-width': 2.5
       }
     });
@@ -2107,9 +2149,10 @@ export default function MapScreen({ navigation, route }) {
         {geoJSONData ? (
           <>
             <WebView
+              key={`map-${mapMode}`}
               ref={webViewRef}
               source={{ html: mapHtml, baseUrl: '' }}
-              style={{ flex: 1, backgroundColor: '#e0f2fe' }}
+              style={{ flex: 1, backgroundColor: mapMode === '2D' ? '#f8fafc' : '#0a1628' }}
               scrollEnabled={false}
               bounces={false}
               showsHorizontalScrollIndicator={false}

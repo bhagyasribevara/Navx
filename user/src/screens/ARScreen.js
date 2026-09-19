@@ -203,13 +203,11 @@ function travelAngle(t) {
   return Math.atan2(b.y - a.y, b.x - a.x);
 }
 
-// Lane width at depth (very wide near user, narrow at horizon)
+// Lane width at depth (wide near user, realistic road width perspective)
 function laneWidth(t) {
-  var perspScale = 1.0 - t * 0.85;
-  return Math.max(10, W * 0.45 * perspScale);
+  var perspScale = 1.0 - t * 0.82;
+  return Math.max(16, W * 0.54 * perspScale);
 }
-
-var CHEVRON_COUNT = 11;
 
 function render() {
   ctx.clearRect(0, 0, W, H);
@@ -220,103 +218,45 @@ function render() {
   ctx.rotate(-smoothRoll * Math.PI / 180);
   ctx.translate(-CX, -H * 0.5);
 
-  // ── 1. GROUND PLANE GLOW — creates the "floor detected" illusion ──
-  // A wide gradient from the bottom of the screen that fades upward
-  ctx.save();
-
-  // Ground surface glow (wide, centered)
-  var groundGrad = ctx.createLinearGradient(CX, FLOOR_Y, CX, FLOOR_Y - H * 0.55);
-  groundGrad.addColorStop(0,    'rgba(0, 100, 255, 0.18)');
-  groundGrad.addColorStop(0.15, 'rgba(0, 120, 255, 0.10)');
-  groundGrad.addColorStop(0.4,  'rgba(0, 140, 255, 0.04)');
-  groundGrad.addColorStop(1,    'rgba(0, 160, 255, 0.0)');
-
-  // Build the lane shape from bottom to horizon
-  var leftEdge = [];
-  var rightEdge = [];
-  var laneSteps = 35;
-  for (var i = 0; i <= laneSteps; i++) {
-    var lt = (i / laneSteps) * 0.88;
-    var p = floorPt(lt);
-    var w = laneWidth(lt) * 0.55;
-    var angle = travelAngle(lt);
-    var perpX = Math.cos(angle + Math.PI / 2);
-    var perpY = Math.sin(angle + Math.PI / 2);
-    leftEdge.push({ x: p.x - perpX * w, y: p.y - perpY * w });
-    rightEdge.push({ x: p.x + perpX * w, y: p.y + perpY * w });
-  }
-
-  // Draw filled lane
-  ctx.beginPath();
-  ctx.moveTo(leftEdge[0].x, leftEdge[0].y);
-  for (var i = 1; i < leftEdge.length; i++) ctx.lineTo(leftEdge[i].x, leftEdge[i].y);
-  for (var i = rightEdge.length - 1; i >= 0; i--) ctx.lineTo(rightEdge[i].x, rightEdge[i].y);
-  ctx.closePath();
-  ctx.fillStyle = groundGrad;
-  ctx.fill();
-
-  // Lane edge lines (subtle)
-  ctx.beginPath();
-  ctx.moveTo(leftEdge[0].x, leftEdge[0].y);
-  for (var i = 1; i < leftEdge.length; i++) ctx.lineTo(leftEdge[i].x, leftEdge[i].y);
-  ctx.strokeStyle = 'rgba(0, 150, 255, 0.12)';
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
-
-  ctx.beginPath();
-  ctx.moveTo(rightEdge[0].x, rightEdge[0].y);
-  for (var i = 1; i < rightEdge.length; i++) ctx.lineTo(rightEdge[i].x, rightEdge[i].y);
-  ctx.stroke();
-
-  // Bright center line glow (makes the floor feel real)
-  ctx.beginPath();
-  for (var i = 0; i <= 20; i++) {
-    var ct = (i / 20) * 0.7;
-    var cp = floorPt(ct);
-    if (i === 0) ctx.moveTo(cp.x, cp.y);
-    else ctx.lineTo(cp.x, cp.y);
-  }
-  ctx.strokeStyle = 'rgba(0, 140, 255, 0.06)';
-  ctx.lineWidth = 3;
-  ctx.stroke();
-
-  ctx.restore();
-
-  // ── 2. CHEVRON ARROWS — wide, glowing, floor-anchored with perspective squash ──
+  // ── GLOWING CHEVRON ARROWS (Floor-Anchored to Ground/Path) ──
+  // Prominent, glowing neon green chevrons (^ shape) with rounded apex & ends, laid flat on the ground plane
+  var CHEVRON_COUNT = 7;
   for (var k = 0; k < CHEVRON_COUNT; k++) {
     var rawT = ((k / CHEVRON_COUNT) + animOffset) % 1.0;
 
-    // Only render arrows in the visible depth range
-    if (rawT < 0.03 || rawT > 0.85) continue;
+    // Visible depth window: 3 to 4 prominent chevrons visible at any time
+    if (rawT < 0.04 || rawT > 0.82) continue;
 
     var p = floorPt(rawT);
     var angle = travelAngle(rawT);
 
-    // Perspective scaling — arrows get smaller with depth
-    var perspScale = 1.0 - rawT * 0.80;
-    var chevW = Math.max(18, W * 0.32 * perspScale);  // Wide at bottom
-    var chevH = chevW * 0.38;
+    // Perspective scaling — chevrons scale down naturally with depth
+    var perspScale = 1.0 - rawT * 0.78;
+    var chevW = Math.max(22, W * 0.34 * perspScale);  // Wide chevron span
+    var chevH = chevW * 0.42;
 
-    // Perspective vertical squash — makes arrows look flat on the floor
-    // Near arrows (rawT close to 0) are barely squashed
-    // Far arrows are heavily squashed
-    var squash = 1.0 - rawT * 0.55;
+    // Perspective vertical squash — flattens the chevron onto the road plane
+    var squash = Math.max(0.30, 1.0 - rawT * 0.55);
     chevH *= squash;
+
+    // Thickness of the chevron neon band
+    var chevThickness = Math.max(5, 14 * perspScale);
 
     // Near-turn emphasis
     var turnBoost = 1.0;
-    if (isNearTurn && rawT < 0.30) {
-      turnBoost = 1.35;
-      chevW *= 1.2;
-      chevH *= 1.15;
+    if (isNearTurn && rawT < 0.35) {
+      turnBoost = 1.25;
+      chevW *= 1.15;
+      chevH *= 1.12;
+      chevThickness *= 1.15;
     }
 
-    // Alpha: fade in near bottom, fade out near horizon
+    // Alpha: smooth fade-in at screen bottom, fade-out near horizon
     var alpha;
-    if      (rawT < 0.08) alpha = rawT / 0.08;
-    else if (rawT > 0.68) alpha = (0.85 - rawT) / 0.17;
+    if      (rawT < 0.10) alpha = rawT / 0.10;
+    else if (rawT > 0.65) alpha = (0.82 - rawT) / 0.17;
     else                  alpha = 1.0;
-    alpha = Math.max(0, Math.min(1, alpha)) * 0.92 * turnBoost;
+    alpha = Math.max(0, Math.min(1, alpha)) * 0.96 * turnBoost;
     if (alpha <= 0.02) continue;
 
     ctx.save();
@@ -324,61 +264,53 @@ function render() {
     ctx.rotate(angle + Math.PI / 2);
     ctx.globalAlpha = alpha;
 
-    // ── Chevron shape ──
+    // Chevron coordinates: apex at (0, tipY), arms extending to (-hw, baseY) and (hw, baseY)
     var hw = chevW * 0.5;
     var tipY = -chevH * 0.5;
     var baseY = chevH * 0.5;
-    var arm = chevW * 0.13;
 
-    ctx.beginPath();
-    ctx.moveTo(0, tipY);                       // tip
-    ctx.lineTo(hw, baseY);                     // right outer
-    ctx.lineTo(hw - arm, baseY);               // right inner
-    ctx.lineTo(0, tipY + arm * 1.8);           // inner tip
-    ctx.lineTo(-hw + arm, baseY);              // left inner
-    ctx.lineTo(-hw, baseY);                    // left outer
-    ctx.closePath();
-
-    // Gradient fill
+    // Gradient along chevron: bright lime/chartreuse apex blending into neon emerald green arms
     var chevGrad = ctx.createLinearGradient(0, tipY, 0, baseY);
-    if (isNearTurn && rawT < 0.35) {
-      chevGrad.addColorStop(0,   'rgba(120, 210, 255, ' + (alpha) + ')');
-      chevGrad.addColorStop(0.4, 'rgba(0, 170, 255, '   + (alpha * 0.95) + ')');
-      chevGrad.addColorStop(1,   'rgba(0, 100, 255, '   + (alpha * 0.7)  + ')');
-    } else {
-      chevGrad.addColorStop(0,   'rgba(100, 200, 255, ' + (alpha * 0.95) + ')');
-      chevGrad.addColorStop(0.4, 'rgba(0, 150, 255, '   + (alpha * 0.85) + ')');
-      chevGrad.addColorStop(1,   'rgba(0, 90, 230, '    + (alpha * 0.5)  + ')');
-    }
-    ctx.fillStyle = chevGrad;
+    chevGrad.addColorStop(0,   'rgba(217, 249, 157, ' + alpha + ')');         // Bright chartreuse highlight (#d9f99d)
+    chevGrad.addColorStop(0.32,'rgba(163, 230, 53, '  + alpha + ')');         // Luminous lime (#a3e635)
+    chevGrad.addColorStop(0.70,'rgba(34, 197, 94, '   + (alpha * 0.95) + ')'); // Neon emerald (#22c55e)
+    chevGrad.addColorStop(1,   'rgba(22, 163, 74, '   + (alpha * 0.75) + ')'); // Deep emerald (#16a34a)
 
-    // Glow bloom
-    ctx.shadowColor = isNearTurn ? '#44ccff' : '#0099ff';
-    ctx.shadowBlur  = (20 * perspScale + 8) * turnBoost;
-    ctx.fill();
-
-    // Edge highlight
-    ctx.shadowBlur = 0;
-    ctx.strokeStyle = 'rgba(160, 225, 255, ' + (alpha * 0.5) + ')';
-    ctx.lineWidth = Math.max(0.5, 1.2 * perspScale);
+    // Pass 1: Neon bloom / glow (rich diffuse light on the road)
+    ctx.save();
+    ctx.shadowColor = '#22c55e';
+    ctx.shadowBlur = (24 * perspScale + 10) * turnBoost;
+    ctx.beginPath();
+    ctx.moveTo(-hw, baseY);
+    ctx.lineTo(0, tipY);
+    ctx.lineTo(hw, baseY);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = chevGrad;
+    ctx.lineWidth = chevThickness;
     ctx.stroke();
+    ctx.restore();
+
+    // Pass 2: High-intensity inner core for maximum crispness and pop
+    ctx.save();
+    var coreGrad = ctx.createLinearGradient(0, tipY, 0, baseY);
+    coreGrad.addColorStop(0,   'rgba(255, 255, 255, ' + (alpha * 0.92) + ')'); // White-hot apex
+    coreGrad.addColorStop(0.40,'rgba(217, 249, 157, ' + (alpha * 0.85) + ')'); // Lime core
+    coreGrad.addColorStop(1,   'rgba(74, 222, 128, '  + (alpha * 0.50) + ')'); // Green core
+    ctx.beginPath();
+    ctx.moveTo(-hw, baseY);
+    ctx.lineTo(0, tipY);
+    ctx.lineTo(hw, baseY);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = coreGrad;
+    ctx.lineWidth = chevThickness * 0.42;
+    ctx.stroke();
+    ctx.restore();
 
     ctx.restore();
   }
 
-  // ── 3. GROUND REFLECTION DOTS — small dots between arrows to sell floor anchoring ──
-  for (var d = 0; d < 25; d++) {
-    var dt = (d / 25) * 0.7 + 0.02;
-    var dp = floorPt(dt);
-    var dAlpha = (1.0 - dt) * 0.25;
-    if (dAlpha < 0.02) continue;
-    var dotR = Math.max(1, 3 * (1.0 - dt));
-    ctx.beginPath();
-    ctx.arc(dp.x, dp.y, dotR, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(0, 160, 255, ' + dAlpha + ')';
-    ctx.fill();
-  }
-  
   ctx.restore();
 }
 
@@ -875,15 +807,18 @@ export default function ARScreen({ navigation, route }) {
         />
       )}
 
-      {/* ── BOTTOM BAR (Distance + Exit — matching reference) ── */}
+      {/* ── BOTTOM BAR (Distance + ETA + Exit — matching reference) ── */}
       {!arrived && (
         <View style={[styles.bottomBar, { paddingBottom: insets.bottom > 0 ? insets.bottom + 8 : 18 }]}>
           <View style={styles.bottomBarLeft}>
-            <Text style={styles.bottomBarDistance}>{liveDistance} m</Text>
-            <Text style={styles.bottomBarLabel}>to your destination</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8 }}>
+              <Text style={styles.bottomBarDistance}>{liveDistance} m</Text>
+              <Text style={{ fontSize: 16, fontWeight: '700', color: '#4ade80' }}>· {etaText} left</Text>
+            </View>
+            <Text style={styles.bottomBarLabel}>{targetRoom?.name || 'to your destination'}</Text>
           </View>
           <TouchableOpacity
-            style={[styles.exitBtn, { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#4f46e5', borderColor: '#4f46e5' }]}
+            style={[styles.exitBtn, { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#15803d', borderColor: '#22c55e' }]}
             onPress={() => navigation.goBack()}
             activeOpacity={0.8}
           >
@@ -946,27 +881,27 @@ const styles = StyleSheet.create({
     right: 80, // leave room for FABs
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(15, 23, 42, 0.85)",
+    backgroundColor: "rgba(15, 23, 42, 0.88)",
     borderRadius: 18,
     padding: 14,
     borderWidth: 1,
-    borderColor: "rgba(100, 160, 255, 0.2)",
+    borderColor: "rgba(74, 222, 128, 0.3)",
     ...SHADOWS.lg,
   },
   dirIconCircle: {
     width: 50,
     height: 50,
     borderRadius: 14,
-    backgroundColor: "rgba(0, 100, 255, 0.15)",
+    backgroundColor: "rgba(34, 197, 94, 0.18)",
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1.5,
-    borderColor: "rgba(0, 140, 255, 0.4)",
+    borderColor: "rgba(74, 222, 128, 0.5)",
     marginRight: 14,
   },
   dirIconText: {
     fontSize: 26,
-    color: "#60a5fa",
+    color: "#4ade80",
   },
   dirCardContent: {
     flex: 1,
@@ -1037,11 +972,11 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    backgroundColor: "rgba(15, 23, 42, 0.88)",
+    backgroundColor: "rgba(15, 23, 42, 0.90)",
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     borderWidth: 1,
-    borderColor: "rgba(100, 160, 255, 0.15)",
+    borderColor: "rgba(74, 222, 128, 0.25)",
     borderBottomWidth: 0,
     paddingHorizontal: 24,
     paddingTop: 18,
